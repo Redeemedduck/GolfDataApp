@@ -1,0 +1,34 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env/
+
+# Databases
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Media & Temp
+media/
+debug_page_source.html
+
+# MacOS
+.DS_Store
+
+# Brain / Agent Artifacts
+.gemini/
+.claude/
+
+# IDEs
+.vscode/
+.idea/
