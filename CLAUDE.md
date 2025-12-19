@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a golf data analysis platform with two architectures:
+This is a golf data analysis platform with a **local-first hybrid architecture**:
 
-1. **Local Streamlit App** (app.py): Fetches shot data from Uneekor API → stores in SQLite → displays in interactive UI
-2. **Cloud Pipeline** (NEW): Supabase (cloud DB) → BigQuery (data warehouse) → Gemini AI (analysis)
+1. **Local Streamlit App** (app.py): Fetches shot data from Uneekor API → stores in SQLite (local-first) → optionally syncs to Supabase (cloud backup) → displays in interactive UI
+2. **Cloud Pipeline**: Supabase (cloud DB) → BigQuery (data warehouse) → Gemini AI (analysis)
+3. **MCP Control Plane** (NEW): Direct conversational access to databases (SQLite + BigQuery) via MCP Database Toolbox for autonomous AI-driven data discovery
 
-The app is designed for high-altitude golf analysis (Denver) and captures detailed shot metrics including ball speed, spin rates, launch angles, and more.
+The app is designed for high-altitude golf analysis (Denver) and captures detailed shot metrics including ball speed, spin rates, launch angles, impact location (Optix data), club lie angles, and more.
 
 ## Development Commands
 
@@ -79,27 +80,31 @@ python legacy/test_connection.py                     # Test all connections
    - Image downloading function available but not yet integrated
    - **Backup**: Old Selenium-based scraper saved as `golf_scraper_selenium_backup.py`
 
-3. **golf_db.py** (Database Layer)
-   - SQLite operations for shot storage and retrieval
-   - **Expanded Schema**: `shots` table now includes 25+ fields:
+3. **golf_db.py** (Database Layer - Hybrid Local/Cloud)
+   - **Local-First Architecture**: SQLite for offline access with optional Supabase cloud sync
+   - **Dual Database Support**: Automatically manages both SQLite and Supabase (when configured)
+   - **Self-Healing Schema**: Auto-migrates new columns to existing SQLite databases
+   - **Expanded Schema**: `shots` table now includes 30 fields:
      - Identifiers: shot_id (PK), session_id, date_added
      - Basic: club, carry, total, smash
      - Speed: ball_speed, club_speed
      - Spin: side_spin, back_spin
      - Angles: launch_angle, side_angle, club_path, face_angle, dynamic_loft, attack_angle
-     - Impact: impact_x, impact_y
+     - Impact: impact_x, impact_y, **optix_x, optix_y** (NEW: Uneekor Optix impact location)
      - Flight: side_distance, descent_angle, apex, flight_time
      - Classification: shot_type
+     - Club Geometry: **club_lie, lie_angle** (NEW: Club position at impact)
      - Media: impact_img, swing_img
-   - `init_db()` creates database and table if not exists
-   - `save_shot()` uses INSERT OR REPLACE for idempotent imports, handles both old and new API formats
+   - `init_db()` creates database and table if not exists, auto-adds missing columns
+   - `save_shot()` uses upsert for both SQLite and Supabase, idempotent imports
+   - `save_shot_to_supabase()` optional cloud backup with image upload to Supabase Storage
    - Includes helper function to clean invalid values (converts 99999 to 0)
    - `get_session_data()` supports filtering by session_id or returning all shots
    - `get_unique_sessions()` returns distinct sessions ordered by date
 
 ### Data Flow
 
-**Local Application Flow:**
+**Local Application Flow (Local-First Hybrid):**
 ```
 User pastes Uneekor URL → golf_scraper parses report_id & key →
 HTTP GET to Uneekor API → Receives JSON with all sessions/shots →
@@ -107,8 +112,9 @@ For each session (club):
   For each shot:
     Calculate smash factor →
     Clean invalid values (99999 → 0) →
-    golf_db.save_shot() → SQLite storage →
-app.py loads data → Displays in interactive table with detailed shot metrics
+    golf_db.save_shot() → SQLite storage (local-first) →
+    golf_db.save_shot_to_supabase() → Optional cloud backup (if configured) →
+app.py loads data from SQLite → Displays in interactive table with detailed shot metrics
 ```
 
 **Cloud Pipeline Flow:**
@@ -142,7 +148,8 @@ Optional Automation:
 
 ## Important Notes
 
-- **Database Architecture**: Application uses Supabase as the primary cloud database (golf_db.py has been migrated from SQLite to Supabase)
+- **Database Architecture**: Local-first hybrid model with SQLite as primary database for offline access, optional Supabase sync for cloud backup and multi-device access
+- **Self-Healing Schema**: SQLite database auto-migrates new columns (optix_x, optix_y, club_lie, lie_angle) on startup
 - **API-Based Architecture**: Uses Uneekor's REST API instead of web scraping for faster, more reliable data collection
 - **Unit Conversions**: API returns metric units (m/s, meters) which are automatically converted to imperial (mph, yards) in golf_scraper.py:
   - Speed: m/s × 2.23694 = mph
@@ -293,14 +300,15 @@ ANTHROPIC_API_KEY=your-anthropic-key
 
 ### Data Schema (Consistent Across SQLite, Supabase, BigQuery)
 
-All 26 fields are synced across platforms:
+All 30 fields are synced across platforms:
 - **Identifiers**: shot_id (PK), session_id, date_added
 - **Club Info**: club
 - **Distance**: carry, total, side_distance
 - **Speed**: ball_speed, club_speed, smash
 - **Spin**: back_spin, side_spin
 - **Angles**: launch_angle, side_angle, club_path, face_angle, dynamic_loft, attack_angle, descent_angle
-- **Impact**: impact_x, impact_y
+- **Impact**: impact_x, impact_y, **optix_x, optix_y** (Uneekor Optix precise impact location)
+- **Club Geometry**: **club_lie, lie_angle** (Club position at impact)
 - **Flight**: apex, flight_time
 - **Classification**: shot_type
 - **Media**: impact_img, swing_img
@@ -385,6 +393,49 @@ For a Driver analysis with 5 shots:
 
 ---
 
+## MCP Control Plane Integration
+
+### Overview
+The **MCP Database Toolbox** provides a unified "Control Plane" for conversational AI access to your golf data across both local SQLite and cloud BigQuery databases.
+
+### Architecture
+- **Shared Interface**: Single YAML configuration for multiple data sources
+- **Autonomous Discovery**: AI agents can independently explore schemas using `list-tables` and `get-table-schema`
+- **Conversational Analytics**: Natural language queries without writing SQL
+- **Multi-Source Support**: Seamlessly query both local SQLite and BigQuery from one interface
+
+### Setup
+1. **Install MCP Toolbox**: Download binary to `~/.mcp/database-toolbox/`
+2. **Create Configuration** (`~/.mcp/database-toolbox/tools.yaml`):
+   ```yaml
+   sources:
+     local-sqlite:
+       kind: sqlite
+       database: /absolute/path/to/golf_stats.db
+     google-bigquery:
+       kind: bigquery
+       project: valued-odyssey-474423-g1
+   ```
+3. **Start MCP Server**:
+   ```bash
+   toolbox --tools-file ~/.mcp/database-toolbox/tools.yaml --stdio
+   ```
+
+### Use Cases
+- **Cross-Database Queries**: Compare local practice data with cloud historical data
+- **AI-Driven Discovery**: Let AI agents explore schema and find insights autonomously
+- **Unified Interface**: Single command to access all your golf data sources
+- **Real-Time Analysis**: Query fresh local data without cloud sync delays
+
+### Integration Points
+- **Local SQLite**: Direct access to `golf_stats.db` for offline analysis
+- **BigQuery**: Access to full historical data warehouse
+- **Supabase**: Can be added as a PostgreSQL source (optional)
+
+For detailed setup instructions, see `SETUP_GUIDE.md` Step 10.
+
+---
+
 ## Common Workflows
 
 ### After Practice Session
@@ -421,16 +472,18 @@ ORDER BY AVG(carry) DESC
 
 ### Data Flow Through Modules
 
-**Import Flow (app.py → golf_scraper.py → golf_db.py → Supabase):**
+**Import Flow (app.py → golf_scraper.py → golf_db.py → Local/Cloud):**
 1. User pastes Uneekor URL in Streamlit sidebar
 2. `golf_scraper.extract_url_params()` parses report_id and key from URL
 3. `golf_scraper.run_scraper()` fetches JSON from Uneekor API
 4. For each shot in each session:
    - Convert metric units to imperial (m/s → mph, meters → yards)
    - Calculate smash factor (ball_speed / club_speed)
-   - `golf_scraper.upload_shot_images()` downloads images and uploads to Supabase Storage
-   - `golf_db.save_shot()` upserts data to Supabase PostgreSQL table
-5. `app.py` queries Supabase via `golf_db.get_session_data()` and displays in UI
+   - Extract advanced metrics (optix_x, optix_y, club_lie, lie_angle)
+   - `golf_db.save_shot()` upserts data to SQLite (local-first)
+   - `golf_db.save_shot_to_supabase()` optionally uploads to cloud (if SUPABASE_URL configured)
+   - `golf_scraper.upload_shot_images()` downloads images and uploads to Supabase Storage (if cloud enabled)
+5. `app.py` queries SQLite via `golf_db.get_session_data()` and displays in UI
 
 **Sync Flow (Supabase → BigQuery):**
 1. `scripts/supabase_to_bigquery.py` fetches all shots from Supabase (paginated)
@@ -447,19 +500,24 @@ ORDER BY AVG(carry) DESC
 
 ### Key Design Patterns
 
-- **Idempotent Imports**: `golf_db.save_shot()` uses upsert to prevent duplicates
+- **Local-First Architecture**: SQLite as primary database for offline access, optional cloud sync
+- **Self-Healing Schema**: Auto-migration of new columns on startup (no manual ALTER TABLE needed)
+- **Idempotent Imports**: `golf_db.save_shot()` uses upsert to prevent duplicates (both SQLite and Supabase)
 - **Unit Conversion Layer**: All metric→imperial conversions happen in `golf_scraper.py` (single source of truth)
 - **Invalid Data Cleaning**: Both `golf_scraper.py` and `golf_db.py` clean invalid values (99999 → 0)
 - **Separation of Concerns**:
   - `app.py` = UI only
   - `golf_scraper.py` = External API integration
-  - `golf_db.py` = Database abstraction
+  - `golf_db.py` = Database abstraction (dual SQLite/Supabase support)
   - `scripts/` = Batch processing and analysis
 
 ### Critical Code Locations
 
 - **Unit conversion constants**: `golf_scraper.py:87-88`
+- **Advanced metrics extraction**: `golf_scraper.py` (optix_x, optix_y, club_lie, lie_angle)
+- **Self-healing schema migration**: `golf_db.py:init_db()` (auto-adds missing columns)
+- **Dual database save logic**: `golf_db.py:save_shot()` (SQLite) and `save_shot_to_supabase()` (cloud)
 - **Image upload to Supabase**: `golf_scraper.py:148-207`
-- **Shot data upsert logic**: `golf_db.py:22-66`
 - **BigQuery schema definition**: `bigquery_schema.json`
+- **Supabase schema definition**: `supabase_schema.sql`
 - **Gemini AI prompt template**: `scripts/gemini_analysis.py:67-87`
