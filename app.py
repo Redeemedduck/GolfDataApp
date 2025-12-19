@@ -17,20 +17,23 @@ with st.sidebar:
     
     if st.button("Run Import", type="primary"):
         if uneekor_url:
-            st.info("Starting import...")
-            
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            def update_progress(msg):
-                status_text.text(msg)
+            # Use st.status for better progress display
+            with st.status("Importing data...", expanded=True) as status:
+                progress_messages = []
 
-            # Run scraper
-            result = golf_scraper.run_scraper(uneekor_url, update_progress)
-            st.success(result)
-            progress_bar.empty()
-            status_text.empty()
-            st.rerun()
+                def update_progress(msg):
+                    progress_messages.append(msg)
+                    st.write(f"✓ {msg}")
+
+                try:
+                    # Run scraper
+                    result = golf_scraper.run_scraper(uneekor_url, update_progress)
+                    status.update(label="Import complete!", state="complete", expanded=False)
+                    st.success(result)
+                    st.rerun()
+                except Exception as e:
+                    status.update(label="Import failed", state="error", expanded=True)
+                    st.error(f"Error: {str(e)}")
         else:
             st.error("Please enter a valid URL")
     
