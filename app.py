@@ -4,10 +4,27 @@ import os
 import golf_scraper
 import golf_db
 
+# Import anthropic at module level for efficiency
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = bool(os.getenv("ANTHROPIC_API_KEY"))
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
 st.set_page_config(layout="wide", page_title="My Golf Lab")
 
-# Check if Anthropic API key is available for AI Coach
-ANTHROPIC_AVAILABLE = bool(os.getenv("ANTHROPIC_API_KEY"))
+@st.cache_resource
+def get_anthropic_client():
+    """
+    Get cached Anthropic client instance
+
+    Uses Streamlit's cache_resource to avoid recreating the client
+    on every interaction, improving performance.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    return anthropic.Anthropic(api_key=api_key)
 
 # Initialize DB
 golf_db.init_db()
@@ -160,12 +177,11 @@ if tab3:
     with tab3:
         st.header("AI Golf Coach")
 
-        # Initialize chat history in session state
-        if "messages" not in st.session_state:
+        # Initialize chat history in session state, tied to current session
+        # Reset chat when user switches to a different session
+        if "messages" not in st.session_state or st.session_state.get("current_session_id") != selected_session_id:
             st.session_state.messages = []
-
-        if "coach_context_loaded" not in st.session_state:
-            st.session_state.coach_context_loaded = False
+            st.session_state.current_session_id = selected_session_id
 
         # Model selector
         col1, col2 = st.columns([3, 1])
@@ -224,17 +240,24 @@ if tab3:
             with st.chat_message("assistant"):
                 with st.spinner("Thinking..."):
                     try:
-                        import anthropic
+                        # Get cached client instance
+                        client = get_anthropic_client()
 
-                        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                        if not client:
+                            st.error("Anthropic client not available. Check your API key.")
+                            st.stop()
 
-                        # Build system prompt
-                        system_prompt = """You are an expert golf coach with 20+ years of experience analyzing launch monitor data.
+                        # Build system prompt with session data context
+                        # This ensures the AI always has the current session's data
+                        system_prompt = f"""You are an expert golf coach with 20+ years of experience analyzing launch monitor data.
 
 The golfer is practicing at Denver altitude (5,280 ft), which affects ball flight:
 - 10-15% more carry distance than sea level
 - Lower spin rates due to air density
 - Less ball roll due to altitude
+
+**Current Session Data:**
+{session_summary}
 
 **Your coaching style:**
 - Encouraging but honest
@@ -251,21 +274,11 @@ The golfer is practicing at Denver altitude (5,280 ft), which affects ball fligh
 - Face Angle: open (positive) vs closed (negative)
 - Attack Angle: ascending (positive) for driver, descending (negative) for irons
 
-Provide coaching in a conversational, supportive tone."""
+Provide coaching in a conversational, supportive tone. Reference the session data when relevant."""
 
-                        # Prepare messages
-                        messages = []
-
-                        # On first message, include full context
-                        if len(st.session_state.messages) == 1:
-                            messages.append({
-                                "role": "user",
-                                "content": f"{session_summary}\n\nQuestion: {user_input}"
-                            })
-                        else:
-                            # Include conversation history
-                            for msg in st.session_state.messages:
-                                messages.append(msg)
+                        # Use conversation history directly
+                        # The session context is now in the system prompt, so we don't need to include it in messages
+                        messages = st.session_state.messages
 
                         # Call Claude
                         response = client.messages.create(
@@ -286,8 +299,9 @@ Provide coaching in a conversational, supportive tone."""
                             "content": assistant_message
                         })
 
-                    except ImportError:
-                        st.error("Anthropic package not installed. Run: pip install anthropic")
+                    except anthropic.APIError as e:
+                        st.error(f"Claude API Error: {e}")
+                        st.info("Check your ANTHROPIC_API_KEY and account status")
                     except Exception as e:
                         st.error(f"Error communicating with Claude: {e}")
                         st.info("Make sure ANTHROPIC_API_KEY is set in your .env file")

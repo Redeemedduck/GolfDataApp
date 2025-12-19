@@ -84,14 +84,23 @@ def query_shot_data(club=None, limit=500):
         FROM `{table_id}`
     """
 
+    # Use parameterized queries to prevent SQL injection
+    job_config = bigquery.QueryJobConfig()
+    query_parameters = []
+
     if club:
-        # Simple filter - for production, use parameterized queries
-        query += f" WHERE LOWER(club) LIKE LOWER('%{club}%')"
+        query += " WHERE LOWER(club) LIKE LOWER(@club_filter)"
+        query_parameters.append(
+            bigquery.ScalarQueryParameter("club_filter", "STRING", f"%{club}%")
+        )
 
     query += f" ORDER BY date_added DESC LIMIT {limit}"
 
+    if query_parameters:
+        job_config.query_parameters = query_parameters
+
     print(f"Fetching data from BigQuery...")
-    df = bq_client.query(query).to_dataframe()
+    df = bq_client.query(query, job_config=job_config).to_dataframe()
     print(f"Retrieved {len(df)} shots")
 
     return df
