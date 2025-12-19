@@ -2,29 +2,68 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Branch Information
+
+**This is the `docker` branch** - Containerized version of GolfDataApp optimized for Docker/OrbStack deployment.
+
+For the non-containerized version, see the `main` branch.
+
 ## Project Overview
 
-This is a golf data analysis platform with a **local-first hybrid architecture**:
+This is a golf data analysis platform with a **local-first hybrid architecture**, now fully containerized:
 
 1. **Local Streamlit App** (app.py): Fetches shot data from Uneekor API → stores in SQLite (local-first) → optionally syncs to Supabase (cloud backup) → displays in interactive UI
 2. **Cloud Pipeline**: Supabase (cloud DB) → BigQuery (data warehouse) → Gemini AI (analysis)
-3. **MCP Control Plane** (NEW): Direct conversational access to databases (SQLite + BigQuery) via MCP Database Toolbox for autonomous AI-driven data discovery
+3. **MCP Control Plane**: Direct conversational access to databases (SQLite + BigQuery) via MCP Database Toolbox for autonomous AI-driven data discovery
+4. **Docker Containerization** (NEW): Fully containerized deployment with Docker/OrbStack support for easy setup and cloud deployment
 
 The app is designed for high-altitude golf analysis (Denver) and captures detailed shot metrics including ball speed, spin rates, launch angles, impact location (Optix data), club lie angles, and more.
 
 ## Development Commands
 
 ### Running the Application
+
+**Docker (Recommended - This Branch):**
+```bash
+# Quick start
+./docker-quickstart.sh
+
+# Or manually
+docker-compose up -d
+open http://localhost:8501
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+**Local (Non-Docker):**
 ```bash
 streamlit run app.py
 ```
 
 ### Installing Dependencies
+
+**Docker (Recommended):**
+Dependencies are automatically installed in the container. No manual installation needed.
+
+**Local:**
 ```bash
 pip install -r requirements.txt
 ```
 
 ### Database Locations
+
+**Docker (This Branch):**
+- **Local**: SQLite database at `./data/golf_stats.db` (Docker volume mounted)
+- **Cloud**: Supabase PostgreSQL database at `https://lhccrzxgnmynxmvoydkm.supabase.co`
+- **Data Warehouse**: BigQuery `valued-odyssey-474423-g1.golf_data.shots`
+- **Media files**: `./media/` directory (Docker volume mounted)
+- **Logs**: `./logs/` directory (Docker volume mounted)
+
+**Non-Docker:**
 - **Local**: SQLite database `golf_stats.db` (created automatically on first run)
 - **Cloud**: Supabase PostgreSQL database at `https://lhccrzxgnmynxmvoydkm.supabase.co`
 - **Data Warehouse**: BigQuery `valued-odyssey-474423-g1.golf_data.shots`
@@ -239,12 +278,22 @@ The switch from Selenium-based scraping to API-based fetching provides:
 ### Files Structure
 
 ```
-GolfDataApp/
+GolfDataApp/ (docker branch)
 ├── Core Application
 │   ├── app.py                              # Streamlit UI (main entry point)
 │   ├── golf_scraper.py                     # Uneekor API client (data fetching + image upload)
-│   ├── golf_db.py                          # Supabase database operations
+│   ├── golf_db.py                          # Database layer (SQLite + Supabase)
 │   └── bigquery_schema.json                # BigQuery table schema definition
+│
+├── Docker Configuration (NEW)
+│   ├── Dockerfile                          # Multi-stage container build
+│   ├── docker-compose.yml                  # Orchestration configuration
+│   ├── .dockerignore                       # Files to exclude from image
+│   ├── .env.docker.example                 # Docker environment template
+│   ├── docker-quickstart.sh                # Interactive setup wizard
+│   ├── data/                               # SQLite database volume
+│   ├── media/                              # Shot images volume
+│   └── logs/                               # Application logs volume
 │
 ├── scripts/                                # Cloud Pipeline & Automation
 │   ├── supabase_to_bigquery.py             # Sync Supabase → BigQuery
@@ -271,6 +320,11 @@ GolfDataApp/
 └── Documentation
     ├── README.md                           # Project overview & quick start
     ├── CLAUDE.md                           # This file (Claude Code guidance)
+    ├── DOCKER_GUIDE.md                     # Comprehensive Docker guide (READ THIS FIRST!)
+    ├── DOCKER_README.md                    # Docker quick reference
+    ├── DOCKER_SETUP_COMPLETE.md            # Docker setup verification
+    ├── CONTAINERIZATION_SUMMARY.md         # Technical Docker overview
+    ├── VALIDATION_CHECKLIST.md             # Testing procedures
     ├── PIPELINE_COMPLETE.md                # Complete pipeline reference
     ├── QUICKSTART.md                       # Quick command reference
     ├── AUTOMATION_GUIDE.md                 # Automation setup guide
@@ -521,4 +575,288 @@ ORDER BY AVG(carry) DESC
 - **BigQuery schema definition**: `bigquery_schema.json`
 - **Supabase schema definition**: `supabase_schema.sql`
 - **Gemini AI prompt template**: `scripts/gemini_analysis.py:67-87`
-- lets use a new directory at users/duck/public but use the same folder name you suggested GolfDataApp-Docker
+
+---
+
+## Docker Containerization (This Branch)
+
+### Overview
+
+This branch provides a fully containerized version of GolfDataApp optimized for Docker and OrbStack deployment.
+
+### Key Features
+
+**Security:**
+- Non-root user (`golfuser`) runs application
+- Secrets managed via `.env` file (never baked into image)
+- Minimal Python 3.11 slim base image
+- `.dockerignore` prevents accidental secret leakage
+
+**Performance:**
+- Multi-stage build for optimized image size (~450MB)
+- Layer caching for faster rebuilds (3-5 min → 30 sec)
+- Native ARM64 support for Apple Silicon
+- OrbStack optimized
+
+**Production Ready:**
+- Health checks configured
+- Automatic restart policies
+- Resource limits (configurable)
+- Structured logging
+- Volume persistence for data, media, logs
+
+### Quick Start
+
+```bash
+# Automated setup (recommended)
+./docker-quickstart.sh
+
+# Manual setup
+docker-compose up -d
+open http://localhost:8501
+```
+
+### Docker Commands Reference
+
+```bash
+# Start container
+docker-compose up -d
+
+# Stop container
+docker-compose down
+
+# View logs
+docker-compose logs -f
+
+# Restart
+docker-compose restart
+
+# Rebuild after code changes
+docker-compose up -d --build
+
+# Shell access
+docker exec -it golf-data-app bash
+
+# Check status
+docker ps
+```
+
+### Volume Mounts
+
+Three volumes persist data outside the container:
+
+1. **data/** - SQLite database (`golf_stats.db`)
+2. **media/** - Shot images organized by session
+3. **logs/** - Application and sync logs
+
+### Environment Configuration
+
+Create a `.env` file from `.env.docker.example`:
+
+```bash
+cp .env.docker.example .env
+# Edit .env with your credentials
+```
+
+Required variables:
+- `SUPABASE_URL` - Your Supabase project URL
+- `SUPABASE_KEY` - Your Supabase anon key
+- `GCP_PROJECT_ID` - Google Cloud project ID
+- `GEMINI_API_KEY` - Gemini API key for AI analysis
+
+### Docker Architecture
+
+```
+┌─────────────────────────────────────────┐
+│  macOS Host (OrbStack)                  │
+│  ┌───────────────────────────────────┐  │
+│  │  Container: golf-data-app         │  │
+│  │  ┌─────────────────────────────┐  │  │
+│  │  │  Python 3.11 + Streamlit    │  │  │
+│  │  │  User: golfuser (non-root)  │  │  │
+│  │  │  Port: 8501                 │  │  │
+│  │  └─────────────────────────────┘  │  │
+│  └───────────────────────────────────┘  │
+│       ↕           ↕           ↕          │
+│   data/       media/       logs/         │
+│  (volumes persist on host)               │
+└─────────────────────────────────────────┘
+```
+
+### Documentation
+
+**Essential Reading:**
+- **DOCKER_GUIDE.md** - Comprehensive beginner-friendly guide (read this first!)
+- **DOCKER_README.md** - Quick reference for daily use
+- **DOCKER_SETUP_COMPLETE.md** - Setup verification and next steps
+- **CONTAINERIZATION_SUMMARY.md** - Technical architecture overview
+- **VALIDATION_CHECKLIST.md** - Testing and validation procedures
+
+### Dockerfile Highlights
+
+```dockerfile
+# Multi-stage build
+FROM python:3.11-slim as builder
+# Dependencies installed here
+
+FROM python:3.11-slim
+# Non-root user
+RUN useradd -m -u 1000 golfuser
+# Volume mounts
+VOLUME ["/app/data", "/app/media", "/app/logs"]
+# Health check
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+```
+
+### docker-compose.yml Highlights
+
+```yaml
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./media:/app/media
+      - ./logs:/app/logs
+    env_file: .env
+    restart: unless-stopped
+```
+
+### Deployment Options
+
+**Local Development:**
+- OrbStack on macOS (current setup)
+- Docker Desktop alternative
+
+**Cloud Deployment:**
+- Google Cloud Run
+- AWS ECS/Fargate
+- Azure Container Instances
+- Railway, Render, Fly.io
+
+See `CONTAINERIZATION_SUMMARY.md` for deployment guides.
+
+### Troubleshooting
+
+**Container won't start:**
+```bash
+docker-compose logs
+docker ps -a
+```
+
+**Permission issues:**
+```bash
+chmod 755 docker-quickstart.sh
+sudo chown -R $USER:$USER data/ media/ logs/
+```
+
+**Port already in use:**
+```bash
+# Change port in docker-compose.yml
+ports:
+  - "8502:8501"  # Use 8502 instead
+```
+
+**Reset everything:**
+```bash
+docker-compose down -v
+rm -rf data/* media/* logs/*
+docker-compose up -d --build
+```
+
+### Differences from Main Branch
+
+| Feature | Main Branch | Docker Branch |
+|---------|-------------|---------------|
+| Setup | Manual Python/pip | One command |
+| Environment | Virtual env | Containerized |
+| Database | `./golf_stats.db` | `./data/golf_stats.db` |
+| Media | `./media/` | `./media/` (volume) |
+| Logs | `./logs/` | `./logs/` (volume) |
+| Deployment | Manual | Cloud-ready |
+| Portability | Platform-specific | Platform-independent |
+
+### Contributing to Docker Branch
+
+When making changes:
+
+1. **Code changes**: Edit files, rebuild container
+   ```bash
+   docker-compose up -d --build
+   ```
+
+2. **Dependency changes**: Update `requirements.txt`, rebuild
+   ```bash
+   docker-compose build --no-cache
+   ```
+
+3. **Configuration changes**: Update `docker-compose.yml`, recreate
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Testing**: Use validation checklist
+   ```bash
+   # See VALIDATION_CHECKLIST.md
+   ```
+
+### Performance Notes
+
+**Image Size:** ~450MB (optimized multi-stage build)
+**Build Time:** 3-5 minutes (first build), 30 seconds (cached)
+**Memory:** ~200MB (typical), ~500MB (with active analysis)
+**CPU:** Minimal except during scraping/analysis
+
+### Security Best Practices
+
+✅ **Implemented:**
+- Non-root user in container
+- Secrets via environment variables
+- `.dockerignore` excludes sensitive files
+- Minimal base image
+- No hardcoded credentials
+
+⚠️ **Remember:**
+- Never commit `.env` file
+- Rotate API keys regularly
+- Use secrets management for production (GCP Secret Manager, AWS Secrets Manager)
+
+### Cloud Deployment Ready
+
+This containerized version is ready for cloud deployment with minimal changes:
+
+```bash
+# Build for cloud
+docker build -t gcr.io/your-project/golf-data-app .
+
+# Push to registry
+docker push gcr.io/your-project/golf-data-app
+
+# Deploy to Cloud Run
+gcloud run deploy golf-data-app \
+  --image gcr.io/your-project/golf-data-app \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated
+```
+
+See `CONTAINERIZATION_SUMMARY.md` for detailed deployment guides.
+
+---
+
+## Switching Between Branches
+
+### From Docker → Main (Non-containerized)
+```bash
+git checkout main
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+### From Main → Docker (Containerized)
+```bash
+git checkout docker
+./docker-quickstart.sh
+```
