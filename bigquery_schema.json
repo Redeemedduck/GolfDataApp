@@ -1,0 +1,182 @@
+[
+  {
+    "name": "shot_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique identifier for each shot (format: {report_id}_{session_id}_{shot_id})"
+  },
+  {
+    "name": "session_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Session identifier grouping shots from the same practice session"
+  },
+  {
+    "name": "date_added",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Timestamp when the shot was recorded"
+  },
+  {
+    "name": "club",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Golf club used (e.g., Driver, 7 Iron, Pitching Wedge)"
+  },
+  {
+    "name": "carry",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Carry distance in yards"
+  },
+  {
+    "name": "total",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Total distance including roll in yards"
+  },
+  {
+    "name": "smash",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Smash factor (ball speed / club speed)"
+  },
+  {
+    "name": "club_path",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Club path angle in degrees (positive = in-to-out)"
+  },
+  {
+    "name": "face_angle",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Club face angle at impact in degrees (positive = open)"
+  },
+  {
+    "name": "ball_speed",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Ball speed in mph"
+  },
+  {
+    "name": "club_speed",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Club head speed in mph"
+  },
+  {
+    "name": "side_spin",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Side spin in rpm (positive = slice spin, negative = hook spin)"
+  },
+  {
+    "name": "back_spin",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Back spin in rpm"
+  },
+  {
+    "name": "launch_angle",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Launch angle in degrees"
+  },
+  {
+    "name": "side_angle",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Side launch angle in degrees (positive = right)"
+  },
+  {
+    "name": "dynamic_loft",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Dynamic loft at impact in degrees"
+  },
+  {
+    "name": "attack_angle",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Attack angle in degrees (positive = ascending, negative = descending)"
+  },
+  {
+    "name": "impact_x",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Horizontal impact position on club face"
+  },
+  {
+    "name": "impact_y",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Vertical impact position on club face"
+  },
+  {
+    "name": "side_distance",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Side distance deviation in yards (positive = right)"
+  },
+  {
+    "name": "descent_angle",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Descent angle in degrees"
+  },
+  {
+    "name": "apex",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Maximum height of ball flight in yards"
+  },
+  {
+    "name": "flight_time",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Time ball is in air in seconds"
+  },
+  {
+    "name": "shot_type",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Shot classification (straight, hook, slice, etc.)"
+  },
+  {
+    "name": "impact_img",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "URL or path to impact image"
+  },
+  {
+    "name": "swing_img",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "URL or path to swing image"
+  },
+  {
+    "name": "optix_x",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Optix horizontal position"
+  },
+  {
+    "name": "optix_y",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Optix vertical position"
+  },
+  {
+    "name": "club_lie",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Club lie angle at impact"
+  },
+  {
+    "name": "lie_angle",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Lie angle classification"
+  }
+]

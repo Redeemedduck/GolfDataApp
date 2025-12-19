@@ -1,0 +1,12 @@
+streamlit
+selenium
+webdriver-manager
+pandas
+requests
+psycopg2-binary
+supabase
+python-dotenv
+google-generativeai
+anthropic
+plotly
+plotly-express

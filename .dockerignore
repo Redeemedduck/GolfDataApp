@@ -1,0 +1,96 @@
+# ==============================================================================
+# .dockerignore - Files to Exclude from Docker Build Context
+# ==============================================================================
+# This file tells Docker which files to exclude when building the image.
+# Excluding unnecessary files makes builds faster and images smaller.
+# ==============================================================================
+
+# Environment variables (NEVER include secrets in images!)
+.env
+.env.*
+!.env.example
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Databases (these should be in volumes, not in the image)
+*.db
+*.sqlite
+*.sqlite3
+golf_stats.db
+
+# Logs (these should be in volumes)
+logs/
+*.log
+
+# Media files (these should be in volumes)
+media/
+
+# Git repository (no need to include git history in container)
+.git/
+.gitignore
+.gitattributes
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation (include only README in image, exclude detailed docs)
+CLAUDE.md
+SETUP_GUIDE.md
+AUTOMATION_GUIDE.md
+DEPLOYMENT_SUMMARY.md
+ANALYSIS_ARCHITECTURE.md
+PIPELINE_COMPLETE.md
+QUICKSTART.md
+VERTEX_AI_SETUP.md
+CLAUDE_SETUP.md
+changelog.md
+
+# Scripts that shouldn't run in containers
+setup_cron.sh
+scripts/auto_sync.py
+scripts/post_session.py
+
+# Legacy and debug files
+legacy/
+debug_page_source.html
+*.bak
+*.tmp
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Docker files (no need to include these in the image itself)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Brain / Agent Artifacts
+.gemini/
+.claude/
+
+# BigQuery schema (optional - only needed for BigQuery setup, not runtime)
+bigquery_schema.json
+supabase_schema.sql
