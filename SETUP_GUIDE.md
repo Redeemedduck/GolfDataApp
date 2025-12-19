@@ -57,6 +57,7 @@ streamlit run app.py
    - Convert metrics to Imperial (MPH, Yards).
    - Upload shot images to Supabase Storage.
    - Save shot metadata to the local SQLite database (`golf_stats.db`) and Supabase.
+   - **Advanced Metrics**: Captured fields now include `optix_x`, `optix_y` (Impact location), `club_lie`, and `lie_angle`.
 
 ---
 
@@ -478,9 +479,77 @@ Save these to `~/.bashrc` or `~/.zshrc` for persistence.
 
 ---
 
-## Resources
+## Step 10: MCP Database Control Plane (Advanced AI Integration)
 
+The **MCP Toolbox for Databases** allows you to connect your databases (SQLite, BigQuery, etc.) directly to AI agents (like Claude or Antigravity) as a shared "Control Plane."
+
+### 10.1 Global Installation
+1.  **Download Binary**: Install the `toolbox` binary to a global location (e.g., `~/.mcp/database-toolbox/`).
+2.  **Configuration**: Create a `tools.yaml` file to define your sources.
+    ```yaml
+    sources:
+      local-sqlite:
+        kind: sqlite
+        database: /absolute/path/to/golf_stats.db
+      google-bigquery:
+        kind: bigquery
+        project: your-project-id
+    ```
+3.  **Modular Power**: Drop individual YAML files into the `tools/` folder for multi-project management.
+
+### 10.2 Features
+- **Conversational Analytics**: Chat with your BigQuery data directly without SQL.
+- **Autonomous Discovery**: AI agents can independently explore schemas using `list-tables` and `get-table-schema`.
+- **Hybrid Support**: Manage local and cloud data from a single high-level interface.
+
+---
+
+## 🔧 Maintenance: Schema Updates
+The architecture is designed to be **Self-Healing**. 
+- **SQLite**: The `golf_db.py` script automatically adds missing columns to your local database on startup.
+- **Cloud**: If you add new metrics, remember to update `supabase_schema.sql` and `bigquery_schema.json` accordingly.
+
+---
+
+## Architecture Diagram (Updated)
+```
+┌─────────────────┐
+│  Uneekor API    │
+│  (Advanced Optix)│
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐      ┌──────────────────┐
+│  golf_scraper   │─────▶│  SQLite (local)  │
+│  (Auto-Migrate) │      │  golf_stats.db   │
+└─────────────────┘      └────────┬─────────┘
+                                  │
+                                   │ scripts/migrate_to_supabase.py
+                                   ▼
+                          ┌─────────────────┐
+                          │    Supabase     │◀───┐
+                          │   (PostgreSQL)  │    │
+                          └────────┬────────┘    │
+                                   │             │  MCP CONTROL PLANE
+                                   │             │  (Shared AI Brain)
+                                   ▼             │
+                          ┌─────────────────┐    │
+                          │    BigQuery     │◀───┘
+                          │ (Warehouse)     │
+                          └────────┬────────┘
+                                   │
+                                   │ scripts/vertex_ai_analysis.py
+                                  ▼
+                         ┌─────────────────┐
+                         │   Vertex AI     │
+                         │  (Gemini / ML)  │
+                         └─────────────────┘
+```
+
+---
+
+## Resources
+- [MCP Toolbox Documentation](https://github.com/googleapis/genai-toolbox)
 - [Supabase Documentation](https://supabase.com/docs)
 - [BigQuery Documentation](https://cloud.google.com/bigquery/docs)
 - [Vertex AI Documentation](https://cloud.google.com/vertex-ai/docs)
-- [Gemini API Documentation](https://cloud.google.com/vertex-ai/docs/generative-ai/model-reference/gemini)

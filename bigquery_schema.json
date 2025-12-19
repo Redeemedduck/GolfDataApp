@@ -154,5 +154,29 @@
     "type": "STRING",
     "mode": "NULLABLE",
     "description": "URL or path to swing image"
+  },
+  {
+    "name": "optix_x",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Optix horizontal position"
+  },
+  {
+    "name": "optix_y",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Optix vertical position"
+  },
+  {
+    "name": "club_lie",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Club lie angle at impact"
+  },
+  {
+    "name": "lie_angle",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Lie angle classification"
   }
 ]

@@ -33,21 +33,24 @@ pip install -r requirements.txt
 
 ```bash
 # Sync Supabase → BigQuery
-python supabase_to_bigquery.py full          # Full sync (replace all)
-python supabase_to_bigquery.py incremental   # Sync only new shots
+python scripts/supabase_to_bigquery.py full          # Full sync (replace all)
+python scripts/supabase_to_bigquery.py incremental   # Sync only new shots
 
 # AI Analysis with Gemini
-python gemini_analysis.py summary            # Show club performance summary
-python gemini_analysis.py analyze Driver     # AI insights for specific club
-python gemini_analysis.py analyze            # Analyze all clubs
+python scripts/gemini_analysis.py summary            # Show club performance summary
+python scripts/gemini_analysis.py analyze Driver     # AI insights for specific club
+python scripts/gemini_analysis.py analyze            # Analyze all clubs
+
+# Alternative AI Analysis (Vertex AI)
+python scripts/vertex_ai_analysis.py analyze Driver  # Vertex AI-based analysis
 
 # Automation
-python post_session.py                       # Interactive post-session analysis
-python auto_sync.py                          # Background sync (for cron)
-python auto_sync.py --analyze                # Background sync + AI analysis
+python scripts/post_session.py                       # Interactive post-session analysis
+python scripts/auto_sync.py                          # Background sync (for cron)
+python scripts/auto_sync.py --analyze                # Background sync + AI analysis
 
 # Testing
-python test_connection.py                    # Test all connections
+python legacy/test_connection.py                     # Test all connections
 ```
 
 ## Architecture
@@ -108,15 +111,15 @@ For each session (club):
 app.py loads data → Displays in interactive table with detailed shot metrics
 ```
 
-**Cloud Pipeline Flow (NEW):**
+**Cloud Pipeline Flow:**
 ```
-Uneekor API → (via app.py or direct) → Supabase (PostgreSQL) →
-supabase_to_bigquery.py (sync) → BigQuery (data warehouse) →
-gemini_analysis.py → Gemini API (google-genai SDK) → AI Insights
+Uneekor API → app.py (Streamlit) → Supabase (PostgreSQL + Cloud Storage for images) →
+scripts/supabase_to_bigquery.py → BigQuery (data warehouse) →
+scripts/gemini_analysis.py → Gemini API (google-genai SDK) → AI Insights
 
 Optional Automation:
-├─ auto_sync.py (scheduled via cron) → checks for new data → syncs automatically
-└─ post_session.py (manual) → interactive analysis after practice sessions
+├─ scripts/auto_sync.py (scheduled via cron) → checks for new data → syncs automatically
+└─ scripts/post_session.py (manual) → interactive analysis after practice sessions
 ```
 
 ### Key Technical Details
@@ -139,14 +142,16 @@ Optional Automation:
 
 ## Important Notes
 
-- **API-Based Architecture**: Application now uses Uneekor's API instead of web scraping for faster, more reliable data collection
-- **SQL Injection Risk**: Still exists in `get_session_data()` - session IDs should be validated before use in queries
-- **Database Migration**: When updating from old schema, delete `golf_stats.db` to recreate with new expanded schema
-- **Invalid Data**: API returns `99999` for missing measurements - these are automatically converted to 0
+- **Database Architecture**: Application uses Supabase as the primary cloud database (golf_db.py has been migrated from SQLite to Supabase)
+- **API-Based Architecture**: Uses Uneekor's REST API instead of web scraping for faster, more reliable data collection
+- **Unit Conversions**: API returns metric units (m/s, meters) which are automatically converted to imperial (mph, yards) in golf_scraper.py:
+  - Speed: m/s × 2.23694 = mph
+  - Distance: meters × 1.09361 = yards
+- **Invalid Data Handling**: API returns `99999` for missing measurements - these are cleaned to 0 in both golf_scraper.py and golf_db.py
 - **Smash Factor**: Calculated locally (not provided by API) as ball_speed / club_speed
 - **High Altitude Context**: App configured for Denver altitude golf analysis (affects carry distance expectations)
-- **Image Download**: API endpoint available in `download_shot_images()` but not yet integrated into main import flow
-- **Legacy Scraper**: Old Selenium-based scraper saved as `golf_scraper_selenium_backup.py` in case API access is lost
+- **Image Storage**: Shot images are uploaded to Supabase Storage bucket "shot-images" and referenced by public URL
+- **Legacy Code**: Old Selenium-based scraper and debug scripts moved to `legacy/` directory
 
 ## Dependencies
 
@@ -190,13 +195,17 @@ The switch from Selenium-based scraping to API-based fetching provides:
 ### Analysis Engine: Gemini API vs Vertex AI
 
 **Current Implementation:**
-- **Primary**: Gemini API via `google-genai` SDK (gemini-2.0-flash-exp model)
+- **Primary**: Gemini API via `google-genai` SDK
+  - Model: `gemini-3-pro-preview` (used in gemini_analysis.py with code execution)
+  - Note: Documentation references `gemini-2.0-flash-exp` but actual implementation uses gemini-3-pro-preview
+- **Alternative**: Vertex AI SDK (in vertex_ai_analysis.py)
 - **Infrastructure**: Vertex AI enabled for future ML features
-- **Why Direct API**: Faster iteration, simpler authentication, model access issues with Vertex AI Generative Models in this project
+- **Why Direct API**: Faster iteration, simpler authentication, direct access to latest models
 
 **Analysis Sources:**
-1. **Python Orchestration Scripts**:
-   - `gemini_analysis.py`: Main analysis tool, queries BigQuery and calls Gemini API
+1. **Python Orchestration Scripts** (in `scripts/`):
+   - `gemini_analysis.py`: Main analysis tool, queries BigQuery and calls Gemini API (model: gemini-3-pro-preview with code execution)
+   - `vertex_ai_analysis.py`: Alternative Vertex AI-based analysis (uses Vertex AI SDK)
    - `auto_sync.py`: Automated sync with optional analysis
    - `post_session.py`: Interactive post-session workflow
 
@@ -224,35 +233,42 @@ The switch from Selenium-based scraping to API-based fetching provides:
 
 ```
 GolfDataApp/
-├── Local Application
-│   ├── app.py                      # Streamlit UI
-│   ├── golf_scraper.py             # Uneekor API client
-│   ├── golf_db.py                  # SQLite operations
-│   └── golf_stats.db               # Local database
+├── Core Application
+│   ├── app.py                              # Streamlit UI (main entry point)
+│   ├── golf_scraper.py                     # Uneekor API client (data fetching + image upload)
+│   ├── golf_db.py                          # Supabase database operations
+│   └── bigquery_schema.json                # BigQuery table schema definition
 │
-├── Cloud Pipeline
-│   ├── supabase_to_bigquery.py     # Sync Supabase → BigQuery
-│   ├── gemini_analysis.py          # AI analysis via Gemini API ⭐
-│   ├── vertex_ai_analysis.py       # Vertex AI integration (alternative, not primary)
-│   ├── bigquery_schema.json        # BigQuery table schema
-│   └── test_connection.py          # Connection testing
+├── scripts/                                # Cloud Pipeline & Automation
+│   ├── supabase_to_bigquery.py             # Sync Supabase → BigQuery
+│   ├── gemini_analysis.py                  # AI analysis via Gemini API ⭐
+│   ├── vertex_ai_analysis.py               # Alternative Vertex AI-based analysis
+│   ├── auto_sync.py                        # Scheduled sync script
+│   ├── post_session.py                     # Interactive post-session analysis
+│   └── migrate_to_supabase.py              # Migration utility (SQLite → Supabase)
 │
-├── Automation
-│   ├── auto_sync.py                # Scheduled sync script
-│   ├── post_session.py             # Interactive post-session analysis
-│   └── setup_cron.sh               # Automation setup wizard
+├── legacy/                                 # Debug tools & backup implementations
+│   ├── test_connection.py                  # Connection testing utility
+│   ├── golf_scraper_selenium_backup.py     # Old Selenium-based scraper
+│   ├── debug_scraper*.py                   # Debug scripts for API testing
+│   ├── inspect_api_response.py             # API response inspector
+│   └── check_clubs.py                      # Database inspection utility
 │
 ├── Configuration
-│   ├── .env                        # Credentials (not committed)
-│   ├── requirements.txt            # Local app dependencies
-│   └── requirements_cloud.txt      # Cloud pipeline dependencies
+│   ├── .env                                # Credentials (not committed)
+│   ├── .env.example                        # Environment variable template
+│   ├── requirements.txt                    # Local app dependencies
+│   ├── requirements_cloud.txt              # Cloud pipeline dependencies
+│   └── setup_cron.sh                       # Automation setup wizard
 │
 └── Documentation
-    ├── CLAUDE.md                   # This file
-    ├── PIPELINE_COMPLETE.md        # Complete pipeline reference
-    ├── QUICKSTART.md               # Quick command reference
-    ├── AUTOMATION_GUIDE.md         # Automation setup guide
-    └── SETUP_GUIDE.md              # Detailed setup instructions
+    ├── README.md                           # Project overview & quick start
+    ├── CLAUDE.md                           # This file (Claude Code guidance)
+    ├── PIPELINE_COMPLETE.md                # Complete pipeline reference
+    ├── QUICKSTART.md                       # Quick command reference
+    ├── AUTOMATION_GUIDE.md                 # Automation setup guide
+    ├── SETUP_GUIDE.md                      # Detailed setup instructions
+    └── changelog.md                        # Project change history
 ```
 
 ### Environment Variables (.env)
@@ -344,13 +360,13 @@ For a Driver analysis with 5 shots:
 
 ## Automation Options
 
-### Option 1: Manual (post_session.py)
+### Option 1: Manual (scripts/post_session.py)
 - Run after each practice session
 - Interactive prompts guide analysis
 - Full control over when AI runs
 - Best for: Learning the system
 
-### Option 2: Hourly Sync (auto_sync.py via cron)
+### Option 2: Hourly Sync (scripts/auto_sync.py via cron)
 - Data always fresh in BigQuery
 - No analysis overhead
 - Run manual analysis when needed
@@ -373,20 +389,20 @@ For a Driver analysis with 5 shots:
 
 ### After Practice Session
 ```bash
-python post_session.py
+python scripts/post_session.py
 # Shows today's summary, offers AI analysis, displays all-time stats
 ```
 
 ### Quick Club Check
 ```bash
-python gemini_analysis.py summary
-python gemini_analysis.py analyze Driver
+python scripts/gemini_analysis.py summary
+python scripts/gemini_analysis.py analyze Driver
 ```
 
 ### Troubleshooting
 ```bash
-python test_connection.py  # Test all connections
-tail -f logs/sync.log      # View automation logs
+python legacy/test_connection.py  # Test all connections
+tail -f logs/sync.log             # View automation logs
 ```
 
 ### BigQuery Exploration
@@ -398,3 +414,52 @@ WHERE carry > 0
 GROUP BY club
 ORDER BY AVG(carry) DESC
 ```
+
+---
+
+## Code Architecture Insights
+
+### Data Flow Through Modules
+
+**Import Flow (app.py → golf_scraper.py → golf_db.py → Supabase):**
+1. User pastes Uneekor URL in Streamlit sidebar
+2. `golf_scraper.extract_url_params()` parses report_id and key from URL
+3. `golf_scraper.run_scraper()` fetches JSON from Uneekor API
+4. For each shot in each session:
+   - Convert metric units to imperial (m/s → mph, meters → yards)
+   - Calculate smash factor (ball_speed / club_speed)
+   - `golf_scraper.upload_shot_images()` downloads images and uploads to Supabase Storage
+   - `golf_db.save_shot()` upserts data to Supabase PostgreSQL table
+5. `app.py` queries Supabase via `golf_db.get_session_data()` and displays in UI
+
+**Sync Flow (Supabase → BigQuery):**
+1. `scripts/supabase_to_bigquery.py` fetches all shots from Supabase (paginated)
+2. Transforms data to match BigQuery schema
+3. Uses `WRITE_TRUNCATE` (full) or `WRITE_APPEND` (incremental) load jobs
+4. BigQuery table ready for SQL queries and AI analysis
+
+**Analysis Flow (BigQuery → Gemini API):**
+1. `scripts/gemini_analysis.py` queries BigQuery for shot data
+2. Converts result to CSV format for efficient token usage
+3. Sends to Gemini API with code execution tool enabled
+4. Gemini writes and executes Python code to analyze data
+5. Returns statistical insights and recommendations
+
+### Key Design Patterns
+
+- **Idempotent Imports**: `golf_db.save_shot()` uses upsert to prevent duplicates
+- **Unit Conversion Layer**: All metric→imperial conversions happen in `golf_scraper.py` (single source of truth)
+- **Invalid Data Cleaning**: Both `golf_scraper.py` and `golf_db.py` clean invalid values (99999 → 0)
+- **Separation of Concerns**:
+  - `app.py` = UI only
+  - `golf_scraper.py` = External API integration
+  - `golf_db.py` = Database abstraction
+  - `scripts/` = Batch processing and analysis
+
+### Critical Code Locations
+
+- **Unit conversion constants**: `golf_scraper.py:87-88`
+- **Image upload to Supabase**: `golf_scraper.py:148-207`
+- **Shot data upsert logic**: `golf_db.py:22-66`
+- **BigQuery schema definition**: `bigquery_schema.json`
+- **Gemini AI prompt template**: `scripts/gemini_analysis.py:67-87`

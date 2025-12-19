@@ -9,6 +9,7 @@ This application automates the flow of golf performance data:
 2.  **Storage**: Save data to a local SQLite database for offline access and sync to **Supabase** (PostgreSQL + Cloud Storage).
 3.  **Pipeline**: Automate data export from Supabase to **Google BigQuery** for long-term warehousing.
 4.  **Analysis**: Use **Vertex AI (Gemini)** to generate deep insights and performance recommendations.
+5.  **Control Plane**: Integrate with **MCP Database Toolbox** for conversational data analysis and autonomous discovery.
 
 ## 🛠️ Quick Start
 
@@ -33,6 +34,13 @@ python scripts/supabase_to_bigquery.py incremental
 Get AI-powered analysis of your swing metrics:
 ```bash
 python scripts/vertex_ai_analysis.py analyze "7 Iron"
+```
+
+### 4. Conversational Data Analysis
+Connect your databases to an AI agent via MCP for natural language queries:
+```bash
+# Start the MCP Control Plane
+toolbox --tools-file ~/.mcp/database-toolbox/tools.yaml --stdio
 ```
 
 ## 📂 Documentation

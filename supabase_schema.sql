@@ -28,7 +28,12 @@ CREATE TABLE shots (
     flight_time REAL,
     shot_type TEXT,
     impact_img TEXT,
-    swing_img TEXT
+    swing_img TEXT,
+    -- Advanced Optix Metrics (added for Club/Impact visualization)
+    optix_x REAL,
+    optix_y REAL,
+    club_lie REAL,
+    lie_angle TEXT
 );
 
 -- Create index on session_id for faster queries

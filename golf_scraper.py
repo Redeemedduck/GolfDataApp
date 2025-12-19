@@ -131,7 +131,12 @@ def run_scraper(url, progress_callback):
                     'flight_time': shot.get('flight_time'),
                     'type': shot.get('type'),
                     'impact_img': images.get('impact_img'),
-                    'swing_img': images.get('swing_img')
+                    'swing_img': images.get('swing_img'),
+                    # Advanced Optix Metrics
+                    'optix_x': shot.get('optix_x'),
+                    'optix_y': shot.get('optix_y'),
+                    'club_lie': shot.get('club_lie'),
+                    'lie_angle': shot.get('lie_angle')
                 }
                 
                 # Save to database

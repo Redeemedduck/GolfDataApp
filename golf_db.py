@@ -1,37 +1,97 @@
 import os
+import sqlite3
 import pandas as pd
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 load_dotenv()
 
+# --- Configuration ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), "golf_stats.db")
 
-# Initialize client
-# Note: In a real production app, you might want to cache this client
+# Initialize Supabase client
 if SUPABASE_URL and SUPABASE_KEY:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 else:
     supabase = None
-    print("Warning: Supabase credentials not found.")
+    print("Warning: Supabase credentials not found. Cloud sync disabled.")
 
+# --- Helper Functions ---
+def clean_value(val, default=0.0):
+    """Handle sentinel values (99999) and None."""
+    if val is None or val == 99999:
+        return default
+    return val
+
+# --- SQLite Local Database ---
 def init_db():
-    pass
+    """Initialize the local SQLite database and handle migrations."""
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    cursor = conn.cursor()
+    
+    # Create table if not exists
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS shots (
+            shot_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            club TEXT,
+            carry REAL,
+            total REAL,
+            smash REAL,
+            club_path REAL,
+            face_angle REAL,
+            ball_speed REAL,
+            club_speed REAL,
+            side_spin INTEGER,
+            back_spin INTEGER,
+            launch_angle REAL,
+            side_angle REAL,
+            dynamic_loft REAL,
+            attack_angle REAL,
+            impact_x REAL,
+            impact_y REAL,
+            side_distance REAL,
+            descent_angle REAL,
+            apex REAL,
+            flight_time REAL,
+            shot_type TEXT,
+            impact_img TEXT,
+            swing_img TEXT,
+            optix_x REAL,
+            optix_y REAL,
+            club_lie REAL,
+            lie_angle TEXT
+        )
+    ''')
 
+    # Migration: Add missing columns if table already existed
+    cursor.execute("PRAGMA table_info(shots)")
+    existing_columns = [row[1] for row in cursor.fetchall()]
+    
+    required_columns = {
+        'optix_x': 'REAL',
+        'optix_y': 'REAL',
+        'club_lie': 'REAL',
+        'lie_angle': 'TEXT'
+    }
+    
+    for col, col_type in required_columns.items():
+        if col not in existing_columns:
+            print(f"Migrating: Adding column {col} to SQLite")
+            cursor.execute(f"ALTER TABLE shots ADD COLUMN {col} {col_type}")
+
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_shots_session_id ON shots(session_id)')
+    conn.commit()
+    conn.close()
+
+# --- Hybrid Save (Local + Cloud) ---
 def save_shot(data):
-    """Save shot data to Supabase."""
-    if not supabase:
-        print("DB Error: No Supabase client")
-        return
-
-    # Helper function to handle invalid values
-    def clean_value(val, default=0.0):
-        if val is None or val == 99999:
-            return default
-        return val
-
-    # Prepare payload
+    """Save shot data to local SQLite and Supabase (hybrid)."""
+    
+    # Prepare unified payload
     payload = {
         'shot_id': data.get('id', data.get('shot_id')),
         'session_id': data.get('session', data.get('session_id')),
@@ -57,56 +117,117 @@ def save_shot(data):
         'flight_time': clean_value(data.get('flight_time')),
         'shot_type': data.get('shot_type', data.get('type')),
         'impact_img': data.get('impact_img'),
-        'swing_img': data.get('swing_img')
+        'swing_img': data.get('swing_img'),
+        # New advanced metrics
+        'optix_x': clean_value(data.get('optix_x')),
+        'optix_y': clean_value(data.get('optix_y')),
+        'club_lie': clean_value(data.get('club_lie')),
+        'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None
     }
 
+    # 1. Save to Local SQLite
     try:
-        supabase.table('shots').upsert(payload).execute()
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        columns = ', '.join(payload.keys())
+        placeholders = ', '.join(['?'] * len(payload))
+        sql = f"INSERT OR REPLACE INTO shots ({columns}) VALUES ({placeholders})"
+        cursor.execute(sql, list(payload.values()))
+        conn.commit()
+        conn.close()
     except Exception as e:
-        print(f"Supabase Error: {e}")
+        print(f"SQLite Error: {e}")
 
+    # 2. Save to Supabase (if available)
+    if supabase:
+        try:
+            supabase.table('shots').upsert(payload).execute()
+        except Exception as e:
+            print(f"Supabase Error: {e}")
+
+# --- Data Retrieval (Local-First) ---
 def get_session_data(session_id=None):
-    if not supabase:
-        return pd.DataFrame()
-
+    """Get session data from local SQLite database."""
     try:
-        query = supabase.table('shots').select("*")
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        query = "SELECT * FROM shots"
         if session_id:
-            query = query.eq('session_id', session_id)
-        
-        # Limit to 1000 for now to be safe, though pagination should be handled for large datasets
-        response = query.limit(2000).execute()
-        data = response.data
-        
-        if not data:
-            return pd.DataFrame()
-            
-        return pd.DataFrame(data)
+            query += f" WHERE session_id = ?"
+            df = pd.read_sql_query(query, conn, params=[session_id])
+        else:
+            df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
     except Exception as e:
-        print(f"Supabase Read Error: {e}")
+        print(f"SQLite Read Error: {e}")
         return pd.DataFrame()
 
 def get_unique_sessions():
-    if not supabase:
+    """Get unique sessions from local SQLite database."""
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        query = "SELECT DISTINCT session_id, MAX(date_added) as date_added FROM shots GROUP BY session_id ORDER BY date_added DESC"
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df.to_dict('records')
+    except Exception as e:
+        print(f"SQLite Session Error: {e}")
         return []
 
+# --- Data Management ---
+def delete_shot(shot_id):
+    """Delete a specific shot from local SQLite and Supabase."""
+    # Local
     try:
-        # Fetch session_ids and dates. 
-        # Supabase API doesn't support SELECT DISTINCT directly easily on large sets without RPC.
-        # We will fetch only needed columns and dedupe in pandas.
-        response = supabase.table('shots').select("session_id, date_added").order("date_added", desc=True).limit(2000).execute()
-        data = response.data
-        
-        if not data:
-            return []
-            
-        df = pd.DataFrame(data)
-        # Convert date to datetime if needed, or just dedupe strings
-        unique_df = df.drop_duplicates(subset=['session_id']).sort_values('date_added', ascending=False)
-        
-        # Return list of dicts
-        return unique_df.to_dict('records')
-        
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM shots WHERE shot_id = ?", (shot_id,))
+        conn.commit()
+        conn.close()
     except Exception as e:
-        print(f"Supabase Session Error: {e}")
-        return []
+        print(f"SQLite Delete Error: {e}")
+    
+    # Cloud
+    if supabase:
+        try:
+            supabase.table('shots').delete().eq('shot_id', shot_id).execute()
+        except Exception as e:
+            print(f"Supabase Delete Error: {e}")
+
+def rename_club(session_id, old_name, new_name):
+    """Rename all instances of a club within a session."""
+    # Local
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE shots SET club = ? WHERE session_id = ? AND club = ?", (new_name, session_id, old_name))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"SQLite Rename Error: {e}")
+    
+    # Cloud
+    if supabase:
+        try:
+            supabase.table('shots').update({'club': new_name}).eq('session_id', session_id).eq('club', old_name).execute()
+        except Exception as e:
+            print(f"Supabase Rename Error: {e}")
+
+def delete_club_session(session_id, club_name):
+    """Delete all shots for a specific club within a session."""
+    # Local
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM shots WHERE session_id = ? AND club = ?", (session_id, club_name))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"SQLite Club Delete Error: {e}")
+    
+    # Cloud
+    if supabase:
+        try:
+            supabase.table('shots').delete().eq('session_id', session_id).eq('club', club_name).execute()
+        except Exception as e:
+            print(f"Supabase Club Delete Error: {e}")
