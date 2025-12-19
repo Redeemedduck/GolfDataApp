@@ -2,10 +2,31 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import os
 import golf_scraper
 import golf_db
 
+# Import anthropic at module level for efficiency
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = bool(os.getenv("ANTHROPIC_API_KEY"))
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
 st.set_page_config(layout="wide", page_title="My Golf Lab")
+
+@st.cache_resource
+def get_anthropic_client():
+    """
+    Get cached Anthropic client instance
+
+    Uses Streamlit's cache_resource to avoid recreating the client
+    on every interaction, improving performance.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    return anthropic.Anthropic(api_key=api_key)
 
 # Initialize DB
 golf_db.init_db()
@@ -68,7 +89,15 @@ with st.sidebar:
 st.title("⛳ My Golf Data Lab")
 
 # --- TABS ---
-tab1, tab2, tab3 = st.tabs(["📈 Dashboard", "🔍 Shot Viewer", "🛠️ Manage Data"])
+tab_names = ["📈 Dashboard", "🔍 Shot Viewer", "🛠️ Manage Data"]
+if ANTHROPIC_AVAILABLE:
+    tab_names.append("🤖 AI Coach")
+
+tabs = st.tabs(tab_names)
+tab1 = tabs[0]
+tab2 = tabs[1]
+tab3 = tabs[2]
+tab4 = tabs[3] if len(tabs) > 3 else None
 
 # TAB 1: DASHBOARD
 with tab1:
@@ -212,7 +241,7 @@ with tab3:
             st.rerun()
     
     st.divider()
-    
+
     st.subheader("Delete Individual Shot")
     if 'shot_id' in df.columns:
         shot_to_delete = st.selectbox("Select Shot ID to Delete", df['shot_id'].tolist(), key="delete_shot_select")
@@ -222,3 +251,160 @@ with tab3:
             st.rerun()
     else:
         st.info("No shot IDs available for deletion.")
+
+# TAB 4: AI COACH (if Anthropic API key is available)
+if tab4:
+    with tab4:
+        st.header("🤖 AI Golf Coach")
+
+        # Initialize chat history in session state, tied to current session
+        # Reset chat when user switches to a different session
+        if "messages" not in st.session_state or st.session_state.get("current_session_id") != selected_session_id:
+            st.session_state.messages = []
+            st.session_state.current_session_id = selected_session_id
+
+        # Model selector
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("""
+            Ask your AI coach questions about your swing data. Claude will analyze your shots and provide
+            personalized coaching insights, drill recommendations, and answers to your golf questions.
+            """)
+        with col2:
+            model_choice = st.selectbox(
+                "Model",
+                options=["Sonnet (Balanced)", "Opus (Best)", "Haiku (Fast)"],
+                index=2,  # Default to Haiku since it's available with most API keys
+                help="Sonnet: Best for most uses | Opus: Deep analysis | Haiku: Quick answers"
+            )
+
+        model_map = {
+            "Sonnet (Balanced)": "claude-3-5-sonnet-latest",
+            "Opus (Best)": "claude-3-opus-latest",
+            "Haiku (Fast)": "claude-3-5-haiku-latest"
+        }
+        selected_model = model_map[model_choice]
+
+        # Display chat history
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Chat input
+        if user_input := st.chat_input("Ask about your golf data... (e.g., 'Why am I pulling my driver left?')"):
+            # Add user message to chat
+            st.session_state.messages.append({"role": "user", "content": user_input})
+
+            with st.chat_message("user"):
+                st.markdown(user_input)
+
+            # Prepare context from current session data
+            session_summary = f"""
+**Session Data Context:**
+- Club: {df['club'].iloc[0] if len(df) > 0 else 'Unknown'}
+- Total Shots: {len(df)}
+- Avg Carry: {df['carry'].mean():.1f} yards
+- Avg Ball Speed: {df['ball_speed'].mean():.1f} mph
+- Avg Club Speed: {df['club_speed'].mean():.1f} mph
+- Avg Smash: {df['smash'].mean():.2f}
+- Avg Launch: {df['launch_angle'].mean():.1f}°
+- Avg Back Spin: {df['back_spin'].mean():.0f} rpm
+- Avg Side Spin: {df['side_spin'].mean():.0f} rpm
+
+**Shot Dispersion:**
+- Side Distance Std Dev: {df['side_distance'].std():.1f} yards
+- Carry Std Dev: {df['carry'].std():.1f} yards
+"""
+
+            # Call Claude API
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    try:
+                        # Get cached client instance
+                        client = get_anthropic_client()
+
+                        if not client:
+                            st.error("Anthropic client not available. Check your API key.")
+                            st.stop()
+
+                        # Build system prompt with session data context
+                        # This ensures the AI always has the current session's data
+                        system_prompt = f"""You are an expert golf coach with 20+ years of experience analyzing launch monitor data.
+
+The golfer is practicing at Denver altitude (5,280 ft), which affects ball flight:
+- 10-15% more carry distance than sea level
+- Lower spin rates due to air density
+- Less ball roll due to altitude
+
+**Current Session Data:**
+{session_summary}
+
+**Your coaching style:**
+- Encouraging but honest
+- Specific and data-driven
+- Focused on actionable drills
+- Ask clarifying questions when needed
+- Compare to PGA Tour averages (altitude-adjusted)
+
+**Key metrics to understand:**
+- Smash Factor: ball speed / club speed (optimal: 1.48-1.50 for driver, 1.38-1.40 for irons)
+- Launch: optimal varies by club (driver: 9-14°, 7-iron: 14-18°)
+- Spin: back spin for height/control, side spin for shot shape
+- Club Path: in-to-out (positive) vs out-to-in (negative)
+- Face Angle: open (positive) vs closed (negative)
+- Attack Angle: ascending (positive) for driver, descending (negative) for irons
+
+Provide coaching in a conversational, supportive tone. Reference the session data when relevant."""
+
+                        # Use conversation history directly
+                        # The session context is now in the system prompt, so we don't need to include it in messages
+                        messages = st.session_state.messages
+
+                        # Call Claude
+                        response = client.messages.create(
+                            model=selected_model,
+                            max_tokens=2048,
+                            system=system_prompt,
+                            messages=messages
+                        )
+
+                        assistant_message = response.content[0].text
+
+                        # Display response
+                        st.markdown(assistant_message)
+
+                        # Add to chat history
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": assistant_message
+                        })
+
+                    except anthropic.APIError as e:
+                        st.error(f"Claude API Error: {e}")
+                        st.info("Check your ANTHROPIC_API_KEY and account status")
+                    except Exception as e:
+                        st.error(f"Error communicating with Claude: {e}")
+                        st.info("Make sure ANTHROPIC_API_KEY is set in your .env file")
+
+        # Sidebar with quick actions
+        with st.sidebar:
+            st.divider()
+            st.subheader("🤖 AI Coach Controls")
+
+            if st.button("Clear Chat History"):
+                st.session_state.messages = []
+                st.rerun()
+
+            if st.button("Quick Analysis"):
+                quick_prompt = f"Analyze this session data and give me the top 3 things I should focus on:\n\n{session_summary}"
+                st.session_state.messages.append({"role": "user", "content": quick_prompt})
+                st.rerun()
+
+            st.info("""
+            **Example Questions:**
+            - Why am I pulling my driver left?
+            - How can I improve my consistency?
+            - What's causing my slice?
+            - Compare my stats to tour average
+            - What drill should I work on?
+            """)
