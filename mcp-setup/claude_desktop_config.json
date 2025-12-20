@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "golf-data-sqlite": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sqlite",
+        "/home/user/GolfDataApp/data/golf_stats.db"
+      ]
+    },
+    "supabase-golf-data": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://postgres.[YOUR_REF]:[YOUR_PASSWORD]@[HOST]:6543/postgres"
+      ]
+    }
+  }
+}

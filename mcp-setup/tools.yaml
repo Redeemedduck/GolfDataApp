@@ -1,0 +1,13 @@
+# MCP Database Toolbox Configuration
+# This connects Claude Desktop to your golf databases
+
+sources:
+  # Local SQLite database (primary data source)
+  local-sqlite:
+    kind: sqlite
+    database: /home/user/GolfDataApp/data/golf_stats.db
+
+  # BigQuery data warehouse (optional - requires GCP auth)
+  google-bigquery:
+    kind: bigquery
+    project: valued-odyssey-474423-g1
