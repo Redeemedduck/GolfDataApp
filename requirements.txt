@@ -1,12 +1,14 @@
+# Core Application Dependencies
 streamlit
-selenium
-webdriver-manager
 pandas
-requests
-psycopg2-binary
-supabase
-python-dotenv
-google-generativeai
-anthropic
 plotly
-plotly-express
+requests
+python-dotenv
+
+# AI Integration
+anthropic                # Claude AI for conversational coaching
+google-genai            # Gemini AI for code execution and data analysis
+
+# Legacy (optional - only needed for backup Selenium scraper)
+# selenium
+# webdriver-manager
