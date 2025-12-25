@@ -66,6 +66,28 @@ ON shots FOR UPDATE
 TO authenticated
 USING (true);
 
+-- Create policies for anonymous (anon) role
+-- These are needed because the app uses the anon key, not authenticated sessions
+CREATE POLICY "Allow anon to read shots"
+ON shots FOR SELECT
+TO anon
+USING (true);
+
+CREATE POLICY "Allow anon to insert shots"
+ON shots FOR INSERT
+TO anon
+WITH CHECK (true);
+
+CREATE POLICY "Allow anon to update shots"
+ON shots FOR UPDATE
+TO anon
+USING (true);
+
+CREATE POLICY "Allow anon to delete shots"
+ON shots FOR DELETE
+TO anon
+USING (true);
+
 -- Optional: Create a view for session summaries
 CREATE OR REPLACE VIEW session_summary AS
 SELECT

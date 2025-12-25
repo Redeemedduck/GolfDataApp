@@ -44,7 +44,39 @@ def get_gemini_client():
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return None
-    return genai.Client(api_key=api_key)
+    try:
+        return genai.Client(api_key=api_key)
+    except Exception as e:
+        st.error(f"Failed to initialize Gemini client: {e}")
+        return None
+
+def generate_session_summary(df):
+    """Generate detailed session summary for AI context"""
+    if df.empty:
+        return "No data available."
+
+    summary = f"""**Session Data Context:**
+- Total Shots: {len(df)}
+- Clubs: {', '.join(df['club'].unique())}
+- Date Range: {df['date_added'].min() if 'date_added' in df.columns else 'Unknown'} to {df['date_added'].max() if 'date_added' in df.columns else 'Unknown'}
+
+**Performance Metrics:**
+"""
+
+    # Group by club for detailed stats
+    for club in df['club'].unique():
+        club_data = df[df['club'] == club]
+        summary += f"\n{club} ({len(club_data)} shots):\n"
+        summary += f"  • Carry: {club_data['carry'].mean():.1f} ± {club_data['carry'].std():.1f} yds\n"
+        summary += f"  • Ball Speed: {club_data['ball_speed'].mean():.1f} ± {club_data['ball_speed'].std():.1f} mph\n"
+        summary += f"  • Club Speed: {club_data['club_speed'].mean():.1f} ± {club_data['club_speed'].std():.1f} mph\n"
+        summary += f"  • Smash Factor: {club_data['smash'].mean():.2f} ± {club_data['smash'].std():.2f}\n"
+        summary += f"  • Launch Angle: {club_data['launch_angle'].mean():.1f}° ± {club_data['launch_angle'].std():.1f}°\n"
+        summary += f"  • Back Spin: {club_data['back_spin'].mean():.0f} ± {club_data['back_spin'].std():.0f} rpm\n"
+        summary += f"  • Side Spin: {club_data['side_spin'].mean():.0f} ± {club_data['side_spin'].std():.0f} rpm\n"
+        summary += f"  • Side Distance StdDev: {club_data['side_distance'].std():.1f} yds (consistency)\n"
+
+    return summary
 
 # Initialize DB
 golf_db.init_db()
@@ -297,6 +329,10 @@ if tab4:
             - Provide personalized drills and recommendations
             - Answer technical questions about your ball flight
             - Compare your stats to tour averages
+
+            **Available AI Models:**
+            - **Claude** (Anthropic): Conversational coaching style
+            - **Gemini** (Google): Data analysis with code execution
             """)
         else:
             # Initialize chat history in session state, tied to current session
@@ -305,27 +341,44 @@ if tab4:
                 st.session_state.messages = []
                 st.session_state.current_session_id = selected_session_id
 
-            # Model selector
+            # AI Model Selector
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.markdown("""
-                Ask your AI coach questions about your swing data. Claude will analyze your shots and provide
+                Ask your AI coach questions about your swing data. The AI will analyze your shots and provide
                 personalized coaching insights, drill recommendations, and answers to your golf questions.
                 """)
+
             with col2:
+                # Determine available models
+                available_models = []
+                if ANTHROPIC_AVAILABLE:
+                    available_models.extend(["Claude Sonnet", "Claude Opus", "Claude Haiku"])
+                if GEMINI_AVAILABLE:
+                    available_models.extend(["Gemini Pro (Code)", "Gemini Flash"])
+
+                if not available_models:
+                    st.error("No AI models available. Set ANTHROPIC_API_KEY or GEMINI_API_KEY in .env")
+                    st.stop()
+
                 model_choice = st.selectbox(
-                    "Model",
-                    options=["Sonnet (Balanced)", "Opus (Best)", "Haiku (Fast)"],
-                    index=2,  # Default to Haiku since it's available with most API keys
-                    help="Sonnet: Best for most uses | Opus: Deep analysis | Haiku: Quick answers"
+                    "AI Model",
+                    options=available_models,
+                    index=0,
+                    help="Claude: Conversational | Gemini: Code execution for data analysis"
                 )
 
-            model_map = {
-                "Sonnet (Balanced)": "claude-3-5-sonnet-latest",
-                "Opus (Best)": "claude-3-opus-latest",
-                "Haiku (Fast)": "claude-3-5-haiku-latest"
+            # Model mapping
+            model_configs = {
+                "Claude Sonnet": ("anthropic", "claude-3-5-sonnet-latest"),
+                "Claude Opus": ("anthropic", "claude-3-opus-latest"),
+                "Claude Haiku": ("anthropic", "claude-3-5-haiku-latest"),
+                "Gemini Pro (Code)": ("gemini", "gemini-2.0-flash-exp"),
+                "Gemini Flash": ("gemini", "gemini-2.0-flash-exp")
             }
-            selected_model = model_map[model_choice]
+
+            ai_provider, model_id = model_configs[model_choice]
+            use_code_execution = "Code" in model_choice
 
             # Display chat history
             for message in st.session_state.messages:
@@ -334,44 +387,28 @@ if tab4:
 
             # Chat input
             if user_input := st.chat_input("Ask about your golf data... (e.g., 'Why am I pulling my driver left?')"):
-                # Add user message to chat
+                # Add user message
                 st.session_state.messages.append({"role": "user", "content": user_input})
 
                 with st.chat_message("user"):
                     st.markdown(user_input)
 
-                # Prepare context from current session data
-                session_summary = f"""
-**Session Data Context:**
-- Club: {df['club'].iloc[0] if len(df) > 0 else 'Unknown'}
-- Total Shots: {len(df)}
-- Avg Carry: {df['carry'].mean():.1f} yards
-- Avg Ball Speed: {df['ball_speed'].mean():.1f} mph
-- Avg Club Speed: {df['club_speed'].mean():.1f} mph
-- Avg Smash: {df['smash'].mean():.2f}
-- Avg Launch: {df['launch_angle'].mean():.1f}°
-- Avg Back Spin: {df['back_spin'].mean():.0f} rpm
-- Avg Side Spin: {df['side_spin'].mean():.0f} rpm
+                # Generate session summary
+                session_summary = generate_session_summary(df)
 
-**Shot Dispersion:**
-- Side Distance Std Dev: {df['side_distance'].std():.1f} yards
-- Carry Std Dev: {df['carry'].std():.1f} yards
-"""
+                # Call AI API
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking..."):
+                        try:
+                            if ai_provider == "anthropic":
+                                # Claude API
+                                client = get_anthropic_client()
+                                if not client:
+                                    st.error("Anthropic client not available. Check your API key.")
+                                    st.stop()
 
-            # Call Claude API
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    try:
-                        # Get cached client instance
-                        client = get_anthropic_client()
-
-                        if not client:
-                            st.error("Anthropic client not available. Check your API key.")
-                            st.stop()
-
-                        # Build system prompt with session data context
-                        # This ensures the AI always has the current session's data
-                        system_prompt = f"""You are an expert golf coach with 20+ years of experience analyzing launch monitor data.
+                                # Build system prompt with session data context
+                                system_prompt = f"""You are an expert golf coach with 20+ years of experience analyzing launch monitor data.
 
 The golfer is practicing at Denver altitude (5,280 ft), which affects ball flight:
 - 10-15% more carry distance than sea level
@@ -398,35 +435,86 @@ The golfer is practicing at Denver altitude (5,280 ft), which affects ball fligh
 
 Provide coaching in a conversational, supportive tone. Reference the session data when relevant."""
 
-                        # Use conversation history directly
-                        # The session context is now in the system prompt, so we don't need to include it in messages
-                        messages = st.session_state.messages
+                                # Call Claude
+                                response = client.messages.create(
+                                    model=model_id,
+                                    max_tokens=2048,
+                                    system=system_prompt,
+                                    messages=st.session_state.messages
+                                )
 
-                        # Call Claude
-                        response = client.messages.create(
-                            model=selected_model,
-                            max_tokens=2048,
-                            system=system_prompt,
-                            messages=messages
-                        )
+                                assistant_message = response.content[0].text
 
-                        assistant_message = response.content[0].text
+                            elif ai_provider == "gemini":
+                                # Gemini API
+                                client = get_gemini_client()
+                                if not client:
+                                    st.error("Gemini client not initialized. Check your API key.")
+                                    st.stop()
 
-                        # Display response
-                        st.markdown(assistant_message)
+                                # Prepare data as CSV for code execution
+                                csv_data = df.to_csv(index=False)
 
-                        # Add to chat history
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": assistant_message
-                        })
+                                prompt = f"""You are an expert Golf Data Analyst and coach.
 
-                    except anthropic.APIError as e:
-                        st.error(f"Claude API Error: {e}")
-                        st.info("Check your ANTHROPIC_API_KEY and account status")
-                    except Exception as e:
-                        st.error(f"Error communicating with Claude: {e}")
-                        st.info("Make sure ANTHROPIC_API_KEY is set in your .env file")
+**IMPORTANT: The golfer practices at Denver altitude (5,280 ft elevation):**
+- Expect 10-15% more carry distance than sea level
+- Lower spin rates due to thinner air
+- Adjust your analysis and recommendations for high altitude
+
+**Session Data (CSV format):**
+```csv
+{csv_data}
+```
+
+**User Question:**
+{user_input}
+
+**Instructions:**
+{"Use your Python code execution capabilities to analyze this data deeply. Write and run code to calculate metrics, correlations, and patterns. Use print() to show your calculations." if use_code_execution else "Analyze this data and provide insights based on the metrics. Be specific and data-driven."}
+
+Provide your analysis in a conversational coaching style with:
+1. Direct answer to the question
+2. Supporting data/statistics
+3. Actionable recommendations
+4. Comparison to PGA Tour averages (altitude-adjusted)
+"""
+
+                                config = types.GenerateContentConfig(
+                                    tools=[{'code_execution': {}}] if use_code_execution else None,
+                                    temperature=0.7
+                                )
+
+                                response = client.models.generate_content(
+                                    model=model_id,
+                                    contents=prompt,
+                                    config=config
+                                )
+
+                                assistant_message = response.text
+
+                            else:
+                                st.error(f"Unknown AI provider: {ai_provider}")
+                                st.stop()
+
+                            # Display response
+                            st.markdown(assistant_message)
+
+                            # Add to chat history
+                            st.session_state.messages.append({
+                                "role": "assistant",
+                                "content": assistant_message
+                            })
+
+                        except anthropic.APIError as e:
+                            st.error(f"Claude API Error: {e}")
+                            st.info("Check your ANTHROPIC_API_KEY and account status")
+                        except Exception as e:
+                            st.error(f"AI Error: {str(e)}")
+                            st.info(f"Provider: {ai_provider}, Model: {model_id}")
+                            import traceback
+                            with st.expander("Error Details"):
+                                st.code(traceback.format_exc())
 
             # Sidebar with quick actions
             with st.sidebar:
