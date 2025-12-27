@@ -3,8 +3,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
-import golf_scraper
-import golf_db
+
+# Import new service layer
+from services import DataService, ImportService
 
 # Import anthropic at module level for efficiency
 try:
@@ -28,8 +29,19 @@ def get_anthropic_client():
         return None
     return anthropic.Anthropic(api_key=api_key)
 
-# Initialize DB
-golf_db.init_db()
+@st.cache_resource
+def get_data_service():
+    """Get cached DataService instance"""
+    return DataService()
+
+@st.cache_resource
+def get_import_service():
+    """Get cached ImportService instance"""
+    return ImportService()
+
+# Initialize services
+data_service = get_data_service()
+import_service = get_import_service()
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -38,23 +50,41 @@ with st.sidebar:
 
     if st.button("Run Import", type="primary"):
         if uneekor_url:
-            # Use st.status for better progress display
-            with st.status("Importing data...", expanded=True) as status:
-                progress_messages = []
+            # Validate URL first
+            if not import_service.validate_url(uneekor_url):
+                st.error("Invalid Uneekor URL format. Please check the URL and try again.")
+            else:
+                # Use st.status for better progress display
+                with st.status("Importing data...", expanded=True) as status:
+                    def update_progress(msg, current, total):
+                        """Progress callback for ImportService"""
+                        st.write(f"✓ {msg}")
 
-                def update_progress(msg):
-                    progress_messages.append(msg)
-                    st.write(f"✓ {msg}")
+                    try:
+                        # Run import using new ImportService
+                        result = import_service.import_report(
+                            url=uneekor_url,
+                            progress_callback=update_progress,
+                            frame_strategy="keyframes"  # Download 5 key frames per shot
+                        )
 
-                try:
-                    # Run scraper
-                    result = golf_scraper.run_scraper(uneekor_url, update_progress)
-                    status.update(label="Import complete!", state="complete", expanded=False)
-                    st.success(result)
-                    st.rerun()
-                except Exception as e:
-                    status.update(label="Import failed", state="error", expanded=True)
-                    st.error(f"Error: {str(e)}")
+                        if result['success']:
+                            status.update(label="Import complete!", state="complete", expanded=False)
+                            summary = import_service.get_import_summary(result)
+                            st.success(summary)
+                            st.rerun()
+                        else:
+                            status.update(label="Import completed with errors", state="error", expanded=True)
+                            st.warning(f"Imported {result['shot_count']} shots, but {result['error_count']} had issues.")
+                            if result['errors']:
+                                with st.expander("View Errors"):
+                                    for error in result['errors'][:10]:  # Show first 10 errors
+                                        st.error(error)
+                            st.rerun()
+
+                    except Exception as e:
+                        status.update(label="Import failed", state="error", expanded=True)
+                        st.error(f"Error: {str(e)}")
         else:
             st.error("Please enter a valid URL")
 
@@ -62,8 +92,13 @@ with st.sidebar:
 
     # --- Session Selector (moved to sidebar) ---
     st.header("📊 Session")
-    unique_sessions = golf_db.get_unique_sessions()
-    session_options = [f"{s['session_id']} ({s.get('date_added', 'Unknown')})" for s in unique_sessions] if unique_sessions else []
+    unique_sessions = data_service.get_sessions()
+
+    # Format session options with date
+    session_options = []
+    for s in unique_sessions:
+        date_str = s.get('session_date') or s.get('date_added', 'Unknown')
+        session_options.append(f"{s['session_id']} ({date_str})")
 
     # Initialize variables
     has_data = False
@@ -75,7 +110,10 @@ with st.sidebar:
         has_data = True
         selected_session_str = st.selectbox("Select Session", session_options, label_visibility="collapsed")
         selected_session_id = selected_session_str.split(" ")[0]
-        df = golf_db.get_session_data(selected_session_id)
+
+        # Get session data using DataService
+        session_data = data_service.get_session(selected_session_id)
+        df = pd.DataFrame(session_data['shots']) if session_data['shots'] else pd.DataFrame()
 
         if not df.empty:
             # --- Club Filter ---
@@ -238,8 +276,8 @@ with tab3:
             new_name = st.text_input("New Club Name", key="new_name_input")
             if st.button("Rename", key="rename_btn"):
                 if new_name:
-                    golf_db.rename_club(selected_session_id, rename_club, new_name)
-                    st.success(f"Renamed '{rename_club}' to '{new_name}'")
+                    count = data_service.update_club_name(selected_session_id, rename_club, new_name)
+                    st.success(f"Renamed '{rename_club}' to '{new_name}' ({count} shots updated)")
                     st.rerun()
                 else:
                     st.warning("Please enter a new name.")
@@ -249,8 +287,8 @@ with tab3:
             delete_club = st.selectbox("Select Club to Delete", all_clubs, key="delete_club_select")
             st.warning(f"This will delete ALL shots for '{delete_club}' in this session.")
             if st.button("Delete All Shots for Club", key="delete_club_btn", type="primary"):
-                golf_db.delete_club_session(selected_session_id, delete_club)
-                st.success(f"Deleted all shots for '{delete_club}'")
+                count = data_service.delete_club_shots(selected_session_id, delete_club)
+                st.success(f"Deleted {count} shots for '{delete_club}'")
                 st.rerun()
 
         st.divider()
@@ -259,9 +297,12 @@ with tab3:
         if 'shot_id' in df.columns:
             shot_to_delete = st.selectbox("Select Shot ID to Delete", df['shot_id'].tolist(), key="delete_shot_select")
             if st.button("Delete Shot", key="delete_shot_btn"):
-                golf_db.delete_shot(shot_to_delete)
-                st.success(f"Deleted shot {shot_to_delete}")
-                st.rerun()
+                success = data_service.delete_shot(shot_to_delete)
+                if success:
+                    st.success(f"Deleted shot {shot_to_delete}")
+                    st.rerun()
+                else:
+                    st.error(f"Failed to delete shot {shot_to_delete}")
         else:
             st.info("No shot IDs available for deletion.")
 

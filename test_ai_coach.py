@@ -76,7 +76,7 @@ print("Thinking...")
 # Call Claude (same model as Streamlit default)
 try:
     response = client.messages.create(
-        model="claude-3-5-haiku-latest",  # Using Haiku as it's available with this API key
+        model="claude-3-5-haiku-20241022",  # Using Haiku as it's available with this API key
         max_tokens=1024,
         system=system_prompt,
         messages=[{"role": "user", "content": test_question}]

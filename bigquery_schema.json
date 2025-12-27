@@ -18,6 +18,12 @@
     "description": "Timestamp when the shot was recorded"
   },
   {
+    "name": "session_date",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Actual practice session date from Uneekor (YYYY-MM-DD)"
+  },
+  {
     "name": "club",
     "type": "STRING",
     "mode": "NULLABLE",
@@ -156,6 +162,12 @@
     "description": "URL or path to swing image"
   },
   {
+    "name": "video_frames",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Comma-separated list of video frame URLs"
+  },
+  {
     "name": "optix_x",
     "type": "FLOAT",
     "mode": "NULLABLE",
@@ -178,5 +190,65 @@
     "type": "STRING",
     "mode": "NULLABLE",
     "description": "Lie angle classification"
+  },
+  {
+    "name": "sensor_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Launch monitor model used (EYEXO, QED, etc.)"
+  },
+  {
+    "name": "client_shot_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Original shot number from Uneekor device"
+  },
+  {
+    "name": "server_timestamp",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "Server timestamp when shot was uploaded to Uneekor"
+  },
+  {
+    "name": "is_deleted",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Soft delete flag (Y/N)"
+  },
+  {
+    "name": "ball_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Ball compression used (SOFT, MEDIUM, FIRM)"
+  },
+  {
+    "name": "ball_type",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Ball type code"
+  },
+  {
+    "name": "club_name_std",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Standardized club name from Uneekor (DRIVER, IRON6, etc.)"
+  },
+  {
+    "name": "club_type",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Club type code"
+  },
+  {
+    "name": "client_session_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Original session ID from Uneekor device"
+  },
+  {
+    "name": "low_point",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Estimated low point of swing arc in inches relative to ball (negative = before ball, positive = after ball)"
   }
 ]

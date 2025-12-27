@@ -2,28 +2,91 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Branch Information
+## Recent Updates (December 2024)
 
-**This is the `docker` branch** - Containerized version of GolfDataApp optimized for Docker/OrbStack deployment.
+### Latest Changes
 
-For the non-containerized version, see the `main` branch.
+**Data Expansion Complete (December 27, 2024)**
+- ✅ **Expanded Schema** - 32 → 42 fields with 10 new high-value metrics
+- ✅ **Ball Compression Tracking** - Capture ball type (SOFT/MEDIUM/FIRM) for performance analysis
+- ✅ **Launch Monitor Identification** - Track sensor model (EYEXO, QED) for accuracy comparison
+- ✅ **Impact Position Data** - Club face strike location (impact_x, impact_y in mm)
+- ✅ **Low Point Calculation** - Estimated swing arc bottom from attack angle
+- ✅ **Data Cleaning** - Convert invalid 99999 markers to null for cleaner analytics
+- ✅ **Service Layer Updated** - ImportService with data cleaning + low point calculation
+- ✅ **Repository Layer Updated** - ShotRepository with expanded schema migration
+- ✅ **BigQuery Synced** - 606 shots with all expanded fields in data warehouse
+- ✅ **Impact Analysis Guide** - Comprehensive documentation for strike pattern analysis
+
+**Phase 3: Professional Web App (December 22, 2024)**
+- ✅ **Next.js Web Application** - Modern React/Next.js app with professional UI at `/Users/duck/public/golf-data-app`
+- ✅ **Gemini AI Integration** - Real-time AI coach with BigQuery data integration
+- ✅ **Performance Dashboards** - Interactive charts with Recharts showing club stats
+- ✅ **Conversation Memory** - Multi-turn dialogues with context retention
+- ✅ **Cloud Run Ready** - Dockerized and ready for deployment
+- ✅ **Dual Applications** - Streamlit (data entry) + Next.js (analysis) working together
+
+**Phase 2: Cloud Automation (December 22, 2024)**
+- ✅ **Phase 2 Cloud Automation Deployed** - All Cloud Functions operational with secure authentication
+- ✅ **Cloud Functions Live** - auto-sync (HTTP + Pub/Sub) and daily-insights (HTTP + Scheduled) deployed
+- ✅ **Cloud Scheduler Active** - Daily AI insights at 8:00 AM UTC
+
+**Phase 1: Core Features**
+- ✅ **Gemini 2.0 Flash Integration** - Replaced Claude API with Google Gemini for AI Coach
+- ✅ **Session Date Tracking** - Extract actual practice dates from Uneekor API
+- ✅ **Video Frame Support** - Download and display swing video sequences (24 frames per shot)
+- ✅ **BigQuery Sync** - 555 shots synced with updated schema
+- ✅ **Docker Authentication** - Google Cloud credentials mounted for BigQuery + Gemini access
+- ✅ **Multimodal AI Coach** - Code execution, Plotly charts, image/video awareness
+
+### Breaking Changes
+- **Database Schema**: Expanded from 32 → 42 fields (10 new columns added December 2024)
+- **Data Cleaning**: 99999 invalid markers now converted to 0.0/null (affects legacy data)
+- **Cloud Functions**: Now require authentication (use `gcloud auth print-identity-token`)
+- **Dependencies**: Added pandas and db-dtypes to daily_insights requirements
+- **AI Coach Model**: Changed from Claude to Gemini (`gemini-2.0-flash-exp`)
+- **Docker Volumes**: Added gcloud credentials mount at `/app/.gcloud`
+
+---
 
 ## Project Overview
 
-This is a golf data analysis platform with a **local-first hybrid architecture**, now fully containerized:
+This is a golf data analysis platform with a **local-first hybrid architecture** and **dual application design**:
 
-1. **Local Streamlit App** (app.py): Fetches shot data from Uneekor API → stores in SQLite (local-first) → optionally syncs to Supabase (cloud backup) → displays in interactive UI
-2. **Cloud Pipeline**: Supabase (cloud DB) → BigQuery (data warehouse) → Gemini AI (analysis)
-3. **MCP Control Plane**: Direct conversational access to databases (SQLite + BigQuery) via MCP Database Toolbox for autonomous AI-driven data discovery
-4. **Docker Containerization** (NEW): Fully containerized deployment with Docker/OrbStack support for easy setup and cloud deployment
+### Applications
 
-The app is designed for high-altitude golf analysis (Denver) and captures detailed shot metrics including ball speed, spin rates, launch angles, impact location (Optix data), club lie angles, and more.
+1. **Streamlit App** (this directory - `app.py`):
+   - **Purpose**: Data import and detailed exploration
+   - **Port**: http://localhost:8501
+   - **Features**: Import from Uneekor API, SQLite storage, media viewer, multimodal AI coach with code execution
+   - **Best for**: Adding new data, viewing shot videos/images, detailed analysis
+
+2. **Next.js Web App** (`/Users/duck/public/golf-data-app`):
+   - **Purpose**: Modern conversational AI analysis
+   - **Port**: http://localhost:3000
+   - **Features**: Professional UI, BigQuery integration, Gemini AI chat, performance dashboards
+   - **Best for**: Daily insights, trend analysis, cloud deployment
+   - **Status**: ✅ Built and ready to deploy to Cloud Run
+
+### Data Flow
+
+1. **Data Import**: Uneekor API → Streamlit app → SQLite (local-first) + Supabase (cloud backup)
+2. **Cloud Sync**: Supabase → BigQuery (data warehouse via scripts/supabase_to_bigquery.py)
+3. **AI Analysis**:
+   - Streamlit: SQLite/Supabase → Gemini 2.0 (code execution, charts)
+   - Next.js: BigQuery → Gemini 1.5 (conversational insights)
+4. **Automation**: Cloud Functions (auto-sync, daily insights) + Cloud Scheduler
+5. **MCP Control Plane**: Direct database access (SQLite + BigQuery) via MCP Database Toolbox
+
+The platform is designed for high-altitude golf analysis (Denver) and captures 30+ shot metrics including ball speed, spin rates, launch angles, impact location (Optix data), club lie angles, and swing videos.
+
+---
 
 ## Development Commands
 
 ### Running the Application
 
-**Docker (Recommended - This Branch):**
+**Docker (Recommended):**
 ```bash
 # Quick start
 ./docker-quickstart.sh
@@ -37,6 +100,9 @@ docker-compose logs -f
 
 # Stop
 docker-compose down
+
+# Rebuild after code changes
+docker-compose up -d --build
 ```
 
 **Local (Non-Docker):**
@@ -56,21 +122,16 @@ pip install -r requirements.txt
 
 ### Database Locations
 
-**Docker (This Branch):**
-- **Local**: SQLite database at `./data/golf_stats.db` (Docker volume mounted)
-- **Cloud**: Supabase PostgreSQL database at `https://lhccrzxgnmynxmvoydkm.supabase.co`
-- **Data Warehouse**: BigQuery `valued-odyssey-474423-g1.golf_data.shots`
+- **Local**: SQLite database at `./data/golf_stats.db` (606 shots with expanded schema)
+- **Cloud**: Firestore `valued-odyssey-474423-g1/shots` (606 shots, migrated from Supabase)
+- **Data Warehouse**: BigQuery `valued-odyssey-474423-g1.golf_data.shots` (606 shots, 42 fields)
+- **Media Storage**: Supabase Storage bucket "shot-images" (impact images, swing videos)
 - **Media files**: `./media/` directory (Docker volume mounted)
 - **Logs**: `./logs/` directory (Docker volume mounted)
 
-**Non-Docker:**
-- **Local**: SQLite database `golf_stats.db` (created automatically on first run)
-- **Cloud**: Supabase PostgreSQL database at `https://lhccrzxgnmynxmvoydkm.supabase.co`
-- **Data Warehouse**: BigQuery `valued-odyssey-474423-g1.golf_data.shots`
-- **Media files**: `media/{session_id}/` (created per session)
-
 ### Cloud Pipeline Commands
 
+**Local Scripts:**
 ```bash
 # Sync Supabase → BigQuery
 python scripts/supabase_to_bigquery.py full          # Full sync (replace all)
@@ -81,9 +142,6 @@ python scripts/gemini_analysis.py summary            # Show club performance sum
 python scripts/gemini_analysis.py analyze Driver     # AI insights for specific club
 python scripts/gemini_analysis.py analyze            # Analyze all clubs
 
-# Alternative AI Analysis (Vertex AI)
-python scripts/vertex_ai_analysis.py analyze Driver  # Vertex AI-based analysis
-
 # Automation
 python scripts/post_session.py                       # Interactive post-session analysis
 python scripts/auto_sync.py                          # Background sync (for cron)
@@ -93,246 +151,751 @@ python scripts/auto_sync.py --analyze                # Background sync + AI anal
 python legacy/test_connection.py                     # Test all connections
 ```
 
-## Architecture
+**Cloud Functions (Phase 2 - Deployed):**
+```bash
+# Deploy all functions (secure mode - requires authentication)
+cd cloud_functions
+./deploy_secure.sh
 
-### Local Application (Three-Module Structure)
+# Test auto-sync function
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  https://us-central1-valued-odyssey-474423-g1.cloudfunctions.net/auto-sync-http
 
-1. **app.py** (Streamlit UI Layer)
-   - Main entry point and user interface
-   - Sidebar for data import (URL input + scraper trigger)
-   - Main dashboard with session selector, metrics, AI prompt generator, and shot viewer
-   - Interactive table with row selection triggers media display (impact/swing images)
+# Test daily insights function
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  https://us-central1-valued-odyssey-474423-g1.cloudfunctions.net/daily-insights-http
 
-2. **golf_scraper.py** (API Data Fetcher)
-   - **NEW**: Uses Uneekor's REST API instead of browser scraping (much faster and more reliable)
-   - Parses report_id and key from URL query parameters (`?id=...&key=...`)
-   - API endpoint: `https://api-v2.golfsvc.com/v2/oldmyuneekor/report/{report_id}/{key}`
-   - Returns JSON with complete shot data including:
-     - Ball flight: ball_speed, club_speed, launch_angle, apex, flight_time
-     - Spin: back_spin, side_spin
-     - Club data: club_path, club_face_angle, attack_angle, dynamic_loft
-     - Impact: impact_x, impact_y
-     - Distances: carry_distance, total_distance, side_distance
-     - Shot classification: type (straight, hookslice, etc.)
-   - Automatically calculates smash factor (ball_speed / club_speed)
-   - Handles invalid data (Uneekor uses 99999 for missing values)
-   - Image downloading function available but not yet integrated
-   - **Backup**: Old Selenium-based scraper saved as `golf_scraper_selenium_backup.py`
+# View function logs
+gcloud functions logs read auto-sync-http --region=us-central1 --limit=50
+gcloud functions logs read daily-insights-http --region=us-central1 --limit=50
 
-3. **golf_db.py** (Database Layer - Hybrid Local/Cloud)
-   - **Local-First Architecture**: SQLite for offline access with optional Supabase cloud sync
-   - **Dual Database Support**: Automatically manages both SQLite and Supabase (when configured)
-   - **Self-Healing Schema**: Auto-migrates new columns to existing SQLite databases
-   - **Expanded Schema**: `shots` table now includes 30 fields:
-     - Identifiers: shot_id (PK), session_id, date_added
-     - Basic: club, carry, total, smash
-     - Speed: ball_speed, club_speed
-     - Spin: side_spin, back_spin
-     - Angles: launch_angle, side_angle, club_path, face_angle, dynamic_loft, attack_angle
-     - Impact: impact_x, impact_y, **optix_x, optix_y** (NEW: Uneekor Optix impact location)
-     - Flight: side_distance, descent_angle, apex, flight_time
-     - Classification: shot_type
-     - Club Geometry: **club_lie, lie_angle** (NEW: Club position at impact)
-     - Media: impact_img, swing_img
-   - `init_db()` creates database and table if not exists, auto-adds missing columns
-   - `save_shot()` uses upsert for both SQLite and Supabase, idempotent imports
-   - `save_shot_to_supabase()` optional cloud backup with image upload to Supabase Storage
-   - Includes helper function to clean invalid values (converts 99999 to 0)
-   - `get_session_data()` supports filtering by session_id or returning all shots
-   - `get_unique_sessions()` returns distinct sessions ordered by date
+# View scheduler jobs
+gcloud scheduler jobs list --location=us-central1
+gcloud scheduler jobs describe golf-daily-insights --location=us-central1
 
-### Data Flow
-
-**Local Application Flow (Local-First Hybrid):**
+# Manually trigger scheduled job
+gcloud scheduler jobs run golf-daily-insights --location=us-central1
 ```
-User pastes Uneekor URL → golf_scraper parses report_id & key →
-HTTP GET to Uneekor API → Receives JSON with all sessions/shots →
-For each session (club):
-  For each shot:
-    Calculate smash factor →
-    Clean invalid values (99999 → 0) →
-    golf_db.save_shot() → SQLite storage (local-first) →
-    golf_db.save_shot_to_supabase() → Optional cloud backup (if configured) →
-app.py loads data from SQLite → Displays in interactive table with detailed shot metrics
-```
-
-**Cloud Pipeline Flow:**
-```
-Uneekor API → app.py (Streamlit) → Supabase (PostgreSQL + Cloud Storage for images) →
-scripts/supabase_to_bigquery.py → BigQuery (data warehouse) →
-scripts/gemini_analysis.py → Gemini API (google-genai SDK) → AI Insights
-
-Optional Automation:
-├─ scripts/auto_sync.py (scheduled via cron) → checks for new data → syncs automatically
-└─ scripts/post_session.py (manual) → interactive analysis after practice sessions
-```
-
-### Key Technical Details
-
-- **API Endpoint**: `https://api-v2.golfsvc.com/v2/oldmyuneekor/report/{report_id}/{key}`
-- **URL Parameter Extraction**:
-  - Report ID: Regex pattern `r'id=(\d+)'`
-  - Key: Regex pattern `r'key=([^&]+)'`
-- **Shot ID Format**: `{report_id}_{session_id}_{shot_id}` (e.g., "40945_84428_1283266")
-- **Invalid Data Handling**: Uneekor API uses `99999` to indicate missing/invalid measurements
-- **Smash Factor Calculation**: `ball_speed / club_speed` (only calculated if club_speed > 0)
-- **API Response Structure**:
-  - Top level: Array of session objects (one per club)
-  - Each session contains: id, name (club), created date, array of shots
-  - Each shot contains: 20+ measurement fields plus metadata
-- **Image API** (not yet implemented):
-  - Endpoint: `https://api-v2.golfsvc.com/v2/oldmyuneekor/report/shotimage/{report_id}/{key}/{session_id}/{shot_id}`
-  - Returns array of images with name and path
-  - Full URL: `https://api-v2.golfsvc.com/v2{image_path}`
-
-## Important Notes
-
-- **Database Architecture**: Local-first hybrid model with SQLite as primary database for offline access, optional Supabase sync for cloud backup and multi-device access
-- **Self-Healing Schema**: SQLite database auto-migrates new columns (optix_x, optix_y, club_lie, lie_angle) on startup
-- **API-Based Architecture**: Uses Uneekor's REST API instead of web scraping for faster, more reliable data collection
-- **Unit Conversions**: API returns metric units (m/s, meters) which are automatically converted to imperial (mph, yards) in golf_scraper.py:
-  - Speed: m/s × 2.23694 = mph
-  - Distance: meters × 1.09361 = yards
-- **Invalid Data Handling**: API returns `99999` for missing measurements - these are cleaned to 0 in both golf_scraper.py and golf_db.py
-- **Smash Factor**: Calculated locally (not provided by API) as ball_speed / club_speed
-- **High Altitude Context**: App configured for Denver altitude golf analysis (affects carry distance expectations)
-- **Image Storage**: Shot images are uploaded to Supabase Storage bucket "shot-images" and referenced by public URL
-- **Legacy Code**: Old Selenium-based scraper and debug scripts moved to `legacy/` directory
-
-## Dependencies
-
-### Local Application
-- **streamlit**: UI framework for the web application
-- **requests**: HTTP client for API calls and image downloads
-- **pandas**: Data manipulation and CSV export for AI analysis
-- **sqlite3**: Database (Python stdlib)
-- **selenium** (optional): Only needed for legacy backup scraper
-- **webdriver-manager** (optional): Only needed for legacy backup scraper
-
-### Cloud Pipeline (install via `pip install -r requirements_cloud.txt`)
-- **python-dotenv**: Environment variable management
-- **supabase**: Supabase Python client for database access
-- **google-cloud-bigquery**: BigQuery client for data warehousing
-- **google-cloud-aiplatform**: Vertex AI integration (infrastructure only, not actively used for analysis)
-- **google-genai**: Gemini API client for AI analysis (primary analysis engine)
-- **db-dtypes**: BigQuery data type support for pandas
-- **pandas**: Data manipulation and analysis
-
-## Performance Improvements
-
-### Data Collection
-The switch from Selenium-based scraping to API-based fetching provides:
-- **10x faster imports**: No browser overhead or wait times for React rendering
-- **100% data capture**: Access to all 20+ measurement fields vs 2-3 from HTML scraping
-- **More reliable**: No breakage from UI changes, no JavaScript timing issues
-- **Cleaner code**: Simple HTTP requests vs complex DOM navigation
-
-### Cloud Pipeline Benefits
-- **Scalable storage**: Supabase PostgreSQL handles unlimited shots with indexing
-- **Advanced queries**: BigQuery enables complex SQL analytics across all historical data
-- **AI insights**: Gemini API provides personalized swing analysis and recommendations
-- **Automation**: Scheduled syncing keeps data fresh without manual intervention
-- **Multi-device access**: BigQuery accessible from any device with GCP credentials
 
 ---
 
-## Cloud Pipeline Architecture Details
+## Architecture
 
-### Analysis Engine: Gemini API vs Vertex AI
+### Current Architecture (Local-First Hybrid)
 
-**Current Implementation:**
-- **Primary**: Gemini API via `google-genai` SDK
-  - Model: `gemini-3-pro-preview` (used in gemini_analysis.py with code execution)
-  - Note: Documentation references `gemini-2.0-flash-exp` but actual implementation uses gemini-3-pro-preview
-- **Alternative**: Vertex AI SDK (in vertex_ai_analysis.py)
-- **Infrastructure**: Vertex AI enabled for future ML features
-- **Why Direct API**: Faster iteration, simpler authentication, direct access to latest models
+```
+┌─────────────────┐
+│  Uneekor API    │ (External data source)
+└────────┬────────┘
+         │ Manual import via Streamlit UI
+         ▼
+┌─────────────────┐
+│ LOCAL SQLite    │ ← PRIMARY DATABASE (local-first)
+│  golf_stats.db  │   - 380 shots
+│                 │   - Offline access, fast queries
+└────────┬────────┘   - No auth needed
+         │
+         │ Auto-sync during import (if Supabase configured)
+         ▼
+┌─────────────────┐
+│   SUPABASE      │ ← CLOUD BACKUP
+│   PostgreSQL    │   - 555 shots
+│   + Storage     │   - Multi-device access
+└────────┬────────┘   - Image/video storage
+         │
+         │ MANUAL sync (scripts/supabase_to_bigquery.py)
+         ▼
+┌─────────────────┐
+│   BIGQUERY      │ ← DATA WAREHOUSE
+│  golf_data.shots│   - 606 shots (42 columns)
+│                 │   - Historical analysis
+│                 │   - Complex SQL queries
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Gemini API     │ ← AI ANALYSIS
+│  (Code Exec)    │   - Full CSV data access
+│                 │   - BigQuery historical data
+│                 │   - Plotly visualizations
+└─────────────────┘   - Image/video awareness
+```
 
-**Analysis Sources:**
-1. **Python Orchestration Scripts** (in `scripts/`):
-   - `gemini_analysis.py`: Main analysis tool, queries BigQuery and calls Gemini API (model: gemini-3-pro-preview with code execution)
-   - `vertex_ai_analysis.py`: Alternative Vertex AI-based analysis (uses Vertex AI SDK)
-   - `auto_sync.py`: Automated sync with optional analysis
+### Local Application (Four-Module Structure)
+
+**1. app.py** (Streamlit UI Layer)
+   - Main entry point and user interface
+   - **Tabs**:
+     - **Import Data**: URL input + scraper trigger
+     - **Shot Viewer**: Interactive table, metrics, images, video player
+     - **Manage Data**: Rename clubs, delete shots/sessions
+     - **AI Coach**: Conversational AI with code execution + BigQuery access
+   - **Recent Features**:
+     - Session dates show actual practice date (not import date)
+     - Video frame scrubber (slider to view swing sequences)
+     - AI Coach with full data access (not just summaries)
+     - Plotly chart generation
+     - Historical data toggle (BigQuery integration)
+
+**2. golf_scraper.py** (API Data Fetcher)
+   - **API-Based**: Uses Uneekor's REST API (fast, reliable)
+   - API endpoint: `https://api-v2.golfsvc.com/v2/oldmyuneekor/report/{report_id}/{key}`
+   - **Unit Conversions**: Metric → Imperial (m/s → mph, meters → yards)
+   - **Smash Factor**: Calculated locally (ball_speed / club_speed)
+   - **Video Frames**: Downloads swing sequences with configurable strategy:
+     - `none`: First frame only (minimal storage)
+     - `keyframes`: 5 key frames (0, 6, 12, 18, 23) - DEFAULT
+     - `half`: Every other frame (12 frames)
+     - `full`: All 24 frames (maximum detail)
+   - **Image Upload**: Uploads to Supabase Storage bucket "shot-images"
+   - **Session Dates**: Extracts `client_created_date` (actual practice date)
+
+**3. golf_db.py** (Database Layer - Hybrid Local/Cloud)
+   - **Local-First**: SQLite as primary database for offline access
+   - **Dual Sync**: Automatically manages SQLite + Supabase (when configured)
+   - **Self-Healing Schema**: Auto-migrates new columns on startup
+   - **Expanded Schema** (42 columns):
+     - Identifiers: shot_id (PK), session_id, date_added, session_date
+     - Basic: club, carry, total, smash
+     - Speed: ball_speed, club_speed
+     - Spin: side_spin, back_spin
+     - Angles: launch_angle, side_angle, club_path, face_angle, dynamic_loft, attack_angle, descent_angle
+     - Impact: impact_x, impact_y, optix_x, optix_y
+     - Club Geometry: club_lie, lie_angle
+     - Flight: apex, flight_time, side_distance
+     - Classification: shot_type
+     - Media: impact_img, swing_img, video_frames (comma-separated URLs)
+     - **NEW (Dec 2024)**: sensor_name, client_shot_id, server_timestamp, is_deleted, ball_name, ball_type, club_name_std, club_type, client_session_id, low_point
+   - **Data Cleaning**: Converts 99999 invalid markers to 0.0/null
+   - **Low Point Calculation**: `low_point = -(attack_angle / 2.0)` inches
+   - **Idempotent**: Uses upsert to prevent duplicates
+
+**4. scripts/** (Cloud Pipeline & Automation)
+   - `supabase_to_bigquery.py`: Manual sync (Supabase → BigQuery)
+   - `gemini_analysis.py`: AI analysis via Gemini API
+   - `auto_sync.py`: Scheduled sync (cron/Task Scheduler)
    - `post_session.py`: Interactive post-session workflow
 
-2. **Gemini API** (via google-genai SDK):
-   - Receives shot data statistics from BigQuery
-   - Generates personalized swing analysis
-   - Compares against PGA Tour averages (adjusted for Denver altitude)
-   - Provides actionable recommendations
-   - Identifies patterns in club path, face angle, spin rates, etc.
+---
 
-3. **BigQuery**:
-   - Data aggregation and statistical queries
-   - Session summaries and trend analysis
-   - Historical comparisons
-   - Supports complex SQL for custom analysis
+## Data Flow
 
-**Future Vertex AI Integration Opportunities:**
-- AutoML for shot prediction models
-- Custom training jobs for swing classification
-- Vertex AI Workbench for Jupyter notebook analysis
-- Model deployment for real-time shot recommendations
-- BigQuery ML for in-database machine learning
-
-### Files Structure
+### Import Flow (Uneekor → Local → Cloud)
 
 ```
-GolfDataApp/ (docker branch)
+1. User pastes Uneekor URL in Streamlit
+2. golf_scraper.extract_url_params() → report_id, key
+3. golf_scraper.run_scraper() → HTTP GET to Uneekor API
+4. For each shot:
+   - Convert units (metric → imperial)
+   - Calculate smash factor
+   - Extract session_date (client_created_date)
+   - Download video frames (keyframes strategy)
+   - Upload images/videos to Supabase Storage
+5. golf_db.save_shot() → SQLite (local-first)
+6. golf_db.save_shot_to_supabase() → Supabase (cloud backup, if configured)
+7. app.py → Display in UI with video scrubber
+```
+
+### Sync Flow (Supabase → BigQuery)
+
+```
+1. Manual: python scripts/supabase_to_bigquery.py full
+2. Fetch all shots from Supabase (paginated, 1000/page)
+3. Transform to BigQuery schema
+4. WRITE_TRUNCATE or WRITE_APPEND
+5. BigQuery ready for SQL + AI analysis
+```
+
+### AI Analysis Flow (BigQuery → Gemini)
+
+```
+1. User asks question in AI Coach tab
+2. Optional: Fetch historical data from BigQuery (500 shots)
+3. Convert to CSV format (efficient token usage)
+4. Send to Gemini API with:
+   - Full CSV data (not summaries)
+   - Code execution enabled
+   - System prompt with capabilities
+   - Image/video URL awareness
+5. Gemini executes Python code to analyze
+6. Returns insights + visualizations (Plotly)
+```
+
+---
+
+## AI Coach Features (Gemini 3 Flash)
+
+### Capabilities
+
+✅ **Full Data Access**: Entire CSV (all columns, all shots) - no more guessing
+✅ **Code Execution**: Writes and runs Python to analyze data
+✅ **Plotly Charts**: Creates interactive visualizations
+✅ **BigQuery Access**: Optional toggle for 500 historical shots
+✅ **Image Awareness**: Knows which shots have impact/swing images
+✅ **Video Awareness**: Knows which shots have swing sequences
+✅ **Multimodal Ready**: Can reference specific frame URLs
+
+### Model Configuration
+
+- **Model**: `gemini-2.0-flash-exp` (latest, fastest)
+- **Tools**: `code_execution` enabled
+- **Temperature**: 0.7 (balanced creativity)
+- **Context**: Full session CSV + optional BigQuery historical data
+
+### Example Questions
+
+**Data Analysis:**
+- "What's my average carry distance by club?"
+- "Show me shots where club path was more than 3° out-to-in"
+- "Calculate standard deviation of my Driver shots"
+
+**Visualizations:**
+- "Create a scatter plot of launch angle vs carry distance"
+- "Show me a dispersion chart for my 7-iron"
+- "Plot club speed vs smash factor with trend line"
+
+**Coaching:**
+- "What's my biggest weakness based on the data?"
+- "Compare my Driver stats to PGA Tour averages"
+- "Which club has the most consistent dispersion?"
+
+**Historical:**
+- "How has my Driver carry improved over time?" (requires BigQuery toggle)
+- "Compare this session to my average from last month"
+
+### System Prompt Structure
+
+```python
+system_instruction = f"""You are an expert golf coach with 20+ years of experience.
+
+**IMPORTANT: You have Python code execution capabilities AND data visualization tools.**
+
+Context: Practicing at Denver altitude (5,280 ft) - 10-15% more carry than sea level.
+
+**Current Session Data ({len(df)} shots):**
+```csv
+{csv_data}  # Full CSV with all 42 columns
+```
+
+**Available Media:**
+- Impact Images: {count} shots
+- Swing Images: {count} shots
+- Video Frames: {count} shots with complete sequences
+- URLs in 'impact_img', 'swing_img', 'video_frames' columns
+
+**Your capabilities:**
+1. Data Analysis: Write Python code to calculate statistics, find patterns
+2. Visualization: Create Plotly charts (import plotly.graph_objects as go)
+3. Image Analysis: Reference specific image URLs from data
+4. Video Analysis: Access swing sequences via video_frames column
+5. Specific Insights: Reference actual shot numbers
+6. Show Your Work: Display code results and visualizations
+
+**When asked a question:**
+1. Write Python code to analyze the data
+2. Execute the code
+3. Interpret results
+4. Provide coaching insights
+5. Create visualizations if helpful
+"""
+```
+
+---
+
+## Video Frame Implementation
+
+### Discovery
+
+Uneekor API provides swing videos as **24 individual JPG frames**:
+- 1 `ballimpact` image
+- 24 `topview00` through `topview23` frames (complete swing sequence)
+
+### Storage Strategies
+
+| Strategy | Frames | Storage/Shot | 380 Shots Total |
+|----------|--------|--------------|-----------------|
+| **none** | 1 | ~400KB | ~152MB |
+| **keyframes** (DEFAULT) | 5 | ~1.2MB | ~456MB |
+| **half** | 12 | ~2.5MB | ~950MB |
+| **full** | 24 | ~5MB | ~1.9GB |
+
+**Recommendation**: `keyframes` provides best balance (3x storage for key swing moments)
+
+### Video Playback UI
+
+**Location**: Shot Viewer tab → Click shot → Scroll to "📹 Swing Video Frames"
+
+**Features**:
+- **Slider**: Scrub through frames manually
+- **Frame counter**: "Frame 5/5"
+- **Full-width display**: Each frame at maximum size
+- **Play button**: Placeholder for future auto-play
+
+### Implementation Files
+
+- `golf_scraper.py:155-257` - Video download logic
+- `golf_db.py:89, 133` - video_frames column
+- `app.py:298-331` - Video playback UI
+- `app.py:476-535` - AI Coach video awareness
+
+---
+
+## BigQuery Sync Architecture
+
+### Why Manual Sync?
+
+BigQuery is a **data warehouse**, not a real-time database:
+- ✅ Designed for batch analytics (not real-time updates)
+- ✅ Cost optimization (batch vs per-record writes)
+- ✅ Flexibility (sync on your schedule)
+- ✅ Local-first philosophy (app works offline)
+
+### Current Data State
+
+- **Local SQLite**: 380 shots (includes new schema, but fields empty - imported before features added)
+- **Supabase**: 555 shots (missing session_date, video_frames columns)
+- **BigQuery**: 555 shots (schema updated, but data doesn't have new columns yet)
+
+### How to Fix Schema Mismatch
+
+**Step 1**: Add columns to Supabase
+```sql
+-- Run in Supabase SQL Editor
+ALTER TABLE shots ADD COLUMN session_date TEXT;
+ALTER TABLE shots ADD COLUMN video_frames TEXT;
+```
+
+**Step 2**: Re-import sessions (to populate new fields)
+```
+1. Go to Streamlit app
+2. Paste Uneekor URL
+3. New imports will include session_date and video_frames
+```
+
+**Step 3**: Sync to BigQuery
+```bash
+python scripts/supabase_to_bigquery.py full
+```
+
+### Sync Options
+
+**Manual (Current)**:
+```bash
+python scripts/supabase_to_bigquery.py full          # Replace all data
+python scripts/supabase_to_bigquery.py incremental   # Add new only
+```
+
+**Automated (Optional)**:
+```bash
+./setup_cron.sh  # Interactive wizard
+
+# Or add to crontab:
+0 23 * * * cd /path/to/GolfDataApp && python scripts/auto_sync.py
+```
+
+---
+
+## Docker Authentication (Google Cloud)
+
+### Problem Solved
+
+Docker container now has access to:
+- ✅ **BigQuery** (555 shots accessible)
+- ✅ **Gemini API** (AI Coach fully functional)
+
+### Solution Implemented
+
+**docker-compose.yml**:
+```yaml
+environment:
+  - GOOGLE_APPLICATION_CREDENTIALS=/app/.gcloud/application_default_credentials.json
+
+volumes:
+  - ~/.config/gcloud:/app/.gcloud:ro  # Read-only mount
+```
+
+**How It Works**:
+1. Host machine has gcloud credentials at `~/.config/gcloud/`
+2. Volume mount makes them available in container
+3. Mounted to `/app/.gcloud` (accessible by golfuser, not root)
+4. Environment variable tells Google libraries where to find them
+
+### Testing
+
+```bash
+# Test BigQuery
+docker exec golf-data-app python -c "
+from google.cloud import bigquery
+client = bigquery.Client(project='valued-odyssey-474423-g1')
+print('Shots:', client.query('SELECT COUNT(*) FROM \`valued-odyssey-474423-g1.golf_data.shots\`').to_dataframe())
+"
+
+# Test Gemini
+docker exec golf-data-app python -c "
+from google import genai
+import os
+client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
+print(client.models.generate_content(model='gemini-2.0-flash-exp', contents='Hello').text)
+"
+```
+
+### Troubleshooting
+
+**If credentials expire**:
+```bash
+gcloud auth application-default login
+docker-compose restart
+```
+
+---
+
+## Architecture Upgrade Plan
+
+### Current Limitations
+
+⚠️ **Single-user** (no collaboration)
+⚠️ **Web-only** (no mobile app)
+⚠️ **Manual syncing** (not automatic)
+⚠️ **Streamlit can be slow** with complex interactions
+⚠️ **AI requires page reloads** (no conversational memory)
+
+### Recommended Upgrades (Phased Approach)
+
+### Phase 1: **Vertex AI Agent Builder** (2 days - BIGGEST AI UPGRADE)
+
+**What Changes:**
+```
+Current: Gemini API → Direct function calls → One-shot responses
+
+Upgraded: Vertex AI Agent Builder → Multi-turn conversations → Persistent memory
+```
+
+**What You Gain:**
+- ✅ **Conversational Memory**: "Show me Driver data. Now compare to last week." (agent remembers context)
+- ✅ **Direct BigQuery Access**: Agent queries database without your code
+- ✅ **Tool Calling**: Agent executes functions like `analyze_session()`, `compare_clubs()`
+- ✅ **Proactive Insights**: "I noticed your club path changed after shot 15..."
+- ✅ **Grounding**: Agent searches web for swing tips from pros
+- ✅ **RAG**: Retrieve relevant historical data automatically
+- ✅ **Function Calling**: Custom Python execution
+
+**Architecture:**
+```
+┌───────────────────────────────────────────────────┐
+│        Vertex AI Agent Builder                    │
+│  ┌─────────────────────────────────────────────┐  │
+│  │  Agent with Tools:                          │  │
+│  │  - query_bigquery(club, date_range)         │  │
+│  │  - analyze_shot(shot_id)                    │  │
+│  │  - compare_sessions(session1, session2)     │  │
+│  │  - generate_visualization(data, chart_type) │  │
+│  │  - search_web(query)                        │  │
+│  └─────────────────────────────────────────────┘  │
+│           ↓                                        │
+│  Multi-turn conversation history                  │
+│  Persistent context across questions              │
+└───────────────────────────────────────────────────┘
+            ↓
+┌───────────────────────────────────────────────────┐
+│         Your Streamlit App (Keep It!)             │
+│  - Chat interface with message history            │
+│  - Agent directly queries BigQuery                │
+│  - Agent analyzes images/videos                   │
+│  - Agent executes complex pipelines               │
+└───────────────────────────────────────────────────┘
+```
+
+**Cost**: ~$0.10/1K tokens (probably <$5/month)
+**Effort**: 2 days implementation
+
+### Phase 2: **Cloud Functions** (1 day - AUTOMATION)
+
+**What Changes:**
+```
+Current: Manual sync scripts
+
+Upgraded: Event-driven automation
+```
+
+**What You Gain:**
+- ✅ **Auto-sync**: Firestore → BigQuery happens automatically on new data
+- ✅ **Background Processing**: Video frame extraction in parallel
+- ✅ **Scheduled Analysis**: Weekly summary emails
+- ✅ **Real-time Triggers**: AI analysis when practice session completes
+
+**Architecture:**
+```
+┌─────────────────┐
+│  Streamlit App  │
+│  (Import Data)  │
+└────────┬────────┘
+         │ Publishes event to Pub/Sub
+         ▼
+┌─────────────────────────────────────────┐
+│      Cloud Functions (Triggers)         │
+│  ┌───────────────────────────────────┐  │
+│  │ on_shot_import():                 │  │
+│  │   - Sync to BigQuery              │  │
+│  │   - Process video frames          │  │
+│  │   - Update analytics cache        │  │
+│  └───────────────────────────────────┘  │
+│  ┌───────────────────────────────────┐  │
+│  │ on_session_complete():            │  │
+│  │   - Run AI analysis               │  │
+│  │   - Generate summary report       │  │
+│  │   - Email insights                │  │
+│  └───────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+```
+
+**Cost**: Free tier (2M invocations/month)
+**Effort**: 1 day implementation
+
+### Phase 3: **Cloud Run Deployment** (1 day - ACCESS ANYWHERE)
+
+**What Changes:**
+```
+Current: localhost:8501 (only on your machine)
+
+Upgraded: golf-data-app.run.app (access from any device)
+```
+
+**What You Gain:**
+- ✅ **Global Access**: Phone, tablet, laptop, anywhere
+- ✅ **Automatic HTTPS**: Secure by default
+- ✅ **Auto-scaling**: Handles traffic spikes
+- ✅ **Zero maintenance**: No server management
+
+**Deployment:**
+```bash
+# Build and push
+gcloud builds submit --tag gcr.io/valued-odyssey-474423-g1/golf-data-app
+
+# Deploy
+gcloud run deploy golf-data-app \
+  --image gcr.io/valued-odyssey-474423-g1/golf-data-app \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars="$(cat .env)"
+```
+
+**Cost**: Free tier (2M requests/month), then $0.40/million requests
+**Effort**: 1 day (mostly configuration)
+
+### Phase 4 (Optional): **Real-time with Firestore**
+
+**What Changes:**
+```
+Current: SQLite → Supabase → Manual sync → BigQuery
+
+Upgraded: Firestore → Real-time sync → BigQuery (automatic)
+```
+
+**What You Gain:**
+- ✅ **Real-time updates**: See data instantly across all devices
+- ✅ **Offline support**: Native offline-first database
+- ✅ **No manual sync**: Firestore → BigQuery happens automatically
+- ✅ **Simpler stack**: One database instead of SQLite + Supabase
+
+**Architecture:**
+```
+┌─────────────────┐
+│  Streamlit App  │
+│  (Any Device)   │
+└────────┬────────┘
+         │ Real-time sync
+         ▼
+┌─────────────────┐      Auto-sync       ┌─────────────┐
+│   Firestore     │ ─────────────────→   │  BigQuery   │
+│  (Real-time)    │  (Cloud Function)    │  (Analytics)│
+└─────────────────┘                      └─────────────┘
+         ↕
+  All devices see updates instantly
+```
+
+**Cost**: Free tier (1GB storage, 50K reads/day)
+**Effort**: 2 days (migration)
+
+---
+
+## Implementation Roadmap
+
+### Quick Wins (Week 1)
+
+**Day 1-2**: Vertex AI Agent Builder
+- Replace Gemini API calls with Agent Builder
+- Define tools: `query_bigquery()`, `analyze_shot()`, `compare_sessions()`
+- Add conversational memory
+- Test multi-turn interactions
+
+**Day 3**: Cloud Functions for automation
+- `on_shot_import()` - Auto-sync to BigQuery
+- `on_session_complete()` - Run AI analysis
+- Deploy to GCP
+
+**Day 4**: Cloud Run deployment
+- Build Docker image for cloud
+- Deploy to Cloud Run
+- Configure custom domain (optional)
+- Test from mobile device
+
+**Day 5**: Testing & refinement
+- End-to-end testing
+- Performance optimization
+- Documentation updates
+
+### Medium-term (Month 1)
+
+- Mobile PWA (progressive web app)
+- Scheduled weekly summaries (email)
+- Video frame analysis with Gemini Vision
+- Custom model training (shot classification)
+
+### Long-term (Month 2-3)
+
+- Firestore migration (real-time sync)
+- Native mobile app (React Native or Flutter)
+- Multi-user support (share with coach)
+- Advanced analytics dashboard (Looker Studio)
+
+---
+
+## Cost Estimates
+
+### Current (Local-First)
+- Infrastructure: $0/month
+- Supabase: Free tier
+- BigQuery: <$1/month (storage + queries)
+- **Total**: ~$1/month
+
+### After Upgrades (Cloud-First)
+- **Vertex AI Agent**: ~$5/month (personal use, 50 conversations)
+- **Cloud Functions**: $0 (free tier sufficient)
+- **Cloud Run**: $0-5/month (free tier + minimal overage)
+- **Firestore**: $0 (free tier sufficient)
+- **BigQuery**: <$1/month (unchanged)
+- **Cloud Storage**: $1/month (videos)
+- **Total**: ~$7-12/month
+
+### If Scaling (Multi-user)
+- 100 users: ~$50-100/month
+- 1000 users: ~$300-500/month
+
+---
+
+## Key Technical Details
+
+### API Endpoints
+
+**Uneekor API**:
+- Report: `https://api-v2.golfsvc.com/v2/oldmyuneekor/report/{report_id}/{key}`
+- Images/Video: `https://api-v2.golfsvc.com/v2/oldmyuneekor/report/shotimage/{report_id}/{key}/{session_id}/{shot_id}`
+
+**URL Parsing**:
+- Report ID: `r'id=(\d+)'`
+- Key: `r'key=([^&]+)'`
+
+**Shot ID Format**: `{report_id}_{session_id}_{shot_id}`
+
+### Unit Conversions
+
+API returns metric, converted to imperial:
+- Speed: `m/s × 2.23694 = mph`
+- Distance: `meters × 1.09361 = yards`
+
+### Invalid Data Handling
+
+Uneekor uses `99999` for missing data → converted to `0`
+
+### Smash Factor
+
+Calculated locally: `ball_speed / club_speed`
+
+### Database Schema (42 Columns)
+
+**Identifiers**: shot_id, session_id, date_added, session_date
+**Basic**: club, carry, total, smash
+**Speed**: ball_speed, club_speed
+**Spin**: back_spin, side_spin
+**Angles**: launch_angle, side_angle, club_path, face_angle, dynamic_loft, attack_angle, descent_angle
+**Impact**: impact_x, impact_y, optix_x, optix_y
+**Club Geometry**: club_lie, lie_angle
+**Flight**: apex, flight_time, side_distance
+**Classification**: shot_type
+**Media**: impact_img, swing_img, video_frames
+**NEW (Dec 2024)**: sensor_name, client_shot_id, server_timestamp, is_deleted, ball_name, ball_type, club_name_std, club_type, client_session_id, low_point
+
+**Key Enhancements**:
+- **Data Cleaning**: 99999 invalid markers converted to 0.0/null
+- **Low Point**: Calculated as `-(attack_angle / 2.0)` inches
+- **Ball Tracking**: Capture ball compression (SOFT/MEDIUM/FIRM)
+- **Sensor ID**: Track launch monitor model (EYEXO, QED, etc.)
+- **Strike Analysis**: Club face impact position (impact_x, impact_y in mm)
+
+---
+
+## Files Structure
+
+```
+GolfDataApp/
 ├── Core Application
-│   ├── app.py                              # Streamlit UI (main entry point)
-│   ├── golf_scraper.py                     # Uneekor API client (data fetching + image upload)
-│   ├── golf_db.py                          # Database layer (SQLite + Supabase)
-│   └── bigquery_schema.json                # BigQuery table schema definition
+│   ├── app.py                          # Streamlit UI with AI Coach
+│   ├── golf_scraper.py                 # Uneekor API + video download
+│   ├── golf_db.py                      # SQLite + Firestore hybrid
+│   └── bigquery_schema.json            # BigQuery schema (42 columns)
 │
-├── Docker Configuration (NEW)
-│   ├── Dockerfile                          # Multi-stage container build
-│   ├── docker-compose.yml                  # Orchestration configuration
-│   ├── .dockerignore                       # Files to exclude from image
-│   ├── .env.docker.example                 # Docker environment template
-│   ├── docker-quickstart.sh                # Interactive setup wizard
-│   ├── data/                               # SQLite database volume
-│   ├── media/                              # Shot images volume
-│   └── logs/                               # Application logs volume
+├── Services (New Architecture)
+│   ├── services/
+│   │   ├── import_service.py           # Data import with cleaning
+│   │   ├── data_service.py             # Data access layer
+│   │   └── media_service.py            # Media processing
+│   └── repositories/
+│       ├── shot_repository.py          # Shot data persistence
+│       └── media_repository.py         # Media storage
 │
-├── scripts/                                # Cloud Pipeline & Automation
-│   ├── supabase_to_bigquery.py             # Sync Supabase → BigQuery
-│   ├── gemini_analysis.py                  # AI analysis via Gemini API ⭐
-│   ├── vertex_ai_analysis.py               # Alternative Vertex AI-based analysis
-│   ├── auto_sync.py                        # Scheduled sync script
-│   ├── post_session.py                     # Interactive post-session analysis
-│   └── migrate_to_supabase.py              # Migration utility (SQLite → Supabase)
+├── Docker
+│   ├── Dockerfile                      # Multi-stage build
+│   ├── docker-compose.yml              # With gcloud credentials mount
+│   ├── .dockerignore                   # Excludes sensitive files
+│   ├── data/                           # SQLite volume
+│   ├── media/                          # Images/videos volume
+│   └── logs/                           # Application logs
 │
-├── legacy/                                 # Debug tools & backup implementations
-│   ├── test_connection.py                  # Connection testing utility
-│   ├── golf_scraper_selenium_backup.py     # Old Selenium-based scraper
-│   ├── debug_scraper*.py                   # Debug scripts for API testing
-│   ├── inspect_api_response.py             # API response inspector
-│   └── check_clubs.py                      # Database inspection utility
+├── scripts/
+│   ├── sync_firestore_to_bigquery.py   # Firestore → BigQuery sync
+│   ├── migrate_supabase_to_firestore.py # One-time migration
+│   ├── gemini_analysis.py              # AI analysis (Gemini API)
+│   ├── auto_sync.py                    # Scheduled automation
+│   └── post_session.py                 # Interactive analysis
 │
-├── Configuration
-│   ├── .env                                # Credentials (not committed)
-│   ├── .env.example                        # Environment variable template
-│   ├── requirements.txt                    # Local app dependencies
-│   ├── requirements_cloud.txt              # Cloud pipeline dependencies
-│   └── setup_cron.sh                       # Automation setup wizard
+├── cloud_functions/
+│   └── firestore_to_bigquery/          # Auto-sync function
+│       ├── main.py                     # Cloud Function code
+│       └── requirements.txt            # Function dependencies
+│
+├── legacy/
+│   ├── golf_scraper_selenium_backup.py # Old scraper (backup)
+│   ├── test_connection.py              # Connection testing
+│   └── debug_scraper*.py               # Debug scripts
 │
 └── Documentation
-    ├── README.md                           # Project overview & quick start
-    ├── CLAUDE.md                           # This file (Claude Code guidance)
-    ├── DOCKER_GUIDE.md                     # Comprehensive Docker guide (READ THIS FIRST!)
-    ├── DOCKER_README.md                    # Docker quick reference
-    ├── DOCKER_SETUP_COMPLETE.md            # Docker setup verification
-    ├── CONTAINERIZATION_SUMMARY.md         # Technical Docker overview
-    ├── VALIDATION_CHECKLIST.md             # Testing procedures
-    ├── PIPELINE_COMPLETE.md                # Complete pipeline reference
-    ├── QUICKSTART.md                       # Quick command reference
-    ├── AUTOMATION_GUIDE.md                 # Automation setup guide
-    ├── SETUP_GUIDE.md                      # Detailed setup instructions
-    └── changelog.md                        # Project change history
+    ├── README.md                       # Quick start
+    ├── CLAUDE.md                       # This file (project guide)
+    ├── DOCKER_GUIDE.md                 # Docker setup
+    ├── VIDEO_IMPLEMENTATION.md         # Video features
+    ├── SYNC_ARCHITECTURE.md            # Why manual sync
+    ├── DOCKER_AUTH_FIX.md              # Google Cloud auth
+    ├── IMPACT_ANALYSIS.md              # NEW: Strike pattern analysis guide
+    ├── DATA_EXPANSION_COMPLETE.md      # NEW: Schema expansion summary
+    ├── UNEEKOR_DATA_ANALYSIS.md        # Data field analysis
+    └── changelog.md                    # Version history
 ```
 
-### Environment Variables (.env)
+---
+
+## Environment Variables
 
 ```bash
 # Supabase (Cloud Database)
@@ -344,519 +907,146 @@ GCP_PROJECT_ID=valued-odyssey-474423-g1
 GCP_REGION=us-central1
 BQ_DATASET_ID=golf_data
 BQ_TABLE_ID=shots
+GOOGLE_APPLICATION_CREDENTIALS=/app/.gcloud/application_default_credentials.json
 
 # AI Analysis
 GEMINI_API_KEY=your-gemini-api-key
 
-# Optional (other APIs)
-ANTHROPIC_API_KEY=your-anthropic-key
+# Optional
+ANTHROPIC_API_KEY=your-anthropic-key  # Not used (legacy)
 ```
-
-### Data Schema (Consistent Across SQLite, Supabase, BigQuery)
-
-All 30 fields are synced across platforms:
-- **Identifiers**: shot_id (PK), session_id, date_added
-- **Club Info**: club
-- **Distance**: carry, total, side_distance
-- **Speed**: ball_speed, club_speed, smash
-- **Spin**: back_spin, side_spin
-- **Angles**: launch_angle, side_angle, club_path, face_angle, dynamic_loft, attack_angle, descent_angle
-- **Impact**: impact_x, impact_y, **optix_x, optix_y** (Uneekor Optix precise impact location)
-- **Club Geometry**: **club_lie, lie_angle** (Club position at impact)
-- **Flight**: apex, flight_time
-- **Classification**: shot_type
-- **Media**: impact_img, swing_img
-
-### BigQuery Indexes (Automatic)
-
-Created during setup for optimal query performance:
-- Primary: shot_id
-- session_id (for session-based queries)
-- date_added (for time-series analysis)
-- club (for club-specific analysis)
-
----
-
-## AI Analysis Capabilities
-
-### What Gemini AI Analyzes
-
-1. **Swing Mechanics**:
-   - Club speed efficiency
-   - Smash factor optimization
-   - Attack angle consistency
-   - Club path patterns
-
-2. **Shot Dispersion**:
-   - Standard deviation analysis
-   - Consistency patterns
-   - Outlier detection
-
-3. **Comparisons**:
-   - PGA Tour averages (altitude-adjusted)
-   - Personal historical trends
-   - Club-to-club performance
-
-4. **Correlations**:
-   - Club path vs side spin
-   - Face angle vs shot shape
-   - Launch angle vs carry distance
-   - Attack angle vs spin rates
-
-5. **Recommendations**:
-   - Specific improvement areas
-   - Optimal launch conditions
-   - Training focus suggestions
-   - Equipment optimization
-
-### Sample AI Output
-
-For a Driver analysis with 5 shots:
-- Identifies high smash factor (1.38) as strength
-- Flags low club speed (51.1 mph) as primary limiting factor
-- Recommends swing speed training and center-face contact drills
-- Suggests optimal launch conditions (12-14° launch, 2000-2400 rpm spin)
-- Compares to PGA Tour averages adjusted for Denver altitude
-
----
-
-## Automation Options
-
-### Option 1: Manual (scripts/post_session.py)
-- Run after each practice session
-- Interactive prompts guide analysis
-- Full control over when AI runs
-- Best for: Learning the system
-
-### Option 2: Hourly Sync (scripts/auto_sync.py via cron)
-- Data always fresh in BigQuery
-- No analysis overhead
-- Run manual analysis when needed
-- Best for: Keeping data current
-
-### Option 3: Daily Sync + Analysis
-- Evening analysis of all day's shots
-- Automated insights without intervention
-- Log history for tracking
-- Best for: Hands-off operation
-
-### Setup Automation
-```bash
-./setup_cron.sh  # Interactive setup wizard
-```
-
----
-
-## MCP Control Plane Integration
-
-### Overview
-The **MCP Database Toolbox** provides a unified "Control Plane" for conversational AI access to your golf data across both local SQLite and cloud BigQuery databases.
-
-### Architecture
-- **Shared Interface**: Single YAML configuration for multiple data sources
-- **Autonomous Discovery**: AI agents can independently explore schemas using `list-tables` and `get-table-schema`
-- **Conversational Analytics**: Natural language queries without writing SQL
-- **Multi-Source Support**: Seamlessly query both local SQLite and BigQuery from one interface
-
-### Setup
-1. **Install MCP Toolbox**: Download binary to `~/.mcp/database-toolbox/`
-2. **Create Configuration** (`~/.mcp/database-toolbox/tools.yaml`):
-   ```yaml
-   sources:
-     local-sqlite:
-       kind: sqlite
-       database: /absolute/path/to/golf_stats.db
-     google-bigquery:
-       kind: bigquery
-       project: valued-odyssey-474423-g1
-   ```
-3. **Start MCP Server**:
-   ```bash
-   toolbox --tools-file ~/.mcp/database-toolbox/tools.yaml --stdio
-   ```
-
-### Use Cases
-- **Cross-Database Queries**: Compare local practice data with cloud historical data
-- **AI-Driven Discovery**: Let AI agents explore schema and find insights autonomously
-- **Unified Interface**: Single command to access all your golf data sources
-- **Real-Time Analysis**: Query fresh local data without cloud sync delays
-
-### Integration Points
-- **Local SQLite**: Direct access to `golf_stats.db` for offline analysis
-- **BigQuery**: Access to full historical data warehouse
-- **Supabase**: Can be added as a PostgreSQL source (optional)
-
-For detailed setup instructions, see `SETUP_GUIDE.md` Step 10.
 
 ---
 
 ## Common Workflows
 
 ### After Practice Session
+
 ```bash
-python scripts/post_session.py
-# Shows today's summary, offers AI analysis, displays all-time stats
+# 1. Import data (Streamlit UI)
+# Paste Uneekor URL → Run Scraper
+
+# 2. Review in Shot Viewer
+# Click shots to see videos/images
+
+# 3. Ask AI Coach questions
+# "What's my biggest weakness today?"
+
+# 4. Sync to BigQuery (optional)
+python scripts/supabase_to_bigquery.py incremental
 ```
 
-### Quick Club Check
+### Weekly Analysis
+
 ```bash
+# Full sync to ensure consistency
+python scripts/supabase_to_bigquery.py full
+
+# Comprehensive AI analysis
 python scripts/gemini_analysis.py summary
 python scripts/gemini_analysis.py analyze Driver
 ```
 
 ### Troubleshooting
-```bash
-python legacy/test_connection.py  # Test all connections
-tail -f logs/sync.log             # View automation logs
-```
 
-### BigQuery Exploration
-```sql
--- Average by club (in BigQuery Console)
-SELECT club, AVG(carry), AVG(smash), COUNT(*)
-FROM `valued-odyssey-474423-g1.golf_data.shots`
-WHERE carry > 0
-GROUP BY club
-ORDER BY AVG(carry) DESC
+```bash
+# Test connections
+python legacy/test_connection.py
+
+# View logs
+docker-compose logs -f
+
+# Check BigQuery
+gcloud auth application-default login
+python -c "from google.cloud import bigquery; print(bigquery.Client().query('SELECT COUNT(*) FROM \`valued-odyssey-474423-g1.golf_data.shots\`').to_dataframe())"
 ```
 
 ---
 
 ## Code Architecture Insights
 
-### Data Flow Through Modules
+### Design Patterns
 
-**Import Flow (app.py → golf_scraper.py → golf_db.py → Local/Cloud):**
-1. User pastes Uneekor URL in Streamlit sidebar
-2. `golf_scraper.extract_url_params()` parses report_id and key from URL
-3. `golf_scraper.run_scraper()` fetches JSON from Uneekor API
-4. For each shot in each session:
-   - Convert metric units to imperial (m/s → mph, meters → yards)
-   - Calculate smash factor (ball_speed / club_speed)
-   - Extract advanced metrics (optix_x, optix_y, club_lie, lie_angle)
-   - `golf_db.save_shot()` upserts data to SQLite (local-first)
-   - `golf_db.save_shot_to_supabase()` optionally uploads to cloud (if SUPABASE_URL configured)
-   - `golf_scraper.upload_shot_images()` downloads images and uploads to Supabase Storage (if cloud enabled)
-5. `app.py` queries SQLite via `golf_db.get_session_data()` and displays in UI
-
-**Sync Flow (Supabase → BigQuery):**
-1. `scripts/supabase_to_bigquery.py` fetches all shots from Supabase (paginated)
-2. Transforms data to match BigQuery schema
-3. Uses `WRITE_TRUNCATE` (full) or `WRITE_APPEND` (incremental) load jobs
-4. BigQuery table ready for SQL queries and AI analysis
-
-**Analysis Flow (BigQuery → Gemini API):**
-1. `scripts/gemini_analysis.py` queries BigQuery for shot data
-2. Converts result to CSV format for efficient token usage
-3. Sends to Gemini API with code execution tool enabled
-4. Gemini writes and executes Python code to analyze data
-5. Returns statistical insights and recommendations
-
-### Key Design Patterns
-
-- **Local-First Architecture**: SQLite as primary database for offline access, optional cloud sync
-- **Self-Healing Schema**: Auto-migration of new columns on startup (no manual ALTER TABLE needed)
-- **Idempotent Imports**: `golf_db.save_shot()` uses upsert to prevent duplicates (both SQLite and Supabase)
-- **Unit Conversion Layer**: All metric→imperial conversions happen in `golf_scraper.py` (single source of truth)
-- **Invalid Data Cleaning**: Both `golf_scraper.py` and `golf_db.py` clean invalid values (99999 → 0)
-- **Separation of Concerns**:
-  - `app.py` = UI only
-  - `golf_scraper.py` = External API integration
-  - `golf_db.py` = Database abstraction (dual SQLite/Supabase support)
-  - `scripts/` = Batch processing and analysis
+- **Local-First**: SQLite primary, cloud optional
+- **Self-Healing**: Auto-migrates schema on startup
+- **Idempotent**: Upsert prevents duplicate imports
+- **Separation of Concerns**: UI / API / Database / Scripts cleanly separated
+- **Hybrid Sync**: Automatic (Uneekor→SQLite→Supabase) + Manual (Supabase→BigQuery)
 
 ### Critical Code Locations
 
-- **Unit conversion constants**: `golf_scraper.py:87-88`
-- **Advanced metrics extraction**: `golf_scraper.py` (optix_x, optix_y, club_lie, lie_angle)
-- **Self-healing schema migration**: `golf_db.py:init_db()` (auto-adds missing columns)
-- **Dual database save logic**: `golf_db.py:save_shot()` (SQLite) and `save_shot_to_supabase()` (cloud)
-- **Image upload to Supabase**: `golf_scraper.py:148-207`
-- **BigQuery schema definition**: `bigquery_schema.json`
-- **Supabase schema definition**: `supabase_schema.sql`
-- **Gemini AI prompt template**: `scripts/gemini_analysis.py:67-87`
+- **Unit conversions**: `golf_scraper.py:87-88`
+- **Video download**: `golf_scraper.py:155-257`
+- **Session date extraction**: `golf_scraper.py:73`
+- **Schema migration**: `golf_db.py:79-94`
+- **AI Coach system prompt**: `app.py:512-565`
+- **Video playback UI**: `app.py:298-331`
+- **BigQuery sync**: `scripts/supabase_to_bigquery.py:110-140`
 
 ---
 
-## Docker Containerization (This Branch)
+## Performance Notes
 
-### Overview
+**Image Size**: ~450MB (Docker, optimized)
+**Build Time**: 3-5 min (first), 30 sec (cached)
+**Memory**: ~200MB (idle), ~500MB (analysis)
+**Import Speed**: 10x faster than old Selenium scraper
+**Video Storage**: Keyframes = 3x current, Full = 12x current
 
-This branch provides a fully containerized version of GolfDataApp optimized for Docker and OrbStack deployment.
+---
 
-### Key Features
+## Security Best Practices
 
-**Security:**
-- Non-root user (`golfuser`) runs application
-- Secrets managed via `.env` file (never baked into image)
-- Minimal Python 3.11 slim base image
-- `.dockerignore` prevents accidental secret leakage
-
-**Performance:**
-- Multi-stage build for optimized image size (~450MB)
-- Layer caching for faster rebuilds (3-5 min → 30 sec)
-- Native ARM64 support for Apple Silicon
-- OrbStack optimized
-
-**Production Ready:**
-- Health checks configured
-- Automatic restart policies
-- Resource limits (configurable)
-- Structured logging
-- Volume persistence for data, media, logs
-
-### Quick Start
-
-```bash
-# Automated setup (recommended)
-./docker-quickstart.sh
-
-# Manual setup
-docker-compose up -d
-open http://localhost:8501
-```
-
-### Docker Commands Reference
-
-```bash
-# Start container
-docker-compose up -d
-
-# Stop container
-docker-compose down
-
-# View logs
-docker-compose logs -f
-
-# Restart
-docker-compose restart
-
-# Rebuild after code changes
-docker-compose up -d --build
-
-# Shell access
-docker exec -it golf-data-app bash
-
-# Check status
-docker ps
-```
-
-### Volume Mounts
-
-Three volumes persist data outside the container:
-
-1. **data/** - SQLite database (`golf_stats.db`)
-2. **media/** - Shot images organized by session
-3. **logs/** - Application and sync logs
-
-### Environment Configuration
-
-Create a `.env` file from `.env.docker.example`:
-
-```bash
-cp .env.docker.example .env
-# Edit .env with your credentials
-```
-
-Required variables:
-- `SUPABASE_URL` - Your Supabase project URL
-- `SUPABASE_KEY` - Your Supabase anon key
-- `GCP_PROJECT_ID` - Google Cloud project ID
-- `GEMINI_API_KEY` - Gemini API key for AI analysis
-
-### Docker Architecture
-
-```
-┌─────────────────────────────────────────┐
-│  macOS Host (OrbStack)                  │
-│  ┌───────────────────────────────────┐  │
-│  │  Container: golf-data-app         │  │
-│  │  ┌─────────────────────────────┐  │  │
-│  │  │  Python 3.11 + Streamlit    │  │  │
-│  │  │  User: golfuser (non-root)  │  │  │
-│  │  │  Port: 8501                 │  │  │
-│  │  └─────────────────────────────┘  │  │
-│  └───────────────────────────────────┘  │
-│       ↕           ↕           ↕          │
-│   data/       media/       logs/         │
-│  (volumes persist on host)               │
-└─────────────────────────────────────────┘
-```
-
-### Documentation
-
-**Essential Reading:**
-- **DOCKER_GUIDE.md** - Comprehensive beginner-friendly guide (read this first!)
-- **DOCKER_README.md** - Quick reference for daily use
-- **DOCKER_SETUP_COMPLETE.md** - Setup verification and next steps
-- **CONTAINERIZATION_SUMMARY.md** - Technical architecture overview
-- **VALIDATION_CHECKLIST.md** - Testing and validation procedures
-
-### Dockerfile Highlights
-
-```dockerfile
-# Multi-stage build
-FROM python:3.11-slim as builder
-# Dependencies installed here
-
-FROM python:3.11-slim
-# Non-root user
-RUN useradd -m -u 1000 golfuser
-# Volume mounts
-VOLUME ["/app/data", "/app/media", "/app/logs"]
-# Health check
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
-```
-
-### docker-compose.yml Highlights
-
-```yaml
-services:
-  app:
-    build: .
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./data:/app/data
-      - ./media:/app/media
-      - ./logs:/app/logs
-    env_file: .env
-    restart: unless-stopped
-```
-
-### Deployment Options
-
-**Local Development:**
-- OrbStack on macOS (current setup)
-- Docker Desktop alternative
-
-**Cloud Deployment:**
-- Google Cloud Run
-- AWS ECS/Fargate
-- Azure Container Instances
-- Railway, Render, Fly.io
-
-See `CONTAINERIZATION_SUMMARY.md` for deployment guides.
-
-### Troubleshooting
-
-**Container won't start:**
-```bash
-docker-compose logs
-docker ps -a
-```
-
-**Permission issues:**
-```bash
-chmod 755 docker-quickstart.sh
-sudo chown -R $USER:$USER data/ media/ logs/
-```
-
-**Port already in use:**
-```bash
-# Change port in docker-compose.yml
-ports:
-  - "8502:8501"  # Use 8502 instead
-```
-
-**Reset everything:**
-```bash
-docker-compose down -v
-rm -rf data/* media/* logs/*
-docker-compose up -d --build
-```
-
-### Differences from Main Branch
-
-| Feature | Main Branch | Docker Branch |
-|---------|-------------|---------------|
-| Setup | Manual Python/pip | One command |
-| Environment | Virtual env | Containerized |
-| Database | `./golf_stats.db` | `./data/golf_stats.db` |
-| Media | `./media/` | `./media/` (volume) |
-| Logs | `./logs/` | `./logs/` (volume) |
-| Deployment | Manual | Cloud-ready |
-| Portability | Platform-specific | Platform-independent |
-
-### Contributing to Docker Branch
-
-When making changes:
-
-1. **Code changes**: Edit files, rebuild container
-   ```bash
-   docker-compose up -d --build
-   ```
-
-2. **Dependency changes**: Update `requirements.txt`, rebuild
-   ```bash
-   docker-compose build --no-cache
-   ```
-
-3. **Configuration changes**: Update `docker-compose.yml`, recreate
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Testing**: Use validation checklist
-   ```bash
-   # See VALIDATION_CHECKLIST.md
-   ```
-
-### Performance Notes
-
-**Image Size:** ~450MB (optimized multi-stage build)
-**Build Time:** 3-5 minutes (first build), 30 seconds (cached)
-**Memory:** ~200MB (typical), ~500MB (with active analysis)
-**CPU:** Minimal except during scraping/analysis
-
-### Security Best Practices
-
-✅ **Implemented:**
-- Non-root user in container
+✅ **Implemented**:
+- Non-root user in Docker (golfuser)
 - Secrets via environment variables
-- `.dockerignore` excludes sensitive files
+- .dockerignore excludes sensitive files
+- Read-only credential mount
 - Minimal base image
-- No hardcoded credentials
 
-⚠️ **Remember:**
-- Never commit `.env` file
+⚠️ **Remember**:
+- Never commit .env
 - Rotate API keys regularly
-- Use secrets management for production (GCP Secret Manager, AWS Secrets Manager)
-
-### Cloud Deployment Ready
-
-This containerized version is ready for cloud deployment with minimal changes:
-
-```bash
-# Build for cloud
-docker build -t gcr.io/your-project/golf-data-app .
-
-# Push to registry
-docker push gcr.io/your-project/golf-data-app
-
-# Deploy to Cloud Run
-gcloud run deploy golf-data-app \
-  --image gcr.io/your-project/golf-data-app \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated
-```
-
-See `CONTAINERIZATION_SUMMARY.md` for detailed deployment guides.
+- Use Secret Manager for production
 
 ---
 
-## Switching Between Branches
+## Next Steps
 
-### From Docker → Main (Non-containerized)
-```bash
-git checkout main
-pip install -r requirements.txt
-streamlit run app.py
-```
+### Immediate (This Week)
+1. ✅ Test AI Coach with BigQuery historical data
+2. ✅ Re-import a session to populate session_date and video_frames
+3. ✅ Test video scrubber in Shot Viewer
+4. Add Supabase columns: `ALTER TABLE shots ADD COLUMN session_date TEXT, video_frames TEXT;`
 
-### From Main → Docker (Containerized)
-```bash
-git checkout docker
-./docker-quickstart.sh
-```
+### Short-term (Next Week)
+1. Implement Vertex AI Agent Builder (biggest AI upgrade)
+2. Deploy Cloud Functions for auto-sync
+3. Deploy to Cloud Run (access anywhere)
+
+### Medium-term (Next Month)
+1. Mobile PWA for on-course data entry
+2. Weekly automated email summaries
+3. Video frame analysis with Gemini Vision
+4. Custom shot classification model
+
+---
+
+## Additional Documentation
+
+See these files for detailed information:
+
+- **DOCKER_GUIDE.md** - Comprehensive Docker setup
+- **VIDEO_IMPLEMENTATION.md** - Video frame details
+- **SYNC_ARCHITECTURE.md** - Why BigQuery doesn't auto-update
+- **DOCKER_AUTH_FIX.md** - Google Cloud authentication
+- **VALIDATION_CHECKLIST.md** - Testing procedures
+- **PIPELINE_COMPLETE.md** - Complete pipeline reference
+- **QUICKSTART.md** - Command reference
+- **changelog.md** - Version history
+
+---
+
+**Last Updated**: December 22, 2024
+**Version**: 2.0 (Gemini + Video + Vertex AI Roadmap)
+**Status**: Production-ready with Docker, Cloud-ready architecture planned

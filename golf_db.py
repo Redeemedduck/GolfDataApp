@@ -9,7 +9,15 @@ load_dotenv()
 # --- Configuration ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), "golf_stats.db")
+
+# Use data/ directory for Docker compatibility, fallback to local for development
+# Docker mounts ./data to /app/data, so we check if that directory exists
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+if os.path.exists(DATA_DIR):
+    SQLITE_DB_PATH = os.path.join(DATA_DIR, "golf_stats.db")
+else:
+    # Fallback for local development (non-Docker)
+    SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), "golf_stats.db")
 
 # Initialize Supabase client
 if SUPABASE_URL and SUPABASE_KEY:
@@ -37,6 +45,7 @@ def init_db():
             shot_id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,
             date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            session_date TEXT,
             club TEXT,
             carry REAL,
             total REAL,
@@ -70,14 +79,27 @@ def init_db():
     # Migration: Add missing columns if table already existed
     cursor.execute("PRAGMA table_info(shots)")
     existing_columns = [row[1] for row in cursor.fetchall()]
-    
+
     required_columns = {
+        'session_date': 'TEXT',
         'optix_x': 'REAL',
         'optix_y': 'REAL',
         'club_lie': 'REAL',
-        'lie_angle': 'TEXT'
+        'lie_angle': 'TEXT',
+        'video_frames': 'TEXT',  # Comma-separated list of video frame URLs
+        # NEW COLUMNS (Dec 2024 expansion)
+        'sensor_name': 'TEXT',  # Launch monitor model
+        'client_shot_id': 'TEXT',  # Device shot number
+        'server_timestamp': 'TEXT',  # Server upload timestamp
+        'is_deleted': 'TEXT',  # Soft delete flag
+        'ball_name': 'TEXT',  # Ball compression
+        'ball_type': 'TEXT',  # Ball type code
+        'club_name_std': 'TEXT',  # Standardized club name
+        'club_type': 'TEXT',  # Club type code
+        'client_session_id': 'TEXT',  # Device session ID
+        'low_point': 'REAL'  # Estimated low point (inches)
     }
-    
+
     for col, col_type in required_columns.items():
         if col not in existing_columns:
             print(f"Migrating: Adding column {col} to SQLite")
@@ -95,6 +117,7 @@ def save_shot(data):
     payload = {
         'shot_id': data.get('id', data.get('shot_id')),
         'session_id': data.get('session', data.get('session_id')),
+        'session_date': data.get('session_date'),  # Actual practice date from Uneekor
         'club': data.get('club'),
         'carry': clean_value(data.get('carry', data.get('carry_distance'))),
         'total': clean_value(data.get('total', data.get('total_distance'))),
@@ -118,11 +141,23 @@ def save_shot(data):
         'shot_type': data.get('shot_type', data.get('type')),
         'impact_img': data.get('impact_img'),
         'swing_img': data.get('swing_img'),
+        'video_frames': data.get('video_frames'),  # Comma-separated list of video frame URLs
         # New advanced metrics
         'optix_x': clean_value(data.get('optix_x')),
         'optix_y': clean_value(data.get('optix_y')),
         'club_lie': clean_value(data.get('club_lie')),
-        'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None
+        'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None,
+        # NEW: Additional metrics (Dec 2024)
+        'sensor_name': data.get('sensor_name'),
+        'client_shot_id': data.get('client_shot_id'),
+        'server_timestamp': data.get('server_timestamp'),
+        'is_deleted': data.get('is_deleted', 'N'),
+        'ball_name': data.get('ball_name'),
+        'ball_type': data.get('ball_type'),
+        'club_name_std': data.get('club_name_std'),
+        'club_type': data.get('club_type'),
+        'client_session_id': data.get('client_session_id'),
+        'low_point': clean_value(data.get('low_point'))
     }
 
     # 1. Save to Local SQLite
@@ -163,10 +198,19 @@ def get_session_data(session_id=None):
         return pd.DataFrame()
 
 def get_unique_sessions():
-    """Get unique sessions from local SQLite database."""
+    """Get unique sessions from local SQLite database with session dates."""
     try:
         conn = sqlite3.connect(SQLITE_DB_PATH)
-        query = "SELECT DISTINCT session_id, MAX(date_added) as date_added FROM shots GROUP BY session_id ORDER BY date_added DESC"
+        query = """
+            SELECT DISTINCT
+                session_id,
+                MAX(session_date) as session_date,
+                MAX(date_added) as date_added,
+                MAX(club) as club
+            FROM shots
+            GROUP BY session_id
+            ORDER BY COALESCE(session_date, date_added) DESC
+        """
         df = pd.read_sql_query(query, conn)
         conn.close()
         return df.to_dict('records')

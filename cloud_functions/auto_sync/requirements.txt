@@ -1,0 +1,5 @@
+functions-framework==3.*
+google-cloud-bigquery==3.*
+google-cloud-pubsub==2.*
+supabase==2.*
+python-dotenv==1.*

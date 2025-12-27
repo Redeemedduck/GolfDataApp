@@ -7,6 +7,13 @@ psycopg2-binary
 supabase
 python-dotenv
 google-generativeai
+google-genai>=1.0.0
+google-cloud-aiplatform>=1.38.0
+google-cloud-bigquery
+google-cloud-firestore
 anthropic
 plotly
 plotly-express
+flask
+jupyter
+notebook

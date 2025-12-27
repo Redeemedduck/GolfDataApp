@@ -30,10 +30,9 @@ services:
       context: .
       dockerfile: Dockerfile
 
-    # Port mapping: host:container
-    # Access the app at http://localhost:8501
-    ports:
-      - "8501:8501"
+    # Use Tailscale network for remote access
+    # Access the app at http://orbstack-gateway:8501
+    network_mode: container:tailscale-container
 
     # Environment variables
     # Option 1: Load from .env file (recommended for secrets)
@@ -41,10 +40,9 @@ services:
       - .env
 
     # Option 2: Set specific environment variables here
-    # Uncomment and customize as needed
-    # environment:
-    #   - STREAMLIT_SERVER_PORT=8501
-    #   - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+    # Google Cloud credentials for BigQuery and Gemini API
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/.gcloud/application_default_credentials.json
 
     # Volume mounts for persistent data
     # Format: host_path:container_path:options
@@ -58,6 +56,10 @@ services:
 
       # Application logs
       - ./logs:/app/logs
+
+      # Google Cloud credentials (for BigQuery and Gemini API)
+      # Read-only mount of host gcloud config to app directory (accessible by golfuser)
+      - ~/.config/gcloud:/app/.gcloud:ro
 
       # Optional: Mount .env file directly if you prefer
       # - ./.env:/app/.env:ro
