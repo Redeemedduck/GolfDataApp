@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code when working with code in this branch.
 
-**Branch Focus**: Database Management UI + AI Coaching Integration (Phases 1-3 Complete)
+**Branch Focus**: Database Management UI + AI Coaching with Machine Learning (Phases 1-5 Complete)
 
 ---
 
@@ -12,14 +12,14 @@ This file provides guidance to Claude Code when working with code in this branch
 - ✅ **Phase 1**: Multi-page architecture transformation
 - ✅ **Phase 2**: Enhanced database management with audit trail
 - ✅ **Phase 3**: Advanced visualizations and export tools
+- ✅ **Phase 4**: Local ML foundation (3 models + training pipeline)
+- ✅ **Phase 5**: AI Coach GUI with interactive predictions
 
 **Upcoming Phases**:
-- 🔜 **Phase 4**: ML Foundation (distance prediction, shot classification)
-- 🔜 **Phase 5**: AI Coach GUI (conversational interface, predictions)
-- 🔜 **Phase 6**: Continuous Learning (auto-retrain, performance monitoring)
+- 🔜 **Phase 6**: Continuous Learning (auto-retrain, performance monitoring, optional Vertex AI)
 
-**Progress**: 3 of 6 phases complete (50%)
-**Total Code Added**: ~2,912 lines across all phases
+**Progress**: 5 of 6 phases complete (83%)
+**Total Code Added**: ~6,500+ lines across all phases
 
 ---
 
@@ -27,40 +27,66 @@ This file provides guidance to Claude Code when working with code in this branch
 
 ```
 GolfDataApp/
-├── app.py                              # Landing page (Phase 1 refactor)
-├── golf_db.py                          # Database layer (866 lines, Phase 2 enhanced)
-├── golf_scraper.py                     # Uneekor API client
+├── app.py                              # Landing page with AI Coach navigation
 │
-├── pages/                              # Multi-page app (Phase 1)
-│   ├── 1_📥_Data_Import.py             # Uneekor data import interface
-│   ├── 2_📊_Dashboard.py               # Analytics & visualizations (Phase 3 enhanced)
-│   └── 3_🗄️_Database_Manager.py       # CRUD operations (Phase 2 enhanced)
+├── utils/                               # Core business logic (Phase 4 refactor)
+│   ├── __init__.py
+│   ├── golf_db.py                      # Database layer (866 lines, Phase 2)
+│   ├── golf_scraper.py                 # Uneekor API client
+│   └── ai_coach.py                     # ML engine (717 lines, Phase 4)
 │
-├── components/                          # Reusable UI components (Phase 1 & 3)
+├── models/                              # Trained ML models (Phase 4)
+│   ├── distance_predictor.pkl          # XGBoost regressor
+│   ├── shot_shape_classifier.pkl       # Logistic regression
+│   ├── swing_anomaly_detector.pkl      # Isolation forest
+│   ├── feature_scaler.pkl              # StandardScaler
+│   ├── model_metadata.json             # Training info & metrics
+│   ├── .gitignore                      # Exclude .pkl from git
+│   └── README.md                       # Model documentation
+│
+├── pages/                               # Multi-page app (Phases 1, 3, 5)
+│   ├── 1_📥_Data_Import.py             # Uneekor data import
+│   ├── 2_📊_Dashboard.py               # Analytics (5 tabs, Phase 3)
+│   ├── 3_🗄️_Database_Manager.py       # CRUD operations (6 tabs, Phase 2)
+│   └── 4_🤖_AI_Coach.py                # ML predictions (5 tabs, Phase 5)
+│
+├── components/                          # Reusable UI components (Phases 1 & 3)
 │   ├── __init__.py
 │   ├── session_selector.py             # Session/club filter widget
 │   ├── metrics_card.py                 # KPI metrics display
 │   ├── shot_table.py                   # Interactive shot table
-│   ├── heatmap_chart.py                # Impact location heatmap (Phase 3)
-│   ├── trend_chart.py                  # Performance trends (Phase 3)
-│   ├── radar_chart.py                  # Multi-metric comparison (Phase 3)
-│   └── export_tools.py                 # CSV/Excel/text export (Phase 3)
+│   ├── heatmap_chart.py                # Impact location heatmap
+│   ├── trend_chart.py                  # Performance trends
+│   ├── radar_chart.py                  # Multi-metric comparison
+│   └── export_tools.py                 # CSV/Excel/text export
 │
-├── scripts/                            # Cloud pipeline & automation
-│   ├── supabase_to_bigquery.py
-│   ├── gemini_analysis.py
-│   ├── vertex_ai_analysis.py
-│   ├── auto_sync.py
-│   └── post_session.py
+├── scripts/                             # Automation & ML training (Phase 4)
+│   ├── train_models.py                 # ML training pipeline (Phase 4)
+│   ├── evaluate_models.py              # Model evaluation (Phase 4)
+│   ├── supabase_to_bigquery.py         # Cloud sync
+│   ├── gemini_analysis.py              # AI analysis
+│   ├── vertex_ai_analysis.py           # Vertex AI
+│   ├── auto_sync.py                    # Automation
+│   └── post_session.py                 # Post-session hooks
 │
-├── docs/                               # Phase summaries
-│   ├── PHASE1_SUMMARY.md
-│   ├── PHASE2_SUMMARY.md
-│   ├── PHASE3_SUMMARY.md
-│   ├── IMPROVEMENT_ROADMAP.md
-│   └── CLAUDE_BRANCH.md
+├── docs/                                # Phase summaries & guides
+│   ├── PHASE1_SUMMARY.md               # Multi-page architecture
+│   ├── PHASE2_SUMMARY.md               # Database enhancements
+│   ├── PHASE3_SUMMARY.md               # Visualizations
+│   ├── PHASE4_SUMMARY.md               # ML foundation
+│   ├── PHASE5_SUMMARY.md               # AI Coach GUI
+│   ├── IMPROVEMENT_ROADMAP.md          # Full 6-phase plan
+│   └── CLAUDE_BRANCH.md                # Original branch guide
 │
-└── legacy/                             # Debug tools & backups
+├── .streamlit/                          # Streamlit config (Cloud Run)
+│   └── config.toml                     # Production settings
+│
+├── Dockerfile                           # Cloud Run containerization
+├── .dockerignore                        # Docker exclusions
+├── cloudbuild.yaml                     # CI/CD pipeline
+├── CLOUD_RUN_DEPLOYMENT.md             # Deployment guide
+│
+└── legacy/                              # Debug tools & backups
     └── ...
 ```
 
@@ -75,13 +101,50 @@ streamlit run app.py
 
 The app will open at `http://localhost:8501/` with:
 - **Landing page**: Quick stats and navigation
-- **5 pages**: Data Import, Dashboard, Database Manager (and more)
+- **4 main pages**: Data Import, Dashboard, Database Manager, AI Coach
 - **Auto-navigation**: Streamlit sidebar with emoji icons
 
 ### Navigation
 - 📥 **Data Import**: Import from Uneekor URLs
 - 📊 **Dashboard**: Advanced analytics (5 tabs)
 - 🗄️ **Database Manager**: CRUD operations (6 tabs)
+- 🤖 **AI Coach**: ML predictions & insights (5 tabs, Phase 5)
+
+---
+
+## 🤖 Machine Learning Setup (Phase 4 & 5)
+
+### Training Models
+
+**First-time setup** (requires imported shot data):
+```bash
+# Train all 3 models
+python scripts/train_models.py --all
+
+# Or train individually
+python scripts/train_models.py --distance   # Distance predictor
+python scripts/train_models.py --shape      # Shot shape classifier
+python scripts/train_models.py --anomaly    # Anomaly detector
+```
+
+**Requirements**:
+- Distance predictor: 50+ shots with valid carry, ball_speed, club_speed
+- Shape classifier: 30+ shots with valid side_spin data
+- Anomaly detector: 20+ shots with swing metrics
+
+**Output**: Models saved to `models/*.pkl` + metadata in `models/model_metadata.json`
+
+### Evaluating Models
+
+```bash
+# Quick evaluation
+python scripts/evaluate_models.py
+
+# Detailed with sample predictions
+python scripts/evaluate_models.py --detailed
+```
+
+**Output**: RMSE, R², accuracy, feature importance, sample predictions, insights
 
 ---
 
@@ -91,9 +154,9 @@ The app will open at `http://localhost:8501/` with:
 
 **Before**: Single `app.py` with 3 tabs (221 lines)
 **After**:
-- Landing page (`app.py` - 190 lines)
-- 3 dedicated page files (`pages/` - 1,041 lines)
-- 8 reusable components (`components/` - 599 lines Phase 1, +599 Phase 3)
+- Landing page (`app.py` - 208 lines)
+- 4 dedicated page files (`pages/` - 2,186 lines)
+- 8 reusable components (`components/` - 1,198 lines)
 
 **Benefits**:
 - Separation of concerns (UI, components, data)
@@ -104,6 +167,7 @@ The app will open at `http://localhost:8501/` with:
 ### Phase 2: Enhanced Database Management
 
 **golf_db.py** expanded from 233 → 866 lines (+633, +271%)
+**Moved**: `golf_db.py` → `utils/golf_db.py` (Phase 4)
 
 **New Database Tables**:
 ```sql
@@ -146,7 +210,7 @@ change_log       -- Audit trail for all modifications
 - Consistency metrics (std dev)
 - Supports Optix or standard impact data
 
-**Trend Chart** (`trend_chart.py` - 94 lines):
+**Trend Chart** (`trend_chart.py` - 105 lines):
 - Performance tracking across sessions
 - Linear regression trend line
 - Improvement annotation (absolute + %)
@@ -167,6 +231,90 @@ change_log       -- Audit trail for all modifications
 - Batch export (all sessions, per club)
 - Preview mode
 
+### Phase 4: Local ML Foundation
+
+**New ML Module** (`utils/ai_coach.py` - 717 lines):
+
+**3 Machine Learning Models**:
+
+1. **Distance Predictor** (XGBoost Regressor)
+   - Predicts carry distance from swing metrics
+   - Features: ball_speed, club_speed, launch_angle, back_spin, attack_angle, smash_factor, club
+   - Metrics: RMSE (yards), R² score
+   - Min data: 50+ valid shots
+
+2. **Shot Shape Classifier** (Logistic Regression)
+   - Classifies: Draw, Slight Draw, Straight, Slight Fade, Fade
+   - Features: side_spin, club_path, face_angle, ball_speed
+   - Metrics: Accuracy, F1 score
+   - Min data: 30+ shots with side_spin
+
+3. **Swing Anomaly Detector** (Isolation Forest)
+   - Detects unusual swing patterns
+   - Features: club_speed, ball_speed, smash, launch, spin, attack, path, face
+   - Output: anomaly flag (-1/1) + score
+   - Min data: 20+ shots with swing metrics
+
+**Additional Features**:
+- User profiling (per-club baselines)
+- Coaching insights generation
+- Model persistence (save/load)
+- Metadata tracking
+
+**Training Pipeline** (`scripts/train_models.py` - 193 lines):
+- Automated model training
+- CLI interface with flags
+- Saves models to `models/*.pkl`
+
+**Evaluation Pipeline** (`scripts/evaluate_models.py` - 303 lines):
+- Model performance metrics
+- Sample predictions
+- Coaching insights
+- User profile generation
+
+### Phase 5: AI Coach GUI
+
+**New Page** (`pages/4_🤖_AI_Coach.py` - 570 lines):
+
+**5 Interactive Tabs**:
+
+**Tab 1: 🎯 Shot Predictor**
+- Interactive distance prediction (sliders for ball_speed, club_speed, launch, spin, attack)
+- Real-time smash factor calculation
+- Shot shape prediction (side_spin, club_path, face_angle)
+- Comparison to personal average
+- Model metadata display
+
+**Tab 2: 🔍 Swing Diagnosis**
+- Anomaly detection with Isolation Forest
+- Anomaly statistics (total, normal, anomalies, rate)
+- Top 10 anomalies table
+- Visualizations: histogram, scatter plot (smash vs anomaly score)
+- Interactive Plotly charts
+
+**Tab 3: 💡 Coaching Insights**
+- AI-generated personalized recommendations
+- Overall + club-specific analysis
+- Insights categories:
+  * Carry consistency warnings
+  * Smash factor assessment
+  * Launch angle optimization
+  * Spin analysis
+- Color-coded feedback (✅ positive, ⚠️ warnings, 📊 neutral)
+
+**Tab 4: 📈 Progress Tracker**
+- Trend analysis across sessions
+- Linear regression trend line
+- Club and metric filtering
+- Progress statistics (first, latest, improvement %, total sessions)
+- Requires minimum 2 sessions
+
+**Tab 5: 👤 Your Profile**
+- Performance table (all clubs)
+- Visual analysis: carry bar chart, consistency score chart
+- Club gapping analysis (distance gaps between clubs)
+- Consistency scoring (0-100 based on coefficient of variation)
+
 ---
 
 ## 📊 Dashboard (Enhanced - 5 Tabs)
@@ -175,15 +323,15 @@ change_log       -- Audit trail for all modifications
 - KPI metrics row (shots, carry, total, smash, ball speed)
 - Carry distance box plot
 - Shot dispersion scatter (colored by smash)
-- **NEW**: Multi-metric radar chart
+- Multi-metric radar chart
 
-### Tab 2: 🎯 Impact Analysis (NEW)
+### Tab 2: 🎯 Impact Analysis
 - Impact location heatmap
 - Sweet spot overlay visualization
 - Average impact marker
 - Consistency statistics table by club
 
-### Tab 3: 📊 Trends Over Time (NEW)
+### Tab 3: 📊 Trends Over Time
 - Global trends (all sessions)
 - Linear regression with improvement annotation
 - Club-specific filtering
@@ -194,9 +342,8 @@ change_log       -- Audit trail for all modifications
 - Interactive shot table
 - Shot detail panel with metrics
 - Impact/swing image viewer
-- (Unchanged from Phase 1)
 
-### Tab 5: 💾 Export Data (NEW)
+### Tab 5: 💾 Export Data
 - Session export (CSV + text summary + Excel)
 - All sessions export
 - Per-club export
@@ -217,12 +364,12 @@ change_log       -- Audit trail for all modifications
 - Delete individual shot
 - Confirmation checkboxes for safety
 
-### Tab 3: 🔄 Session Operations (NEW)
+### Tab 3: 🔄 Session Operations
 - Merge multiple sessions
 - Split session (move shots to new session)
 - Multi-select interfaces
 
-### Tab 4: ⚡ Bulk Operations (NEW)
+### Tab 4: ⚡ Bulk Operations
 - Bulk rename club (across all sessions)
 - Recalculate metrics (smash + clean invalid data)
 - Scope selector (current session or all)
@@ -232,7 +379,7 @@ change_log       -- Audit trail for all modifications
 - Data validation (missing critical fields)
 - Deduplication
 
-### Tab 6: 📜 Audit Trail (NEW)
+### Tab 6: 📜 Audit Trail
 - Change log viewer (last 20 modifications)
 - Restore deleted shots from archive
 - Multi-select restore interface
@@ -271,9 +418,14 @@ from components import (
 )
 ```
 
-### Working with golf_db.py
+### Working with utils/
 
-**Hybrid Sync Pattern** (all write operations):
+**Import Pattern** (Phase 4 refactor):
+```python
+from utils import golf_db, golf_scraper, ai_coach
+```
+
+**Hybrid Sync Pattern** (all write operations in golf_db.py):
 ```python
 def operation():
     # 1. Local SQLite
@@ -300,6 +452,58 @@ def operation():
 - `shots` - Main data (30 fields)
 - `shots_archive` - Deleted shots (4 fields)
 - `change_log` - Modification history (6 fields)
+
+### Working with AI Coach
+
+**Using Trained Models**:
+```python
+from utils import ai_coach
+
+# Get singleton instance
+coach = ai_coach.get_coach()
+
+# Predict distance
+prediction = coach.predict_distance({
+    'ball_speed': 165,
+    'club_speed': 110,
+    'launch_angle': 12,
+    'back_spin': 2500,
+    'attack_angle': 3,
+    'club': 'Driver'
+})
+
+# Predict shot shape
+shape = coach.predict_shot_shape({
+    'side_spin': -300,
+    'club_path': -2.5,
+    'face_angle': -1.5,
+    'ball_speed': 165
+})
+
+# Detect anomalies
+df_with_anomalies = coach.detect_swing_anomalies(df)
+anomalies = df_with_anomalies[df_with_anomalies['anomaly'] == -1]
+
+# Generate insights
+insights = coach.generate_insights(df, club='Driver')
+for insight in insights:
+    print(insight)
+
+# Calculate user profile
+profile = coach.calculate_user_profile(df)
+```
+
+**Model Persistence**:
+```python
+# Models auto-load on initialization
+coach = ai_coach.get_coach()
+
+# Manually save after training
+coach.save_models()
+
+# Manually reload
+coach.load_models()
+```
 
 ### Adding New Visualizations
 
@@ -333,25 +537,35 @@ required_columns = {
 
 ### Syntax Validation
 ```bash
-python -m py_compile app.py golf_db.py components/*.py pages/*.py
+python -m py_compile app.py utils/*.py components/*.py pages/*.py scripts/*.py
 ```
 
 ### Run Specific Page
 ```bash
 streamlit run pages/2_📊_Dashboard.py
+streamlit run pages/4_🤖_AI_Coach.py
 ```
 
-### Test Database Operations
+### Test ML Pipeline
 ```python
-import golf_db
+import sys
+sys.path.append('.')
+from utils import golf_db, ai_coach
 
 # Initialize
 golf_db.init_db()
+df = golf_db.get_all_shots()
 
-# Test new functions
-golf_db.merge_sessions(['84428', '84500'], 'Combined_Session')
-outliers = golf_db.find_outliers('84428')
-print(outliers)
+# Train models
+coach = ai_coach.get_coach()
+
+# Test predictions (after training)
+prediction = coach.predict_distance({
+    'ball_speed': 165, 'club_speed': 110,
+    'launch_angle': 12, 'back_spin': 2500,
+    'attack_angle': 3, 'club': 'Driver'
+})
+print(f"Predicted carry: {prediction:.1f} yards")
 ```
 
 ---
@@ -360,17 +574,21 @@ print(outliers)
 
 | File | Lines | Purpose | Phase |
 |------|-------|---------|-------|
-| **app.py** | 190 | Landing page | 1 |
-| **golf_db.py** | 866 | Database layer | 2 |
-| **golf_scraper.py** | ~300 | API client | Original |
+| **app.py** | 208 | Landing page with AI Coach nav | 1, 5 |
+| **utils/golf_db.py** | 866 | Database layer | 2, 4 |
+| **utils/golf_scraper.py** | ~300 | API client | Original, 4 |
+| **utils/ai_coach.py** | 717 | ML engine | 4 |
 | **pages/1_📥_Data_Import.py** | 131 | Import UI | 1 |
-| **pages/2_📊_Dashboard.py** | 435 | Analytics | 1,3 |
-| **pages/3_🗄️_Database_Manager.py** | 475 | CRUD | 1,2 |
+| **pages/2_📊_Dashboard.py** | 435 | Analytics | 1, 3 |
+| **pages/3_🗄️_Database_Manager.py** | 475 | CRUD | 1, 2 |
+| **pages/4_🤖_AI_Coach.py** | 570 | ML predictions | 5 |
 | **components/heatmap_chart.py** | 167 | Impact viz | 3 |
 | **components/trend_chart.py** | 105 | Trends | 3 |
 | **components/radar_chart.py** | 143 | Comparison | 3 |
 | **components/export_tools.py** | 195 | Export | 3 |
-| **Total** | 2,863+ | Core app | - |
+| **scripts/train_models.py** | 193 | Training pipeline | 4 |
+| **scripts/evaluate_models.py** | 303 | Evaluation | 4 |
+| **Total** | 4,808+ | Core app | - |
 
 ---
 
@@ -384,8 +602,49 @@ Open app → Data Import page → Paste Uneekor URL → Run Import
 # 2. View analytics
 Dashboard page → Impact Analysis tab → Check strike pattern
 
-# 3. Export for coach
+# 3. Get AI insights
+AI Coach page → Coaching Insights tab → Review recommendations
+
+# 4. Export for coach
 Dashboard page → Export Data tab → Download CSV + summary
+```
+
+### Train ML Models (First Time)
+```bash
+# Ensure you have imported data first
+python scripts/train_models.py --all
+
+# Verify training
+python scripts/evaluate_models.py --detailed
+```
+
+### Use AI Coach
+```bash
+# 1. Train models (one-time)
+python scripts/train_models.py --all
+
+# 2. Launch app
+streamlit run app.py
+
+# 3. Navigate to AI Coach page
+
+# 4. Predict shot distance
+AI Coach → Shot Predictor → Adjust sliders → Predict
+
+# 5. Diagnose swings
+AI Coach → Swing Diagnosis → View anomalies
+
+# 6. Track progress
+AI Coach → Progress Tracker → Select club/metric → View trends
+```
+
+### Retrain Models (After New Data)
+```bash
+# After importing new sessions
+python scripts/train_models.py --all
+
+# Check improvement in metrics
+python scripts/evaluate_models.py
 ```
 
 ### Merge Multiple Sessions
@@ -396,6 +655,8 @@ Database Manager → Session Operations tab → Select sessions → Enter new ID
 ### Track Improvement
 ```bash
 Dashboard → Trends Over Time tab → Select metric → View trend line
+# Or
+AI Coach → Progress Tracker → Select club → View regression line
 ```
 
 ### Clean Bad Data
@@ -410,13 +671,95 @@ Database Manager → Audit Trail tab → View archive → Select shots → Resto
 
 ---
 
+## 🐳 Docker & Cloud Run Deployment
+
+### Local Docker Testing
+```bash
+# Build image
+docker build -t golf-data-app .
+
+# Run container
+docker run -p 8080:8080 \
+  -e SUPABASE_URL="your-url" \
+  -e SUPABASE_KEY="your-key" \
+  golf-data-app
+
+# Open browser
+open http://localhost:8080
+```
+
+### Deploy to Cloud Run
+```bash
+# Simple deployment (builds automatically)
+gcloud run deploy golf-data-app \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --memory 1Gi
+
+# Get URL
+gcloud run services describe golf-data-app \
+  --region us-central1 \
+  --format='value(status.url)'
+```
+
+**See**: `CLOUD_RUN_DEPLOYMENT.md` for full guide
+
+---
+
+## 📦 Dependencies
+
+### Core
+```
+streamlit               # Web UI framework
+pandas                  # Data manipulation
+plotly, plotly-express  # Interactive visualizations
+numpy                   # Numerical computations
+```
+
+### Database & API
+```
+psycopg2-binary        # PostgreSQL adapter
+supabase               # Cloud database client
+requests               # HTTP requests
+python-dotenv          # Environment variables
+```
+
+### Machine Learning (Phase 4)
+```
+scikit-learn           # ML algorithms (Logistic Regression, Isolation Forest, StandardScaler)
+xgboost                # Gradient boosting (distance predictor)
+joblib                 # Model serialization
+scipy                  # Statistical computations
+```
+
+### Export & Analysis
+```
+openpyxl               # Excel file handling
+google-generativeai    # Gemini AI
+anthropic              # Claude AI
+```
+
+### Scraping (Optional)
+```
+selenium               # Web automation
+webdriver-manager      # Browser driver management
+```
+
+---
+
 ## 🔗 Documentation Links
 
-- **Branch Instructions**: `/CLAUDE_BRANCH.md`
-- **Full Roadmap**: `/IMPROVEMENT_ROADMAP.md`
-- **Phase 1 Summary**: `/PHASE1_SUMMARY.md`
-- **Phase 2 Summary**: `/PHASE2_SUMMARY.md`
-- **Phase 3 Summary**: `/PHASE3_SUMMARY.md`
+- **Branch Instructions**: `/docs/CLAUDE_BRANCH.md`
+- **Full Roadmap**: `/docs/IMPROVEMENT_ROADMAP.md`
+- **Phase Summaries**:
+  - `/docs/PHASE1_SUMMARY.md` - Multi-page architecture
+  - `/docs/PHASE2_SUMMARY.md` - Database enhancements
+  - `/docs/PHASE3_SUMMARY.md` - Advanced visualizations
+  - `/docs/PHASE4_SUMMARY.md` - ML foundation
+  - `/docs/PHASE5_SUMMARY.md` - AI Coach GUI
+- **Deployment**: `/CLOUD_RUN_DEPLOYMENT.md`
+- **Models**: `/models/README.md`
 - **Main Project README**: `/README.md`
 
 ---
@@ -441,11 +784,19 @@ Database Manager → Audit Trail tab → View archive → Select shots → Resto
 - Filenames: Include session ID + timestamp
 - Preview: Show first 20 rows before download
 
+### ML Model Guidelines
+- Train with minimum data requirements (see above)
+- Models saved to `models/*.pkl` (excluded from git)
+- Metadata tracked in `models/model_metadata.json`
+- Retrain after significant new data (50+ shots)
+- Check model performance before deployment
+
 ### Performance
 - Heatmaps: Filter to <1000 points for responsiveness
 - Trend charts: Cache regression results for repeated views
 - Radar charts: Limit to 5 clubs max
 - Export: In-memory only (no disk I/O on server)
+- ML predictions: <1ms per prediction
 
 ---
 
@@ -455,54 +806,82 @@ Database Manager → Audit Trail tab → View archive → Select shots → Resto
 - ✅ Session selector refresh (Phase 1)
 - ✅ Smash factor calculation (Phase 2)
 - ✅ Missing data handling (Phase 3)
+- ✅ Import paths after utils/ refactor (Phase 4)
 
 ### Outstanding
 - ⚠️ Image loading: Some shots show "No images available" even when URLs exist
   - **Workaround**: Re-run import to fetch images again
 - ⚠️ Excel export: Requires openpyxl installation
   - **Workaround**: Install via `pip install openpyxl`
+- ⚠️ Cloud Run SQLite: Ephemeral storage (data lost on restart)
+  - **Solution**: Use Supabase as primary database in cloud
 
 ---
 
-## 💡 Future Enhancements (Phases 4-6)
+## 💡 Future Enhancements (Phase 6)
 
-### Phase 4: ML Foundation
-- Distance prediction model (XGBoost)
-- Shot shape classifier
-- Swing flaw detector
-- Clustering for shot grouping
-
-### Phase 5: AI Coach GUI
-- Conversational Q&A interface
-- ML-powered predictions
-- Personalized training plan generator
-- PGA Tour benchmarking
-
-### Phase 6: Continuous Learning
-- Auto-retrain models after each session
+### Continuous Learning
+- Auto-retrain models after N new sessions
+- Incremental learning (update weights)
 - Performance monitoring dashboard
-- A/B testing framework
-- Vertex AI deployment (optional)
+- Model versioning and A/B testing
+
+### Optional Cloud Integration
+- Vertex AI model deployment
+- BigQuery ML (train models in BigQuery)
+- Auto-scaling prediction endpoints
+- Multi-user support
+
+### Advanced Features
+- Drill recommendations based on weaknesses
+- PGA Tour benchmarking (compare to pros, altitude-adjusted)
+- Training plan generator
+- Chat interface with Gemini ("Ask Coach" Q&A)
+- Shot recommendation engine ("try this")
 
 ---
 
 ## 📝 Changelog (This Branch)
 
-### 2025-12-28: Phase 3 Complete
+### 2025-12-28: Phase 5 Complete - AI Coach GUI
+- Added pages/4_🤖_AI_Coach.py (570 lines)
+- 5 interactive tabs: Shot Predictor, Swing Diagnosis, Insights, Progress Tracker, Profile
+- Integrated all Phase 4 ML models
+- Updated landing page with AI Coach navigation
+- Created docs/PHASE5_SUMMARY.md
+
+### 2025-12-28: Phase 4 Complete - ML Foundation
+- Created utils/ai_coach.py (717 lines) - ML engine
+- Implemented 3 models: Distance predictor, Shape classifier, Anomaly detector
+- Created scripts/train_models.py (193 lines) - Training pipeline
+- Created scripts/evaluate_models.py (303 lines) - Evaluation
+- Moved golf_db.py and golf_scraper.py to utils/
+- Created models/ directory with .gitignore and README
+- Added ML dependencies: scikit-learn, xgboost, joblib, scipy
+- Created docs/PHASE4_SUMMARY.md
+
+### 2025-12-28: Cloud Run Deployment Support
+- Added Dockerfile optimized for Cloud Run
+- Created .dockerignore
+- Added .streamlit/config.toml for production
+- Created cloudbuild.yaml for CI/CD
+- Created CLOUD_RUN_DEPLOYMENT.md (550+ lines)
+
+### 2025-12-28: Phase 3 Complete - Advanced Visualizations
 - Added impact location heatmap
 - Added performance trend charts
 - Added multi-metric radar charts
 - Added comprehensive export tools (CSV/Excel/text)
 - Enhanced Dashboard to 5 tabs
 
-### 2025-12-28: Phase 2 Complete
+### 2025-12-28: Phase 2 Complete - Enhanced Database
 - Added 13 new database functions
 - Created shots_archive table for recovery
 - Created change_log table for audit trail
 - Enhanced Database Manager to 6 tabs
 - Implemented undo functionality
 
-### 2025-12-28: Phase 1 Complete
+### 2025-12-28: Phase 1 Complete - Multi-Page Architecture
 - Refactored monolithic app.py to multi-page architecture
 - Created 3 dedicated page files
 - Extracted 8 reusable components
@@ -512,4 +891,4 @@ Database Manager → Audit Trail tab → View archive → Select shots → Resto
 
 **Last Updated**: 2025-12-28
 **Branch**: `claude/database-ui-ai-coaching-DE7uU`
-**Status**: Active Development (3 of 6 phases complete)
+**Status**: Active Development (5 of 6 phases complete, 83%)
