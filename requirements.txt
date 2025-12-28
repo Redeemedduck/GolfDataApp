@@ -10,3 +10,5 @@ google-generativeai
 anthropic
 plotly
 plotly-express
+openpyxl
+numpy
