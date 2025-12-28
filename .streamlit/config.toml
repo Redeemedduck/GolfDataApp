@@ -1,0 +1,26 @@
+# Streamlit configuration for Google Cloud Run
+# This file configures the app for production deployment
+
+[server]
+port = 8080
+address = "0.0.0.0"
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
+serverAddress = "0.0.0.0"
+serverPort = 8080
+
+[theme]
+primaryColor = "#1f77b4"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
+[client]
+showErrorDetails = false
+toolbarMode = "minimal"
