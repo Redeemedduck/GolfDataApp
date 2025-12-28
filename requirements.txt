@@ -12,3 +12,7 @@ plotly
 plotly-express
 openpyxl
 numpy
+scikit-learn
+xgboost
+joblib
+scipy
