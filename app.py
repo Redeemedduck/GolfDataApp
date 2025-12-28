@@ -92,6 +92,22 @@ with col3:
     """)
     st.page_link("pages/3_🗄️_Database_Manager.py", label="Go to Manager", icon="🗄️", use_container_width=True)
 
+# Second row for AI Coach
+col4 = st.columns(3)[0]  # Only use first column for centered card
+
+with col4:
+    st.subheader("🤖 AI Coach")
+    st.markdown("""
+    Get personalized coaching with Gemini 3.0 AI.
+
+    **Features:**
+    - Interactive chat coaching
+    - Data-driven insights
+    - Performance analysis
+    - Function calling for live data access
+    """)
+    st.page_link("pages/4_🤖_AI_Coach.py", label="Go to AI Coach", icon="🤖", use_container_width=True)
+
 st.divider()
 
 # Recent activity
