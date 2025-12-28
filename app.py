@@ -4,7 +4,7 @@ My Golf Data Lab - Landing Page
 A comprehensive golf analytics platform with local-first hybrid architecture.
 """
 import streamlit as st
-import golf_db
+from utils import golf_db
 
 st.set_page_config(
     layout="wide",

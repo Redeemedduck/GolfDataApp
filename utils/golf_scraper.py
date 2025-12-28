@@ -1,7 +1,7 @@
 import os
 import re
 import requests
-import golf_db
+from . import golf_db
 from dotenv import load_dotenv
 from supabase import create_client, Client
 

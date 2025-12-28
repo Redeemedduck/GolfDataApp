@@ -8,8 +8,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-import golf_scraper
-import golf_db
+from utils import golf_scraper, golf_db
 
 st.set_page_config(layout="wide", page_title="Data Import - My Golf Lab")
 

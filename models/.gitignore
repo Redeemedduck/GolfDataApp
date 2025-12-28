@@ -1,0 +1,8 @@
+# Ignore trained model files (can be large)
+*.pkl
+
+# Keep metadata file
+!model_metadata.json
+
+# Keep README
+!README.md

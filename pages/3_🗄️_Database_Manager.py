@@ -9,7 +9,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
-import golf_db
+from utils import golf_db
 from components import render_session_selector
 
 st.set_page_config(layout="wide", page_title="Database Manager - My Golf Lab")
