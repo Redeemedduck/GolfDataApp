@@ -92,6 +92,22 @@ with col3:
     """)
     st.page_link("pages/3_🗄️_Database_Manager.py", label="Go to Manager", icon="🗄️", use_container_width=True)
 
+# Second row of navigation cards
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.subheader("🤖 AI Coach")
+    st.markdown("""
+    Machine learning powered golf coaching.
+
+    **Features:**
+    - Shot distance predictions
+    - Swing diagnostics & anomalies
+    - Personalized insights
+    - Progress tracking over time
+    """)
+    st.page_link("pages/4_🤖_AI_Coach.py", label="Go to AI Coach", icon="🤖", use_container_width=True)
+
 st.divider()
 
 # Recent activity
@@ -151,6 +167,7 @@ with st.expander("ℹ️ About This App"):
     - **Database**: SQLite (local), Supabase (cloud), BigQuery (warehouse)
     - **API**: Uneekor REST API for data fetching
     - **AI**: Google Gemini API for analysis
+    - **ML**: XGBoost, scikit-learn for predictions and coaching
 
     ### Database Schema
     30+ fields per shot including:
