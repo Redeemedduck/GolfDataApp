@@ -1,5 +1,6 @@
 """
 Dashboard Page - Performance analytics and visualizations
+Phase 3: Enhanced with advanced visualizations (heatmaps, trends, radar charts, export)
 """
 import streamlit as st
 import pandas as pd
@@ -12,7 +13,14 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 import golf_db
-from components import render_session_selector, render_metrics_row
+from components import (
+    render_session_selector,
+    render_metrics_row,
+    render_impact_heatmap,
+    render_trend_chart,
+    render_radar_chart,
+    render_summary_export
+)
 
 st.set_page_config(layout="wide", page_title="Dashboard - My Golf Lab")
 
@@ -36,13 +44,28 @@ if df.empty:
     st.stop()
 
 # Main content
-st.title("⛳ My Golf Data Lab")
+st.title("⛳ My Golf Data Lab - Advanced Analytics")
 st.subheader(f"Session: {selected_session_id}")
 
-# Create tabs for different views
-tab1, tab2 = st.tabs(["📈 Performance Overview", "🔍 Shot Viewer"])
+st.markdown("""
+**Phase 3 Enhanced**: Professional-grade visualizations including impact heatmaps, performance trends,
+multi-metric radar charts, and comprehensive export options.
+""")
 
+st.divider()
+
+# Create tabs for different views
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📈 Performance Overview",
+    "🎯 Impact Analysis",
+    "📊 Trends Over Time",
+    "🔍 Shot Viewer",
+    "💾 Export Data"
+])
+
+# ============================================================================
 # TAB 1: PERFORMANCE OVERVIEW
+# ============================================================================
 with tab1:
     st.header("Performance Metrics")
 
@@ -113,8 +136,158 @@ with tab1:
         )
         st.plotly_chart(fig_dispersion, use_container_width=True)
 
-# TAB 2: SHOT VIEWER
+    st.divider()
+
+    # Radar Chart for Multi-Metric Comparison
+    render_radar_chart(df)
+
+
+# ============================================================================
+# TAB 2: IMPACT ANALYSIS (NEW)
+# ============================================================================
 with tab2:
+    st.header("Impact Location Analysis")
+
+    st.markdown("""
+    Analyze where you're striking the ball on the club face. Consistent center-face contact
+    produces optimal ball speed and distance. The green circle represents the ideal sweet spot.
+    """)
+
+    # Impact Heatmap
+    render_impact_heatmap(df, use_optix=True)
+
+    st.divider()
+
+    # Impact Statistics by Club
+    st.subheader("Impact Consistency by Club")
+
+    impact_stats = []
+    for club in df['club'].unique():
+        club_data = df[df['club'] == club]
+
+        # Check which impact data is available
+        if 'optix_x' in club_data.columns and 'optix_y' in club_data.columns:
+            x_col, y_col = 'optix_x', 'optix_y'
+        elif 'impact_x' in club_data.columns and 'impact_y' in club_data.columns:
+            x_col, y_col = 'impact_x', 'impact_y'
+        else:
+            continue
+
+        # Filter valid data
+        valid_data = club_data[(club_data[x_col] != 0) & (club_data[y_col] != 0)].dropna(subset=[x_col, y_col])
+
+        if len(valid_data) > 0:
+            impact_stats.append({
+                'Club': club,
+                'Shots': len(valid_data),
+                'Avg Horizontal': f"{valid_data[x_col].mean():.3f}",
+                'Avg Vertical': f"{valid_data[y_col].mean():.3f}",
+                'H Std Dev': f"{valid_data[x_col].std():.3f}",
+                'V Std Dev': f"{valid_data[y_col].std():.3f}"
+            })
+
+    if impact_stats:
+        impact_df = pd.DataFrame(impact_stats)
+        st.dataframe(impact_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No impact location data available for analysis")
+
+
+# ============================================================================
+# TAB 3: TRENDS OVER TIME (NEW)
+# ============================================================================
+with tab3:
+    st.header("Performance Trends Across Sessions")
+
+    st.markdown("""
+    Track your improvement over time. Compare your performance across multiple practice sessions
+    to identify trends and measure progress toward your goals.
+    """)
+
+    # Get all sessions
+    all_sessions = golf_db.get_unique_sessions()
+
+    if len(all_sessions) < 2:
+        st.info("You need at least 2 sessions to view trends. Import more data to see progress over time.")
+    else:
+        # Metric selector
+        metric_options = {
+            'carry': 'Carry Distance',
+            'total': 'Total Distance',
+            'ball_speed': 'Ball Speed',
+            'smash': 'Smash Factor',
+            'back_spin': 'Back Spin',
+            'launch_angle': 'Launch Angle'
+        }
+
+        selected_metric = st.selectbox(
+            "Select Metric to Track",
+            options=list(metric_options.keys()),
+            format_func=lambda x: metric_options[x],
+            key="trend_metric"
+        )
+
+        # Prepare session data for trend analysis
+        session_trends = []
+        for session in all_sessions:
+            session_data = golf_db.get_session_data(session['session_id'])
+
+            if not session_data.empty and selected_metric in session_data.columns:
+                avg_value = session_data[selected_metric].mean()
+
+                session_trends.append({
+                    'session_id': session['session_id'],
+                    'date_added': session['date_added'],
+                    selected_metric: avg_value
+                })
+
+        # Render trend chart
+        if session_trends:
+            render_trend_chart(session_trends, metric=selected_metric)
+        else:
+            st.warning(f"No {metric_options[selected_metric]} data available across sessions")
+
+        st.divider()
+
+        # Per-Club Trends
+        st.subheader("Club-Specific Trends")
+
+        # Get all unique clubs across all sessions
+        all_shots = golf_db.get_session_data()
+        if 'club' in all_shots.columns:
+            all_clubs = all_shots['club'].unique().tolist()
+
+            selected_club = st.selectbox(
+                "Select Club for Detailed Trend",
+                all_clubs,
+                key="club_trend"
+            )
+
+            # Get trends for selected club only
+            club_trends = []
+            for session in all_sessions:
+                session_data = golf_db.get_session_data(session['session_id'])
+                club_data = session_data[session_data['club'] == selected_club]
+
+                if not club_data.empty and selected_metric in club_data.columns:
+                    avg_value = club_data[selected_metric].mean()
+
+                    club_trends.append({
+                        'session_id': session['session_id'],
+                        'date_added': session['date_added'],
+                        selected_metric: avg_value
+                    })
+
+            if club_trends:
+                render_trend_chart(club_trends, metric=selected_metric)
+            else:
+                st.info(f"No {selected_club} data available across sessions")
+
+
+# ============================================================================
+# TAB 4: SHOT VIEWER (EXISTING)
+# ============================================================================
+with tab4:
     st.header("Detailed Shot Analysis")
 
     # Grid View
@@ -182,3 +355,81 @@ with tab2:
                 st.info("No images available for this shot.")
         else:
             st.info("👈 Select a shot from the table to view details")
+
+
+# ============================================================================
+# TAB 5: EXPORT DATA (NEW)
+# ============================================================================
+with tab5:
+    st.header("Export & Reports")
+
+    st.markdown("""
+    Download your session data in various formats for offline analysis, coaching review,
+    or record keeping.
+    """)
+
+    render_summary_export(df, selected_session_id)
+
+    st.divider()
+
+    # Advanced Export Options
+    st.subheader("📊 Advanced Export Options")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.caption("**Export All Sessions**")
+        st.markdown("Download your complete golf data history across all sessions.")
+
+        all_shots = golf_db.get_session_data()
+
+        if not all_shots.empty:
+            from components.export_tools import export_to_csv
+            csv_all = export_to_csv(all_shots, "all_sessions")
+
+            st.download_button(
+                label="📥 Download All Data (CSV)",
+                data=csv_all,
+                file_name="all_golf_sessions.csv",
+                mime='text/csv',
+                use_container_width=True
+            )
+
+            st.metric("Total Shots", len(all_shots))
+        else:
+            st.info("No data available")
+
+    with col2:
+        st.caption("**Export by Club**")
+        st.markdown("Download data for a specific club across all sessions.")
+
+        if 'club' in all_shots.columns:
+            export_club = st.selectbox(
+                "Select Club",
+                all_shots['club'].unique().tolist(),
+                key="export_club_select"
+            )
+
+            club_data = all_shots[all_shots['club'] == export_club]
+
+            from components.export_tools import export_to_csv
+            csv_club = export_to_csv(club_data, f"club_{export_club}")
+
+            st.download_button(
+                label=f"📥 Download {export_club} Data",
+                data=csv_club,
+                file_name=f"club_{export_club.replace(' ', '_')}.csv",
+                mime='text/csv',
+                use_container_width=True
+            )
+
+            st.metric(f"{export_club} Shots", len(club_data))
+        else:
+            st.info("No club data available")
+
+    st.divider()
+
+    # Data Preview
+    with st.expander("📋 Preview Export Data"):
+        st.dataframe(df.head(20), use_container_width=True)
+        st.caption(f"Showing first 20 of {len(df)} shots in this session")
