@@ -11,6 +11,9 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), "golf_stats.db")
 
+# Detect environment
+IS_CLOUD_RUN = os.getenv('K_SERVICE') is not None
+
 # Initialize Supabase client
 if SUPABASE_URL and SUPABASE_KEY:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -171,32 +174,75 @@ def save_shot(data):
 
 # --- Data Retrieval (Local-First) ---
 def get_session_data(session_id=None):
-    """Get session data from local SQLite database."""
+    """Get session data from local SQLite database, with fallback to Supabase."""
+    df = pd.DataFrame()
+    
+    # 1. Try Local SQLite
     try:
-        conn = sqlite3.connect(SQLITE_DB_PATH)
-        query = "SELECT * FROM shots"
-        if session_id:
-            query += f" WHERE session_id = ?"
-            df = pd.read_sql_query(query, conn, params=[session_id])
-        else:
-            df = pd.read_sql_query(query, conn)
-        conn.close()
-        return df
+        if os.path.exists(SQLITE_DB_PATH):
+            conn = sqlite3.connect(SQLITE_DB_PATH)
+            query = "SELECT * FROM shots"
+            if session_id:
+                query += " WHERE session_id = ?"
+                df = pd.read_sql_query(query, conn, params=[session_id])
+            else:
+                df = pd.read_sql_query(query, conn)
+            conn.close()
     except Exception as e:
         print(f"SQLite Read Error: {e}")
-        return pd.DataFrame()
+
+    # 2. Hybrid Fallback: If SQLite is empty (e.g. fresh container) or in Cloud Run, check Supabase
+    if df.empty and supabase:
+        try:
+            # Note: pagination might be needed for very large datasets (>1000 shots)
+            query = supabase.table('shots').select('*')
+            if session_id:
+                query = query.eq('session_id', session_id)
+            
+            response = query.execute()
+            if response.data:
+                df = pd.DataFrame(response.data)
+                # Cleanup date format if needed
+                if 'date_added' in df.columns:
+                    df['date_added'] = pd.to_datetime(df['date_added'])
+        except Exception as e:
+            print(f"Supabase Read Error: {e}")
+            
+    return df
 
 def get_unique_sessions():
-    """Get unique sessions from local SQLite database."""
+    """Get unique sessions from local SQLite, fallback to Supabase."""
+    sessions = []
+    
+    # 1. Try Local SQLite
     try:
-        conn = sqlite3.connect(SQLITE_DB_PATH)
-        query = "SELECT DISTINCT session_id, MAX(date_added) as date_added FROM shots GROUP BY session_id ORDER BY date_added DESC"
-        df = pd.read_sql_query(query, conn)
-        conn.close()
-        return df.to_dict('records')
+        if os.path.exists(SQLITE_DB_PATH):
+            conn = sqlite3.connect(SQLITE_DB_PATH)
+            query = "SELECT DISTINCT session_id, MAX(date_added) as date_added FROM shots GROUP BY session_id ORDER BY date_added DESC"
+            df = pd.read_sql_query(query, conn)
+            conn.close()
+            if not df.empty:
+                sessions = df.to_dict('records')
     except Exception as e:
         print(f"SQLite Session Error: {e}")
-        return []
+
+    # 2. Hybrid Fallback: Use Supabase
+    if not sessions and supabase:
+        try:
+            # Fetch all shot headers to determine unique sessions
+            response = supabase.table('shots').select('session_id, date_added').execute()
+            if response.data:
+                df = pd.DataFrame(response.data)
+                if not df.empty:
+                    df['date_added'] = pd.to_datetime(df['date_added'])
+                    # Group by session_id and get latest date_added
+                    sessions_df = df.groupby('session_id')['date_added'].max().reset_index()
+                    sessions_df = sessions_df.sort_values('date_added', ascending=False)
+                    sessions = sessions_df.to_dict('records')
+        except Exception as e:
+            print(f"Supabase Session Error: {e}")
+            
+    return sessions
 
 # --- Data Management ---
 def delete_shot(shot_id):
