@@ -35,9 +35,22 @@ This guide explains how to deploy the Golf Data App as a containerized service o
 
 ---
 
-## 🚀 Deployment Methods
+## Quick Deployment (Recommended)
 
-### Method 1: Direct Deploy (Recommended for First-Time)
+I've created an automated deployment script `deploy.sh` that handles the API enabling, secret management, building, and deployment in one go.
+
+```bash
+# Ensure the script is executable
+chmod +x deploy.sh
+
+# Run the deployment
+./deploy.sh
+```
+
+> [!NOTE]
+> The script will prompt for your GCP credentials if you aren't logged in. It securely maps your `.env` variables to **GCP Secret Manager**.
+
+## Manual Deployment Methods
 
 This method builds and deploys in one command using Cloud Build:
 
