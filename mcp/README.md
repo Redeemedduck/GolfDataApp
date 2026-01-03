@@ -19,6 +19,14 @@ This folder provides a ready-to-use MCP connector configuration for accessing Su
    - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
    - Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`
 
+## Codex CLI Notes
+- Use the generated JSON from `scripts/mcp_supabase_config.py` and merge it into your Codex MCP config.
+- Start the MCP server with:
+  ```bash
+  scripts/start_mcp_supabase.sh
+  ```
+  Keep it running while Codex connects and issues SQL queries.
+
 ## What This Provides
 - MCP server config using `@modelcontextprotocol/server-postgres`
 - Direct SQL access to Supabase tables for AI agents

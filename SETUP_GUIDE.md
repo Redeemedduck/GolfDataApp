@@ -510,6 +510,10 @@ To connect Supabase Postgres directly to MCP clients:
    python scripts/mcp_supabase_config.py
    ```
 3. Copy `mcp/claude_desktop_config.supabase.generated.json` into your MCP client config.
+4. Start the MCP server for Codex or other clients:
+   ```bash
+   scripts/start_mcp_supabase.sh
+   ```
 
 ### 10.2 Features
 - **Conversational Analytics**: Chat with your BigQuery data directly without SQL.
