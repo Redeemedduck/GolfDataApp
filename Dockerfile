@@ -24,10 +24,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY app.py .
+COPY observability.py .
 COPY golf_db.py .
 COPY golf_scraper.py .
+COPY gemini_coach.py .
 COPY pages/ ./pages/
 COPY components/ ./components/
+COPY services/ ./services/
 
 # Copy optional files if they exist
 COPY .env* ./
