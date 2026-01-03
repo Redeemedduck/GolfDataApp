@@ -27,6 +27,7 @@ This folder provides a ready-to-use MCP connector configuration for accessing Su
   ```bash
   scripts/start_mcp_supabase.sh
   ```
+- The script will also load `.env` from the repo root if present.
 - You can also add the server via CLI:
   ```bash
   codex mcp add supabase-golf-data -- bash scripts/start_mcp_supabase.sh
