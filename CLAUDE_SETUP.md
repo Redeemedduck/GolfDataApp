@@ -39,3 +39,13 @@ Create or edit this file to include the following:
 1. Restart Claude Desktop.
 2. Look for the 🔌 icon. You should see "supabase-golf-data".
 3. Ask Claude: *"Show me the tables in my golf database"* or *"Calculated the average carry distance from the shots table"*.
+
+## Optional: Auto-generate Config
+If you store your Supabase connection string in `SUPABASE_DB_URI`, you can generate
+a ready-to-copy config file:
+
+```bash
+python scripts/mcp_supabase_config.py
+```
+
+It writes: `mcp/claude_desktop_config.supabase.generated.json`

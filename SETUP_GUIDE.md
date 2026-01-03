@@ -502,6 +502,15 @@ The **MCP Toolbox for Databases** allows you to connect your databases (SQLite, 
     ```
 3.  **Modular Power**: Drop individual YAML files into the `tools/` folder for multi-project management.
 
+### 10.3 Supabase Direct MCP Connector
+To connect Supabase Postgres directly to MCP clients:
+1. Set `SUPABASE_DB_URI` (transaction pooler recommended).
+2. Run:
+   ```bash
+   python scripts/mcp_supabase_config.py
+   ```
+3. Copy `mcp/claude_desktop_config.supabase.generated.json` into your MCP client config.
+
 ### 10.2 Features
 - **Conversational Analytics**: Chat with your BigQuery data directly without SQL.
 - **Autonomous Discovery**: AI agents can independently explore schemas using `list-tables` and `get-table-schema`.

@@ -56,6 +56,7 @@ toolbox --tools-file ~/.mcp/database-toolbox/tools.yaml --stdio
 - [QUICKSTART.md](QUICKSTART.md): Streamlined guide for Supabase, BigQuery, and Vertex AI.
 - [SETUP_GUIDE.md](SETUP_GUIDE.md): Deep dive into every step of the pipeline.
 - [AUTOMATION_GUIDE.md](AUTOMATION_GUIDE.md): Instructions for setting up automated syncs (cron).
+- [mcp/README.md](mcp/README.md): Supabase MCP connector setup.
 
 ## ✅ Tests
 
