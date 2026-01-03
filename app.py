@@ -5,6 +5,7 @@ A comprehensive golf analytics platform with local-first hybrid architecture.
 """
 import streamlit as st
 import golf_db
+import observability
 
 st.set_page_config(
     layout="wide",
@@ -15,6 +16,15 @@ st.set_page_config(
 
 # Initialize DB
 golf_db.init_db()
+
+# Cached data access
+@st.cache_data(show_spinner=False)
+def get_unique_sessions_cached(read_mode="auto"):
+    return golf_db.get_unique_sessions(read_mode=read_mode)
+
+@st.cache_data(show_spinner=False)
+def get_session_data_cached(session_id=None, read_mode="auto"):
+    return golf_db.get_session_data(session_id, read_mode=read_mode)
 
 # Main landing page
 st.title("⛳ My Golf Data Lab")
@@ -30,8 +40,9 @@ st.divider()
 # Quick stats overview
 col1, col2, col3 = st.columns(3)
 
-all_shots = golf_db.get_session_data()
-all_sessions = golf_db.get_unique_sessions()
+read_mode = st.session_state.get("read_mode", "auto")
+all_shots = get_session_data_cached(read_mode=read_mode)
+all_sessions = get_unique_sessions_cached(read_mode=read_mode)
 
 with col1:
     st.metric("Total Sessions", len(all_sessions) if all_sessions else 0)
@@ -121,7 +132,7 @@ if all_sessions:
         date_added = session.get('date_added', 'Unknown')
 
         # Get shot count for this session
-        session_data = golf_db.get_session_data(session_id)
+        session_data = get_session_data_cached(session_id)
         shot_count = len(session_data)
 
         with st.expander(f"📊 Session {session_id} - {date_added} ({shot_count} shots)"):
@@ -190,14 +201,62 @@ with st.sidebar:
 
     st.divider()
 
+    st.header("🧭 Data Source")
+    if "read_mode" not in st.session_state:
+        st.session_state.read_mode = "auto"
+    read_mode_options = {
+        "Auto (SQLite first)": "auto",
+        "SQLite": "sqlite",
+        "Supabase": "supabase"
+    }
+    selected_label = st.selectbox(
+        "Read Mode",
+        list(read_mode_options.keys()),
+        index=list(read_mode_options.values()).index(st.session_state.read_mode),
+        help="Auto uses SQLite when available and falls back to Supabase if empty."
+    )
+    selected_mode = read_mode_options[selected_label]
+    if selected_mode != st.session_state.read_mode:
+        st.session_state.read_mode = selected_mode
+        golf_db.set_read_mode(selected_mode)
+        st.cache_data.clear()
+
     st.header("⚙️ System Status")
     st.success("✅ SQLite Database: Connected")
+    st.info(f"📌 Data Source: {golf_db.get_read_source()}")
 
     # Check Supabase connection
     if golf_db.supabase:
         st.success("✅ Supabase: Connected")
     else:
         st.warning("⚠️ Supabase: Not configured")
+
+    sync_status = golf_db.get_sync_status()
+    counts = sync_status["counts"]
+    st.caption(f"SQLite shots: {counts['sqlite']}")
+    if golf_db.supabase:
+        st.caption(f"Supabase shots: {counts['supabase']}")
+        if sync_status["drift_exceeds"]:
+            st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
+
+    st.divider()
+
+    st.header("🩺 Health")
+    latest_import = observability.read_latest_event("import_runs.jsonl")
+    if latest_import:
+        st.caption(f"Last Import: {latest_import.get('status', 'unknown')}")
+        st.caption(f"Shots: {latest_import.get('shots_imported', 0)}")
+        st.caption(f"Duration: {latest_import.get('duration_sec', 0)}s")
+    else:
+        st.caption("Last Import: none")
+
+    latest_sync = observability.read_latest_event("sync_runs.jsonl")
+    if latest_sync:
+        st.caption(f"Last Sync: {latest_sync.get('status', 'unknown')} ({latest_sync.get('mode', 'n/a')})")
+        st.caption(f"Shots: {latest_sync.get('shots', 0)}")
+        st.caption(f"Duration: {latest_sync.get('duration_sec', 0)}s")
+    else:
+        st.caption("Last Sync: none")
 
     st.divider()
 

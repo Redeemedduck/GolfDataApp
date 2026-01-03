@@ -37,16 +37,19 @@ Create a `.env` file in the root directory (use `.env.example` as a template):
 ```env
 SUPABASE_URL="https://xxxxx.supabase.co"
 SUPABASE_KEY="your-anon-key-here"
+USE_SUPABASE_READS="1"
 GCP_PROJECT_ID="your-project-id"
 GCP_REGION="us-central1"
 BQ_DATASET_ID="golf_data"
 BQ_TABLE_ID="shots"
 ```
+`USE_SUPABASE_READS` is optional. Set it to `1` to prefer Supabase reads (helpful in containers or when SQLite is empty).
 
 ### 0.3 Run the Streamlit Dashboard
 ```bash
 streamlit run app.py
 ```
+The sidebar shows the current **Data Source** (SQLite or Supabase).
 
 ### 0.4 Import Uneekor Data
 1. Launch the **Uneekor View** software and locate your report.
@@ -93,7 +96,9 @@ pip install supabase google-cloud-bigquery google-cloud-aiplatform pandas
 1. In Supabase dashboard, click **SQL Editor**
 2. Copy the entire contents of `supabase_schema.sql`
 3. Paste into SQL Editor and click **Run**
-4. Verify the `shots` table was created: **Database** → **Tables**
+4. Verify the `shots` and `tag_catalog` tables were created: **Database** → **Tables**
+   - `shots` now includes `session_type` and `shot_tag` for workflow metadata
+   - `tag_catalog` stores shared tags across sessions
 
 ### 2.4 Set Environment Variables
 

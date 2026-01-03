@@ -1,23 +1,22 @@
 """
-🤖 AI Coach - Cloud-Native Golf Coaching with Gemini 3.0
+🤖 AI Coach - Cloud-Native Golf Coaching with Modular Providers
 
-This page provides an interactive AI coaching experience powered by Google's Gemini 3.0 models.
+This page provides an interactive AI coaching experience with modular AI providers.
 The AI coach can query your golf data using function calling and provide personalized insights.
 
 Features:
 - Multi-turn conversations with context awareness
 - Dynamic data access through function calling
-- Model selection (Flash for speed, Pro for complex reasoning)
+- Model selection per provider (Flash for speed, Pro for complex reasoning)
 - Thinking level control for response depth
 - Function call transparency
 """
 
 import streamlit as st
-import os
 from datetime import datetime
 import json
-import gemini_coach
 import golf_db
+from services.ai import list_providers, get_provider
 
 
 # Page config
@@ -28,30 +27,79 @@ st.set_page_config(
 )
 
 st.title("🤖 AI Golf Coach")
-st.markdown("*Powered by Google Gemini 3.0 with Function Calling*")
+st.markdown("*Powered by modular AI providers with function calling*")
 
 # Initialize database
 golf_db.init_db()
 
+# Cached data access
+@st.cache_data(show_spinner=False)
+def get_all_shots_cached(read_mode="auto"):
+    return golf_db.get_all_shots(read_mode=read_mode)
+
+@st.cache_data(show_spinner=False)
+def get_sessions_cached(read_mode="auto"):
+    return golf_db.get_unique_sessions(read_mode=read_mode)
+
+@st.cache_data(show_spinner=False)
+def get_session_data_cached(session_id=None, read_mode="auto"):
+    return golf_db.get_session_data(session_id, read_mode=read_mode)
+
 # Sidebar configuration
 with st.sidebar:
     st.header("⚙️ Coach Settings")
+    st.header("🧭 Data Source")
+    if "read_mode" not in st.session_state:
+        st.session_state.read_mode = "auto"
+    read_mode_options = {
+        "Auto (SQLite first)": "auto",
+        "SQLite": "sqlite",
+        "Supabase": "supabase"
+    }
+    selected_label = st.selectbox(
+        "Read Mode",
+        list(read_mode_options.keys()),
+        index=list(read_mode_options.values()).index(st.session_state.read_mode),
+        help="Auto uses SQLite when available and falls back to Supabase if empty."
+    )
+    selected_mode = read_mode_options[selected_label]
+    if selected_mode != st.session_state.read_mode:
+        st.session_state.read_mode = selected_mode
+        golf_db.set_read_mode(selected_mode)
+        st.cache_data.clear()
 
-    # API Key check
-    api_key = os.getenv('GEMINI_API_KEY')
-    if not api_key:
-        st.error("⚠️ GEMINI_API_KEY not set!")
-        st.info("Set your API key in .env file:\n```\nGEMINI_API_KEY=your_key_here\n```")
+    st.info(f"📌 Data Source: {golf_db.get_read_source()}")
+    sync_status = golf_db.get_sync_status()
+    counts = sync_status["counts"]
+    st.caption(f"SQLite shots: {counts['sqlite']}")
+    if golf_db.supabase:
+        st.caption(f"Supabase shots: {counts['supabase']}")
+        if sync_status["drift_exceeds"]:
+            st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
+
+    st.header("🧠 AI Provider")
+    providers = list_providers()
+    if not providers:
+        st.error("No AI providers registered.")
         st.stop()
-    else:
-        st.success("✅ API Key Configured")
+
+    provider_labels = {spec.display_name: spec.provider_id for spec in providers}
+    selected_provider_label = st.selectbox(
+        "Provider",
+        list(provider_labels.keys()),
+        index=0
+    )
+    selected_provider_id = provider_labels[selected_provider_label]
+    provider_spec = get_provider(selected_provider_id)
+    provider_cls = provider_spec.provider_cls
+    provider_ready = True
+    if hasattr(provider_cls, "is_configured") and not provider_cls.is_configured():
+        provider_ready = False
+        st.warning("AI provider not configured. AI coach is disabled.")
 
     # Model selection
     st.subheader("Model Selection")
-    model_options = {
-        'Gemini 3.0 Flash': 'flash',
-        'Gemini 3.0 Pro': 'pro'
-    }
+    model_options = getattr(provider_cls, "MODEL_OPTIONS", {"Default": "default"})
 
     selected_model = st.selectbox(
         "Choose Model",
@@ -69,6 +117,51 @@ with st.sidebar:
         help="Higher levels provide more detailed reasoning but take longer"
     )
 
+    st.divider()
+    st.subheader("🎯 Analysis Focus")
+    sessions = get_sessions_cached(read_mode=st.session_state.read_mode)
+    session_options = [("All Sessions", None)]
+    for session in sessions:
+        label = f"{session.get('session_id')} ({session.get('date_added', 'Unknown')})"
+        if session.get('session_type'):
+            label = f"{label} [{session.get('session_type')}]"
+        session_options.append((label, session.get('session_id')))
+
+    selected_session_label = st.selectbox(
+        "Focus Session",
+        [label for label, _ in session_options],
+        index=0
+    )
+    focus_session_id = dict(session_options).get(selected_session_label)
+
+    session_types = sorted({
+        session.get('session_type') for session in sessions if session.get('session_type')
+    })
+    focus_session_type = st.selectbox(
+        "Focus Session Type",
+        ["All Types"] + session_types,
+        index=0
+    )
+
+    focus_df = (
+        get_session_data_cached(focus_session_id, read_mode=st.session_state.read_mode)
+        if focus_session_id
+        else get_all_shots_cached(read_mode=st.session_state.read_mode)
+    )
+    club_options = sorted(focus_df['club'].dropna().unique().tolist()) if not focus_df.empty else []
+    focus_club = st.selectbox(
+        "Focus Club",
+        ["All Clubs"] + club_options,
+        index=0
+    )
+
+    tag_catalog = golf_db.get_tag_catalog(read_mode=st.session_state.read_mode)
+    focus_tag = st.selectbox(
+        "Focus Tag",
+        ["All Tags"] + tag_catalog,
+        index=0
+    )
+
     # Reset conversation
     st.divider()
     if st.button("🔄 Reset Conversation", use_container_width=True):
@@ -79,7 +172,7 @@ with st.sidebar:
     # Show data stats
     st.divider()
     st.subheader("📊 Your Data")
-    df = golf_db.get_all_shots()
+    df = get_all_shots_cached(read_mode=st.session_state.read_mode)
     if not df.empty:
         st.metric("Total Shots", len(df))
         st.metric("Sessions", df['session_id'].nunique())
@@ -91,15 +184,30 @@ with st.sidebar:
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-if 'coach' not in st.session_state or st.session_state.coach is None:
-    try:
-        st.session_state.coach = gemini_coach.get_coach(
-            model_type=model_options[selected_model],
-            thinking_level=thinking_level
-        )
-    except Exception as e:
-        st.error(f"Failed to initialize AI Coach: {str(e)}")
-        st.stop()
+if 'coach_key' not in st.session_state:
+    st.session_state.coach_key = None
+
+model_type = model_options[selected_model]
+coach_key = f"{selected_provider_id}:{model_type}:{thinking_level}"
+
+if not provider_ready:
+    st.session_state.coach = None
+else:
+    if st.session_state.coach is None or st.session_state.coach_key != coach_key:
+        try:
+            st.session_state.coach = provider_cls(
+                model_type=model_type,
+                thinking_level=thinking_level
+            )
+            st.session_state.coach_key = coach_key
+            st.session_state.messages = []
+        except Exception as e:
+            st.error(f"Failed to initialize AI Coach: {str(e)}")
+            st.stop()
+
+if not provider_ready:
+    st.info("AI coach is disabled until the provider is configured.")
+    st.stop()
 
 # Main chat interface
 st.subheader("💬 Chat with Your Coach")
@@ -140,7 +248,9 @@ if len(st.session_state.messages) == 0:
         "What should I work on in my next practice session?",
         "Are there any outliers in my recent data?",
         "How does my smash factor compare to optimal?",
-        "What's my most consistent club?"
+        "What's my most consistent club?",
+        "Summarize my current session and tag distribution",
+        "Which sessions look like full rounds vs practice?"
     ]
 
     cols = st.columns(2)
@@ -154,6 +264,22 @@ if len(st.session_state.messages) == 0:
                     "content": question
                 })
                 st.rerun()
+
+def build_context_prompt(user_prompt: str) -> str:
+    context_lines = []
+    if focus_session_id:
+        context_lines.append(f"Focus session_id: {focus_session_id}")
+    if focus_session_type != "All Types":
+        context_lines.append(f"Focus session_type: {focus_session_type}")
+    if focus_club != "All Clubs":
+        context_lines.append(f"Focus club: {focus_club}")
+    if focus_tag != "All Tags":
+        context_lines.append(f"Focus shot_tag: {focus_tag}")
+    if not context_lines:
+        return user_prompt
+    context = "Context:\n" + "\n".join([f"- {line}" for line in context_lines])
+    return f"{context}\n\n{user_prompt}"
+
 
 # Chat input
 if prompt := st.chat_input("Ask me anything about your golf game..."):
@@ -170,7 +296,8 @@ if prompt := st.chat_input("Ask me anything about your golf game..."):
     # Get AI response
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            response_data = st.session_state.coach.chat(prompt)
+            coach_prompt = build_context_prompt(prompt)
+            response_data = st.session_state.coach.chat(coach_prompt)
 
             # Display response
             st.markdown(response_data['response'])

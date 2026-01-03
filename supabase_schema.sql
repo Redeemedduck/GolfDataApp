@@ -6,6 +6,7 @@ CREATE TABLE shots (
     shot_id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
     date_added TIMESTAMPTZ DEFAULT NOW(),
+    session_type TEXT,
     club TEXT,
     carry REAL,
     total REAL,
@@ -33,7 +34,8 @@ CREATE TABLE shots (
     optix_x REAL,
     optix_y REAL,
     club_lie REAL,
-    lie_angle TEXT
+    lie_angle TEXT,
+    shot_tag TEXT
 );
 
 -- Create index on session_id for faster queries
@@ -63,6 +65,32 @@ WITH CHECK (true);
 -- Create policy to allow authenticated users to update shots
 CREATE POLICY "Allow authenticated users to update shots"
 ON shots FOR UPDATE
+TO authenticated
+USING (true);
+
+-- Shared tag catalog for session labeling
+CREATE TABLE IF NOT EXISTS tag_catalog (
+    tag TEXT PRIMARY KEY,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    is_default BOOLEAN DEFAULT FALSE
+);
+
+ALTER TABLE tag_catalog ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow authenticated users to read tags"
+ON tag_catalog FOR SELECT
+TO authenticated
+USING (true);
+
+CREATE POLICY "Allow authenticated users to insert tags"
+ON tag_catalog FOR INSERT
+TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated users to update tags"
+ON tag_catalog FOR UPDATE
 TO authenticated
 USING (true);
 

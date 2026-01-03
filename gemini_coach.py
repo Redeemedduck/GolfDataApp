@@ -92,6 +92,10 @@ class GeminiCoach:
             'analyze_trends': self._analyze_trends,
             'get_club_gapping': self._get_club_gapping,
             'find_outliers': self._find_outliers,
+            'list_sessions': self._list_sessions,
+            'get_session_overview': self._get_session_overview,
+            'list_tag_catalog': self._list_tag_catalog,
+            'get_tag_distribution': self._get_tag_distribution,
         }
 
     def _get_function_declarations(self) -> List[Dict]:
@@ -116,6 +120,14 @@ class GeminiCoach:
                             'type': 'string',
                             'description': 'Optional club name to filter by (e.g., "Driver", "7 Iron"). Leave empty for all clubs.'
                         },
+                        'shot_tag': {
+                            'type': 'string',
+                            'description': 'Optional shot tag to filter by (e.g., Warmup, Practice).'
+                        },
+                        'session_type': {
+                            'type': 'string',
+                            'description': 'Optional session type to filter by (e.g., Practice, Round).'
+                        },
                         'limit': {
                             'type': 'integer',
                             'description': 'Maximum number of shots to return. Default is 50.'
@@ -136,6 +148,14 @@ class GeminiCoach:
                         'club': {
                             'type': 'string',
                             'description': 'Optional club name to analyze. Leave empty for all clubs.'
+                        },
+                        'shot_tag': {
+                            'type': 'string',
+                            'description': 'Optional shot tag to filter by (e.g., Warmup, Practice).'
+                        },
+                        'session_type': {
+                            'type': 'string',
+                            'description': 'Optional session type to filter by (e.g., Practice, Round).'
                         },
                         'metric': {
                             'type': 'string',
@@ -200,6 +220,55 @@ class GeminiCoach:
                         }
                     }
                 }
+            },
+            {
+                'name': 'list_sessions',
+                'description': 'List recent sessions with optional limit and session types.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'limit': {
+                            'type': 'integer',
+                            'description': 'Maximum number of sessions to return. Default is 50.'
+                        }
+                    }
+                }
+            },
+            {
+                'name': 'get_session_overview',
+                'description': 'Summarize a session with counts, clubs, tags, and date range.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'session_id': {
+                            'type': 'string',
+                            'description': 'Session ID to summarize.'
+                        }
+                    },
+                    'required': ['session_id']
+                }
+            },
+            {
+                'name': 'list_tag_catalog',
+                'description': 'List shared shot tags available for labeling sessions.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {}
+                }
+            },
+            {
+                'name': 'get_tag_distribution',
+                'description': 'Summarize shot tag counts for a session.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'session_id': {
+                            'type': 'string',
+                            'description': 'Session ID to summarize tags for.'
+                        }
+                    },
+                    'required': ['session_id']
+                }
             }
         ]
 
@@ -222,6 +291,8 @@ When analyzing data:
 - Identify trends and patterns over time
 - Compare performance to typical benchmarks
 - Be specific with numbers and examples
+- Consider session tags (Warmup, Practice, Round) and session_type context
+- Prefer session_overview or tag_distribution when summarizing workflows
 
 Provide coaching in a friendly, encouraging tone while being technically accurate.
 Focus on actionable advice the golfer can implement in their next practice session."""
@@ -237,7 +308,14 @@ Focus on actionable advice the golfer can implement in their next practice sessi
 
     # Function calling implementations
 
-    def _query_shot_data(self, session_id: Optional[str] = None, club: Optional[str] = None, limit: int = 50) -> str:
+    def _query_shot_data(
+        self,
+        session_id: Optional[str] = None,
+        club: Optional[str] = None,
+        shot_tag: Optional[str] = None,
+        session_type: Optional[str] = None,
+        limit: int = 50
+    ) -> str:
         """
         Query shot data from database.
 
@@ -255,13 +333,19 @@ Focus on actionable advice the golfer can implement in their next practice sessi
                 df = df[df['session_id'] == session_id]
             if club:
                 df = df[df['club'] == club]
+            if shot_tag and 'shot_tag' in df.columns:
+                df = df[df['shot_tag'] == shot_tag]
+            if session_type and 'session_type' in df.columns:
+                df = df[df['session_type'] == session_type]
 
             # Limit results
             df = df.head(limit)
 
             # Select relevant columns
-            cols = ['session_id', 'shot_number', 'club', 'carry', 'total', 'ball_speed',
-                   'club_speed', 'smash_factor', 'launch_angle', 'back_spin', 'side_spin']
+            cols = [
+                'session_id', 'shot_id', 'club', 'carry', 'total', 'ball_speed',
+                'club_speed', 'smash', 'launch_angle', 'back_spin', 'side_spin'
+            ]
             df = df[[col for col in cols if col in df.columns]]
 
             # Convert to records
@@ -274,7 +358,14 @@ Focus on actionable advice the golfer can implement in their next practice sessi
         except Exception as e:
             return json.dumps({'error': str(e)})
 
-    def _calculate_statistics(self, metric: str, session_id: Optional[str] = None, club: Optional[str] = None) -> str:
+    def _calculate_statistics(
+        self,
+        metric: str,
+        session_id: Optional[str] = None,
+        club: Optional[str] = None,
+        shot_tag: Optional[str] = None,
+        session_type: Optional[str] = None
+    ) -> str:
         """
         Calculate statistics for a metric.
 
@@ -292,6 +383,10 @@ Focus on actionable advice the golfer can implement in their next practice sessi
                 df = df[df['session_id'] == session_id]
             if club:
                 df = df[df['club'] == club]
+            if shot_tag and 'shot_tag' in df.columns:
+                df = df[df['shot_tag'] == shot_tag]
+            if session_type and 'session_type' in df.columns:
+                df = df[df['session_type'] == session_type]
 
             if metric not in df.columns:
                 return json.dumps({'error': f'Metric {metric} not found in data'})
@@ -336,7 +431,7 @@ Focus on actionable advice the golfer can implement in their next practice sessi
                 df = df[df['club'] == club]
 
             # Calculate baselines for key metrics
-            metrics = ['carry', 'total', 'ball_speed', 'club_speed', 'smash_factor', 'launch_angle', 'back_spin']
+            metrics = ['carry', 'total', 'ball_speed', 'club_speed', 'smash', 'launch_angle', 'back_spin']
             profile = {}
 
             for metric in metrics:
@@ -484,7 +579,7 @@ Focus on actionable advice the golfer can implement in their next practice sessi
                 ('total', 0, 450, 'Total distance'),
                 ('ball_speed', 0, 250, 'Ball speed'),
                 ('club_speed', 0, 200, 'Club speed'),
-                ('smash_factor', 1.2, 1.6, 'Smash factor'),
+                ('smash', 1.2, 1.6, 'Smash factor'),
                 ('launch_angle', -10, 60, 'Launch angle'),
                 ('back_spin', -2000, 12000, 'Back spin'),
             ]
@@ -495,7 +590,7 @@ Focus on actionable advice the golfer can implement in their next practice sessi
                     for _, row in invalid.iterrows():
                         outliers.append({
                             'session_id': row.get('session_id', 'unknown'),
-                            'shot_number': int(row.get('shot_number', 0)),
+                            'shot_id': row.get('shot_id', 'unknown'),
                             'club': row.get('club', 'unknown'),
                             'metric': label,
                             'value': float(row[metric]),
@@ -508,6 +603,69 @@ Focus on actionable advice the golfer can implement in their next practice sessi
             }
 
             return json.dumps(result)
+        except Exception as e:
+            return json.dumps({'error': str(e)})
+
+    def _list_sessions(self, limit: int = 50) -> str:
+        """List recent sessions with timestamps and optional session_type."""
+        try:
+            sessions = golf_db.get_unique_sessions()
+            if not sessions:
+                return json.dumps({'count': 0, 'sessions': []})
+            trimmed = sessions[:limit] if limit else sessions
+            cleaned = []
+            for session in trimmed:
+                cleaned.append({
+                    'session_id': session.get('session_id'),
+                    'date_added': str(session.get('date_added')),
+                    'session_type': session.get('session_type')
+                })
+            return json.dumps({'count': len(cleaned), 'sessions': cleaned})
+        except Exception as e:
+            return json.dumps({'error': str(e)})
+
+    def _get_session_overview(self, session_id: str) -> str:
+        """Summarize a session with counts, clubs, tags, and date range."""
+        try:
+            df = golf_db.get_session_data(session_id)
+            if df.empty:
+                return json.dumps({'error': f'No data found for session {session_id}'})
+
+            overview = {
+                'session_id': session_id,
+                'shot_count': int(len(df)),
+                'club_count': int(df['club'].nunique()) if 'club' in df.columns else 0,
+                'clubs': df['club'].value_counts().head(10).to_dict() if 'club' in df.columns else {},
+                'tags': df['shot_tag'].value_counts().to_dict() if 'shot_tag' in df.columns else {},
+                'session_type': df['session_type'].dropna().iloc[0] if 'session_type' in df.columns and not df['session_type'].dropna().empty else None,
+            }
+
+            if 'date_added' in df.columns and not df['date_added'].isna().all():
+                overview['date_start'] = str(df['date_added'].min())
+                overview['date_end'] = str(df['date_added'].max())
+
+            return json.dumps(overview)
+        except Exception as e:
+            return json.dumps({'error': str(e)})
+
+    def _list_tag_catalog(self) -> str:
+        """List shared tags available in the catalog."""
+        try:
+            tags = golf_db.get_tag_catalog()
+            return json.dumps({'count': len(tags), 'tags': tags})
+        except Exception as e:
+            return json.dumps({'error': str(e)})
+
+    def _get_tag_distribution(self, session_id: str) -> str:
+        """Summarize tag counts for a session."""
+        try:
+            df = golf_db.get_session_data(session_id)
+            if df.empty:
+                return json.dumps({'error': f'No data found for session {session_id}'})
+            if 'shot_tag' not in df.columns:
+                return json.dumps({'error': 'shot_tag column not available'})
+            tag_counts = df['shot_tag'].fillna('Untagged').value_counts().to_dict()
+            return json.dumps({'session_id': session_id, 'tags': tag_counts})
         except Exception as e:
             return json.dumps({'error': str(e)})
 
@@ -603,6 +761,10 @@ Focus on actionable advice the golfer can implement in their next practice sessi
             self.model_name = self.MODELS[model_type]
             self._initialize_chat()
 
+    def set_model(self, model_type: str):
+        """Alias for switch_model (compatibility with other providers)."""
+        self.switch_model(model_type)
+
     def set_thinking_level(self, level: str):
         """
         Set the thinking level for reasoning.
@@ -632,4 +794,7 @@ def get_coach(model_type: str = 'flash', thinking_level: str = 'medium') -> Gemi
     global _coach_instance
     if _coach_instance is None:
         _coach_instance = GeminiCoach(model_type=model_type, thinking_level=thinking_level)
+    else:
+        _coach_instance.set_model(model_type)
+        _coach_instance.set_thinking_level(thinking_level)
     return _coach_instance

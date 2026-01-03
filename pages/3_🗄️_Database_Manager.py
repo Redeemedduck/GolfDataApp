@@ -5,6 +5,8 @@ Phase 2: Enhanced with session operations, bulk editing, and audit trail
 import streamlit as st
 import sys
 from pathlib import Path
+import pandas as pd
+import re
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -17,6 +19,15 @@ st.set_page_config(layout="wide", page_title="Database Manager - My Golf Lab")
 # Initialize DB
 golf_db.init_db()
 
+# Cached data access
+@st.cache_data(show_spinner=False)
+def get_unique_sessions_cached(read_mode="auto"):
+    return golf_db.get_unique_sessions(read_mode=read_mode)
+
+@st.cache_data(show_spinner=False)
+def get_session_data_cached(session_id=None, read_mode="auto"):
+    return golf_db.get_session_data(session_id, read_mode=read_mode)
+
 # Sidebar: Session selector
 with st.sidebar:
     st.header("🔗 Navigation")
@@ -24,8 +35,40 @@ with st.sidebar:
     st.page_link("pages/2_📊_Dashboard.py", label="📊 Dashboard", icon="📊")
 
     st.divider()
+    st.header("🧭 Data Source")
+    if "read_mode" not in st.session_state:
+        st.session_state.read_mode = "auto"
+    read_mode_options = {
+        "Auto (SQLite first)": "auto",
+        "SQLite": "sqlite",
+        "Supabase": "supabase"
+    }
+    selected_label = st.selectbox(
+        "Read Mode",
+        list(read_mode_options.keys()),
+        index=list(read_mode_options.values()).index(st.session_state.read_mode),
+        help="Auto uses SQLite when available and falls back to Supabase if empty."
+    )
+    selected_mode = read_mode_options[selected_label]
+    if selected_mode != st.session_state.read_mode:
+        st.session_state.read_mode = selected_mode
+        golf_db.set_read_mode(selected_mode)
+        st.cache_data.clear()
 
-    selected_session_id, df, selected_clubs = render_session_selector(golf_db)
+    st.info(f"📌 Data Source: {golf_db.get_read_source()}")
+    sync_status = golf_db.get_sync_status()
+    counts = sync_status["counts"]
+    st.caption(f"SQLite shots: {counts['sqlite']}")
+    if golf_db.supabase:
+        st.caption(f"Supabase shots: {counts['supabase']}")
+        if sync_status["drift_exceeds"]:
+            st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
+
+    read_mode = st.session_state.get("read_mode", "auto")
+    selected_session_id, df, selected_clubs = render_session_selector(
+        lambda: get_unique_sessions_cached(read_mode=read_mode),
+        lambda session_id: get_session_data_cached(session_id, read_mode=read_mode)
+    )
 
 # Stop if no data
 if df.empty:
@@ -46,16 +89,17 @@ st.divider()
 
 # Get all clubs and sessions for operations
 all_clubs = df['club'].unique().tolist()
-all_sessions = golf_db.get_unique_sessions()
+all_sessions = get_unique_sessions_cached(read_mode=read_mode)
 
 # Create tabs for different management operations
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "✏️ Edit Data",
     "🗑️ Delete Operations",
     "🔄 Session Operations",
     "⚡ Bulk Operations",
     "📊 Data Quality",
-    "📜 Audit Trail"
+    "📜 Audit Trail",
+    "🏷️ Tags & Split"
 ])
 
 # ============================================================================
@@ -84,6 +128,7 @@ with tab1:
         if st.button("✏️ Rename Club", key="rename_btn", type="primary"):
             if new_club_name:
                 golf_db.rename_club(selected_session_id, rename_club, new_club_name)
+                st.cache_data.clear()
                 st.success(f"✅ Renamed '{rename_club}' to '{new_club_name}' in session {selected_session_id}")
                 st.rerun()
             else:
@@ -102,10 +147,32 @@ with tab1:
         if st.button("✏️ Rename Session", key="rename_session_btn", type="primary"):
             if new_session_id:
                 shots_updated = golf_db.rename_session(selected_session_id, new_session_id)
+                st.cache_data.clear()
                 st.success(f"✅ Renamed session to '{new_session_id}' ({shots_updated} shots updated)")
                 st.rerun()
             else:
                 st.warning("Please enter a new session ID.")
+
+        st.divider()
+        st.subheader("Session Type")
+        st.caption("Label the session for simulator context (practice vs round)")
+
+        session_type_values = df.get('session_type', pd.Series()).dropna().unique().tolist()
+        current_session_type = session_type_values[0] if len(session_type_values) == 1 else "Mixed/Unset"
+        st.caption(f"Current: {current_session_type}")
+
+        session_type_options = ["Unset", "Practice", "Round", "Gapping", "Fitting", "Combine"]
+        selected_session_type = st.selectbox(
+            "Set Session Type",
+            session_type_options,
+            key="session_type_select"
+        )
+        if st.button("🏷️ Apply Session Type", key="apply_session_type_btn", type="primary"):
+            value = None if selected_session_type == "Unset" else selected_session_type
+            updated = golf_db.update_session_type(selected_session_id, value)
+            st.cache_data.clear()
+            st.success(f"✅ Updated session type for {updated} shots")
+            st.rerun()
 
     st.divider()
 
@@ -143,6 +210,7 @@ with tab2:
             disabled=not confirm_session_delete
         ):
             shots_deleted = golf_db.delete_session(selected_session_id, archive=True)
+            st.cache_data.clear()
             st.success(f"✅ Deleted session {selected_session_id} ({shots_deleted} shots archived)")
             st.info("💡 Shots have been archived and can be restored from the Audit Trail tab")
             st.rerun()
@@ -172,6 +240,7 @@ with tab2:
             disabled=not confirm_club
         ):
             golf_db.delete_club_session(selected_session_id, delete_club)
+            st.cache_data.clear()
             st.success(f"✅ Deleted all shots for '{delete_club}'")
             st.rerun()
 
@@ -204,6 +273,7 @@ with tab2:
                 disabled=not confirm_shot
             ):
                 golf_db.delete_shot(shot_to_delete)
+                st.cache_data.clear()
                 st.success(f"✅ Deleted shot {shot_to_delete}")
                 st.rerun()
         else:
@@ -244,6 +314,7 @@ with tab3:
                 st.warning("Please enter a new session ID for merged data.")
             else:
                 shots_merged = golf_db.merge_sessions(sessions_to_merge, merged_session_id)
+                st.cache_data.clear()
                 st.success(f"✅ Merged {len(sessions_to_merge)} sessions into '{merged_session_id}' ({shots_merged} shots)")
                 st.rerun()
 
@@ -272,6 +343,7 @@ with tab3:
                     st.warning("Please enter a new session ID.")
                 else:
                     shots_moved = golf_db.split_session(selected_session_id, shot_options_split, new_split_session_id)
+                    st.cache_data.clear()
                     st.success(f"✅ Moved {shots_moved} shots to session '{new_split_session_id}'")
                     st.rerun()
         else:
@@ -291,7 +363,7 @@ with tab4:
         st.subheader("Bulk Rename Club (All Sessions)")
         st.caption("Rename a club across ALL sessions in the database")
 
-        all_shots_df = golf_db.get_session_data()
+        all_shots_df = get_session_data_cached()
         all_unique_clubs = all_shots_df['club'].unique().tolist() if not all_shots_df.empty else []
 
         old_club_name = st.selectbox(
@@ -309,10 +381,47 @@ with tab4:
         if st.button("⚡ Rename Globally", key="bulk_rename_btn", type="primary"):
             if new_club_name_bulk:
                 shots_updated = golf_db.bulk_rename_clubs(old_club_name, new_club_name_bulk)
+                st.cache_data.clear()
                 st.success(f"✅ Renamed '{old_club_name}' to '{new_club_name_bulk}' across all sessions ({shots_updated} shots)")
                 st.rerun()
             else:
                 st.warning("Please enter a new club name.")
+
+        st.divider()
+        st.subheader("Club Normalization Presets (Current Session)")
+        st.caption("Apply a consistent preset label across selected clubs in this session")
+
+        preset_options = ["SIM", "Range", "Fitting", "On-Course", "New Shaft"]
+        selected_preset = st.selectbox(
+            "Preset Label",
+            preset_options,
+            key="club_preset_label"
+        )
+        preset_pattern = st.selectbox(
+            "Naming Pattern",
+            ["Suffix: {club} ({preset})", "Prefix: {preset} - {club}"],
+            key="club_preset_pattern"
+        )
+        clubs_to_normalize = st.multiselect(
+            "Select Clubs to Normalize",
+            all_clubs,
+            key="club_preset_clubs"
+        )
+        if st.button("🎯 Apply Preset", key="apply_club_preset_btn", type="primary"):
+            if not clubs_to_normalize:
+                st.warning("Select at least one club.")
+            else:
+                updated = 0
+                for club_name in clubs_to_normalize:
+                    if preset_pattern.startswith("Suffix"):
+                        new_name = f"{club_name} ({selected_preset})"
+                    else:
+                        new_name = f"{selected_preset} - {club_name}"
+                    golf_db.rename_club(selected_session_id, club_name, new_name)
+                    updated += 1
+                st.cache_data.clear()
+                st.success(f"✅ Normalized {updated} clubs in session {selected_session_id}")
+                st.rerun()
 
     with col2:
         st.subheader("Recalculate Metrics")
@@ -327,9 +436,11 @@ with tab4:
         if st.button("⚡ Recalculate", key="recalc_btn", type="primary"):
             if recalc_scope == "Current Session Only":
                 shots_updated = golf_db.recalculate_metrics(selected_session_id)
+                st.cache_data.clear()
                 st.success(f"✅ Recalculated metrics for session {selected_session_id} ({shots_updated} shots)")
             else:
                 shots_updated = golf_db.recalculate_metrics()
+                st.cache_data.clear()
                 st.success(f"✅ Recalculated metrics for all sessions ({shots_updated} shots)")
             st.rerun()
 
@@ -355,7 +466,7 @@ with tab5:
 
     # Validation (using new function)
     st.subheader("✅ Data Validation")
-    invalid_shots_df = golf_db.validate_shot_data()
+    invalid_shots_df = golf_db.validate_shot_data(selected_session_id)
 
     if not invalid_shots_df.empty:
         st.warning(f"⚠️ Found {len(invalid_shots_df)} shots with missing critical data:")
@@ -365,11 +476,45 @@ with tab5:
 
     st.divider()
 
+    st.subheader("🧭 Club Naming Anomalies")
+    st.caption("Flags clubs that appear to be the same base club with different labels.")
+
+    def normalize_club_name(name):
+        base = (name or "").lower().strip()
+        base = re.sub(r"[_-]+", " ", base)
+        base = re.sub(r"\s+", " ", base)
+        base = base.replace("iron", "i")
+        return base
+
+    club_variants = {}
+    for club_name in all_clubs:
+        base = normalize_club_name(club_name)
+        club_variants.setdefault(base, set()).add(club_name)
+
+    anomaly_rows = []
+    for base, variants in club_variants.items():
+        if len(variants) > 1:
+            anomaly_rows.append({
+                "Base Club": base,
+                "Variants": ", ".join(sorted(variants)),
+                "Variant Count": len(variants)
+            })
+
+    if anomaly_rows:
+        anomalies_df = pd.DataFrame(anomaly_rows).sort_values("Variant Count", ascending=False)
+        st.warning(f"⚠️ Found {len(anomalies_df)} club naming anomalies in this session.")
+        st.dataframe(anomalies_df, use_container_width=True, hide_index=True)
+    else:
+        st.success("✅ No club naming anomalies detected.")
+
+    st.divider()
+
     # Deduplication
     st.subheader("🔁 Duplicate Detection")
     if st.button("🔍 Check for Duplicates", key="dedup_btn"):
         duplicates_removed = golf_db.deduplicate_shots()
         if duplicates_removed > 0:
+            st.cache_data.clear()
             st.success(f"✅ Removed {duplicates_removed} duplicate shots")
             st.rerun()
         else:
@@ -431,6 +576,326 @@ with tab6:
 
 
 # ============================================================================
+# TAB 7: TAGS & SPLIT
+# ============================================================================
+with tab7:
+    st.header("Tags & Session Split")
+    st.caption("Tag shots and split a session into warmup/practice/round segments.")
+
+    default_tags = ["Warmup", "Practice", "Round", "Fitting"]
+    catalog_tags = golf_db.get_tag_catalog(read_mode=read_mode)
+    catalog_tags = sorted({tag for tag in catalog_tags if tag})
+
+    st.subheader("Tag Catalog")
+    st.caption("Shared tags keep reporting consistent across sessions while allowing custom tags.")
+
+    catalog_col1, catalog_col2 = st.columns(2)
+    with catalog_col1:
+        st.markdown("**Available Tags**")
+        st.write(", ".join(catalog_tags) if catalog_tags else "No tags yet.")
+    with catalog_col2:
+        new_tag = st.text_input("New Tag", placeholder="e.g., Range Balls", key="new_catalog_tag")
+        new_desc = st.text_input("Description (optional)", key="new_catalog_desc")
+        if st.button("➕ Add Tag", key="add_catalog_tag_btn"):
+            if new_tag:
+                if golf_db.add_tag_to_catalog(new_tag, new_desc or None):
+                    st.cache_data.clear()
+                    st.success(f"✅ Added '{new_tag}' to catalog")
+                    st.rerun()
+            else:
+                st.warning("Enter a tag name.")
+
+        deletable_tags = [tag for tag in catalog_tags if tag not in default_tags]
+        delete_tag = st.selectbox(
+            "Delete Tag",
+            deletable_tags if deletable_tags else ["No custom tags"],
+            disabled=not deletable_tags,
+            key="delete_catalog_tag"
+        )
+        if st.button("🗑️ Remove Tag", key="remove_catalog_tag_btn", disabled=not deletable_tags):
+            if golf_db.delete_tag_from_catalog(delete_tag):
+                st.cache_data.clear()
+                st.success(f"✅ Removed '{delete_tag}' from catalog")
+                st.rerun()
+
+    st.divider()
+
+    st.subheader("Tag + Split Wizard")
+    st.caption("One-click tagging and session split using session-scoped rules.")
+
+    wizard_tags = catalog_tags or default_tags
+    wizard_col1, wizard_col2, wizard_col3 = st.columns(3)
+
+    with wizard_col1:
+        wizard_warmup_count = st.number_input(
+            "Warmup shots (first N)",
+            min_value=0,
+            max_value=len(df),
+            value=min(10, len(df)),
+            step=1,
+            key="wizard_warmup_count"
+        )
+    with wizard_col2:
+        wizard_round_count = st.number_input(
+            "Round shots (last N)",
+            min_value=0,
+            max_value=len(df),
+            value=0,
+            step=1,
+            key="wizard_round_count"
+        )
+    with wizard_col3:
+        wizard_tag_remaining = st.checkbox(
+            "Tag remaining as Practice",
+            value=True,
+            key="wizard_tag_remaining"
+        )
+
+    tag_col_a, tag_col_b, tag_col_c = st.columns(3)
+    with tag_col_a:
+        warmup_tag_label = st.selectbox(
+            "Warmup Tag",
+            wizard_tags,
+            index=wizard_tags.index("Warmup") if "Warmup" in wizard_tags else 0,
+            key="wizard_warmup_tag"
+        )
+    with tag_col_b:
+        practice_tag_label = st.selectbox(
+            "Practice Tag",
+            wizard_tags,
+            index=wizard_tags.index("Practice") if "Practice" in wizard_tags else 0,
+            key="wizard_practice_tag"
+        )
+    with tag_col_c:
+        round_tag_label = st.selectbox(
+            "Round Tag",
+            wizard_tags,
+            index=wizard_tags.index("Round") if "Round" in wizard_tags else 0,
+            key="wizard_round_tag"
+        )
+
+    split_col1, split_col2, split_col3 = st.columns(3)
+    with split_col1:
+        create_warmup_session = st.checkbox("Create Warmup Session", value=True, key="wizard_create_warmup")
+        warmup_session_id = st.text_input(
+            "Warmup Session ID",
+            value=f"{selected_session_id}_warmup",
+            key="wizard_warmup_session_id"
+        )
+    with split_col2:
+        create_practice_session = st.checkbox("Create Practice Session", value=True, key="wizard_create_practice")
+        practice_session_id = st.text_input(
+            "Practice Session ID",
+            value=f"{selected_session_id}_practice",
+            key="wizard_practice_session_id"
+        )
+    with split_col3:
+        create_round_session = st.checkbox("Create Round Session", value=False, key="wizard_create_round")
+        round_session_id = st.text_input(
+            "Round Session ID",
+            value=f"{selected_session_id}_round",
+            key="wizard_round_session_id"
+        )
+
+    delete_warmup = st.checkbox(
+        "Delete Warmup shots instead of keeping a Warmup session",
+        value=False,
+        key="wizard_delete_warmup"
+    )
+    wizard_overwrite_tags = st.checkbox(
+        "Overwrite existing tags",
+        value=False,
+        key="wizard_overwrite_tags"
+    )
+
+    if st.button("⚡ Tag + Split", key="wizard_tag_split_btn", type="primary"):
+        if df.empty:
+            st.warning("No shots found in this session.")
+        else:
+            tag_df = df.copy()
+            if not wizard_overwrite_tags:
+                if 'shot_tag' in tag_df.columns:
+                    tag_df = tag_df[(tag_df['shot_tag'].isna()) | (tag_df['shot_tag'] == "")]
+
+            if tag_df.empty:
+                st.warning("No untagged shots available to tag.")
+            else:
+                if 'date_added' in tag_df.columns:
+                    tag_df = tag_df.sort_values('date_added')
+
+                ordered_ids = tag_df['shot_id'].tolist()
+                warmup_count = int(wizard_warmup_count)
+                round_count = int(wizard_round_count)
+                round_count = min(round_count, max(0, len(ordered_ids) - warmup_count))
+
+                warmup_ids = ordered_ids[:warmup_count]
+                round_ids = ordered_ids[-round_count:] if round_count else []
+                remaining_ids = [sid for sid in ordered_ids if sid not in warmup_ids and sid not in round_ids]
+
+                updated = 0
+                if warmup_ids:
+                    updated += golf_db.update_shot_tags(warmup_ids, warmup_tag_label)
+                if wizard_tag_remaining and remaining_ids:
+                    updated += golf_db.update_shot_tags(remaining_ids, practice_tag_label)
+                if round_ids:
+                    updated += golf_db.update_shot_tags(round_ids, round_tag_label)
+
+                if delete_warmup and warmup_ids:
+                    golf_db.delete_shots_by_tag(selected_session_id, warmup_tag_label)
+                    warmup_ids = []
+                    create_warmup_session = False
+
+                moved = 0
+                if create_warmup_session and warmup_ids and warmup_session_id:
+                    moved += golf_db.split_session_by_tag(selected_session_id, warmup_tag_label, warmup_session_id)
+                if create_practice_session and remaining_ids and practice_session_id:
+                    moved += golf_db.split_session_by_tag(selected_session_id, practice_tag_label, practice_session_id)
+                if create_round_session and round_ids and round_session_id:
+                    moved += golf_db.split_session_by_tag(selected_session_id, round_tag_label, round_session_id)
+
+                st.cache_data.clear()
+                st.success(f"✅ Tagged {updated} shots and moved {moved} shots into new sessions")
+                st.rerun()
+
+    st.divider()
+
+    st.subheader("Quick Tagging")
+    st.caption("Apply warmup/practice tags in a couple of clicks.")
+
+    quick_col1, quick_col2, quick_col3 = st.columns(3)
+
+    with quick_col1:
+        warmup_count = st.number_input(
+            "Warmup shots (first N)",
+            min_value=0,
+            max_value=len(df),
+            value=min(10, len(df)),
+            step=1,
+            key="warmup_count"
+        )
+    with quick_col2:
+        tag_remaining = st.checkbox("Tag remaining as Practice", value=True, key="tag_remaining_practice")
+    with quick_col3:
+        overwrite_tags = st.checkbox("Overwrite existing tags", value=False, key="overwrite_tags")
+
+    if st.button("⚡ Apply Quick Tags", key="apply_quick_tags_btn", type="primary"):
+        tag_df = df.copy()
+        if not overwrite_tags:
+            if 'shot_tag' in tag_df.columns:
+                tag_df = tag_df[(tag_df['shot_tag'].isna()) | (tag_df['shot_tag'] == "")]
+
+        if tag_df.empty:
+            st.warning("No untagged shots available to tag.")
+        else:
+            if 'date_added' in tag_df.columns:
+                tag_df = tag_df.sort_values('date_added')
+
+            warmup_ids = tag_df.head(int(warmup_count))['shot_id'].tolist()
+            remaining_ids = tag_df.iloc[int(warmup_count):]['shot_id'].tolist()
+
+            updated = 0
+            if warmup_ids:
+                updated += golf_db.update_shot_tags(warmup_ids, "Warmup")
+            if tag_remaining and remaining_ids:
+                updated += golf_db.update_shot_tags(remaining_ids, "Practice")
+
+            if updated > 0:
+                st.cache_data.clear()
+                st.success(f"✅ Tagged {updated} shots")
+                st.rerun()
+            else:
+                st.info("No shots were tagged.")
+
+    st.divider()
+
+    tag_col1, tag_col2 = st.columns(2)
+
+    with tag_col1:
+        st.subheader("Apply Tags")
+        tag_club_filter = st.selectbox(
+            "Filter by Club",
+            ["All"] + all_clubs,
+            key="tag_club_filter"
+        )
+        tag_df = df if tag_club_filter == "All" else df[df['club'] == tag_club_filter]
+
+        shot_options = [
+            f"{row['shot_id']} | {row['club']} | {row['carry']:.0f} yds"
+            for _, row in tag_df.iterrows()
+        ]
+        selected_shots = st.multiselect(
+            "Select Shots to Tag",
+            shot_options,
+            key="tag_shots_select"
+        )
+        tag_options = (catalog_tags or default_tags) + ["Custom"]
+        tag_choice = st.selectbox(
+            "Tag",
+            tag_options,
+            key="tag_choice"
+        )
+        custom_tag = st.text_input(
+            "Custom Tag",
+            placeholder="e.g., SIM, Range Balls",
+            disabled=tag_choice != "Custom",
+            key="custom_tag_input"
+        )
+        if st.button("🏷️ Apply Tag", key="apply_tag_btn", type="primary"):
+            if selected_shots:
+                shot_ids = [item.split(" | ")[0] for item in selected_shots]
+                tag_value = custom_tag if tag_choice == "Custom" and custom_tag else tag_choice
+                updated = golf_db.update_shot_tags(shot_ids, tag_value)
+                st.cache_data.clear()
+                st.success(f"✅ Tagged {updated} shots as '{tag_value}'")
+                st.rerun()
+            else:
+                st.warning("Select at least one shot.")
+
+    with tag_col2:
+        st.subheader("Split Session by Tag")
+        available_tags = sorted([tag for tag in df.get('shot_tag', pd.Series()).dropna().unique()])
+        selected_tag = st.selectbox(
+            "Choose Tag to Split",
+            available_tags if available_tags else ["No tags yet"],
+            disabled=not available_tags,
+            key="split_tag_select"
+        )
+        new_session_id = st.text_input(
+            "New Session ID",
+            placeholder=f"{selected_session_id}_warmup",
+            key="split_tag_new_session"
+        )
+        if st.button("🔀 Split Session", key="split_by_tag_btn", type="primary"):
+            if not available_tags:
+                st.warning("Add tags before splitting.")
+            elif not new_session_id:
+                st.warning("Enter a new session ID.")
+            else:
+                moved = golf_db.split_session_by_tag(selected_session_id, selected_tag, new_session_id)
+                st.cache_data.clear()
+                st.success(f"✅ Moved {moved} shots to '{new_session_id}'")
+                st.rerun()
+
+        st.divider()
+        st.subheader("Delete Tagged Shots")
+        delete_tag = st.selectbox(
+            "Tag to Delete",
+            available_tags if available_tags else ["No tags yet"],
+            disabled=not available_tags,
+            key="delete_tag_select"
+        )
+        confirm_delete = st.checkbox("I understand this will delete the tagged shots.", key="confirm_delete_tag")
+        if st.button("🗑️ Delete Tag", key="delete_tag_btn", disabled=not confirm_delete):
+            if not available_tags:
+                st.warning("Add tags before deleting.")
+            else:
+                deleted = golf_db.delete_shots_by_tag(selected_session_id, delete_tag)
+                st.cache_data.clear()
+                st.success(f"✅ Deleted {deleted} shots tagged '{delete_tag}'")
+                st.rerun()
+
+
+# ============================================================================
 # FOOTER: DATABASE STATISTICS
 # ============================================================================
 st.divider()
@@ -440,7 +905,7 @@ st.subheader("📊 Database Statistics")
 col1, col2, col3, col4, col5 = st.columns(5)
 
 # Get all data for stats
-all_shots = golf_db.get_session_data()
+all_shots = golf_db.get_session_data(read_mode=read_mode)
 archived_count = len(golf_db.get_archived_shots())
 
 col1.metric("Total Sessions", len(all_sessions) if all_sessions else 0)

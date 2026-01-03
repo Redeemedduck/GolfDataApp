@@ -27,6 +27,15 @@ st.set_page_config(layout="wide", page_title="Dashboard - My Golf Lab")
 # Initialize DB
 golf_db.init_db()
 
+# Cached data access
+@st.cache_data(show_spinner=False)
+def get_unique_sessions_cached(read_mode="auto"):
+    return golf_db.get_unique_sessions(read_mode=read_mode)
+
+@st.cache_data(show_spinner=False)
+def get_session_data_cached(session_id=None, read_mode="auto"):
+    return golf_db.get_session_data(session_id, read_mode=read_mode)
+
 # Sidebar: Session selector
 with st.sidebar:
     st.header("🔗 Navigation")
@@ -34,8 +43,40 @@ with st.sidebar:
     st.page_link("pages/3_🗄️_Database_Manager.py", label="🗄️ Manage Data", icon="🗄️")
 
     st.divider()
+    st.header("🧭 Data Source")
+    if "read_mode" not in st.session_state:
+        st.session_state.read_mode = "auto"
+    read_mode_options = {
+        "Auto (SQLite first)": "auto",
+        "SQLite": "sqlite",
+        "Supabase": "supabase"
+    }
+    selected_label = st.selectbox(
+        "Read Mode",
+        list(read_mode_options.keys()),
+        index=list(read_mode_options.values()).index(st.session_state.read_mode),
+        help="Auto uses SQLite when available and falls back to Supabase if empty."
+    )
+    selected_mode = read_mode_options[selected_label]
+    if selected_mode != st.session_state.read_mode:
+        st.session_state.read_mode = selected_mode
+        golf_db.set_read_mode(selected_mode)
+        st.cache_data.clear()
 
-    selected_session_id, df, selected_clubs = render_session_selector(golf_db)
+    st.info(f"📌 Data Source: {golf_db.get_read_source()}")
+    sync_status = golf_db.get_sync_status()
+    counts = sync_status["counts"]
+    st.caption(f"SQLite shots: {counts['sqlite']}")
+    if golf_db.supabase:
+        st.caption(f"Supabase shots: {counts['supabase']}")
+        if sync_status["drift_exceeds"]:
+            st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
+
+    read_mode = st.session_state.get("read_mode", "auto")
+    selected_session_id, df, selected_clubs = render_session_selector(
+        lambda: get_unique_sessions_cached(read_mode=read_mode),
+        lambda session_id: get_session_data_cached(session_id, read_mode=read_mode)
+    )
 
 # Stop if no data
 if df.empty:
@@ -205,7 +246,7 @@ with tab3:
     """)
 
     # Get all sessions
-    all_sessions = golf_db.get_unique_sessions()
+    all_sessions = get_unique_sessions_cached(read_mode=read_mode)
 
     if len(all_sessions) < 2:
         st.info("You need at least 2 sessions to view trends. Import more data to see progress over time.")
@@ -230,7 +271,7 @@ with tab3:
         # Prepare session data for trend analysis
         session_trends = []
         for session in all_sessions:
-            session_data = golf_db.get_session_data(session['session_id'])
+            session_data = get_session_data_cached(session['session_id'], read_mode=read_mode)
 
             if not session_data.empty and selected_metric in session_data.columns:
                 avg_value = session_data[selected_metric].mean()
@@ -253,7 +294,7 @@ with tab3:
         st.subheader("Club-Specific Trends")
 
         # Get all unique clubs across all sessions
-        all_shots = golf_db.get_session_data()
+        all_shots = get_session_data_cached(read_mode=read_mode)
         if 'club' in all_shots.columns:
             all_clubs = all_shots['club'].unique().tolist()
 
@@ -266,7 +307,7 @@ with tab3:
             # Get trends for selected club only
             club_trends = []
             for session in all_sessions:
-                session_data = golf_db.get_session_data(session['session_id'])
+                session_data = get_session_data_cached(session['session_id'], read_mode=read_mode)
                 club_data = session_data[session_data['club'] == selected_club]
 
                 if not club_data.empty and selected_metric in club_data.columns:
@@ -373,6 +414,54 @@ with tab5:
     st.divider()
 
     # Advanced Export Options
+    st.subheader("📦 Export Presets")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.caption("**Coach Review**")
+        coach_cols = [
+            'session_id', 'date_added', 'club', 'carry', 'total', 'ball_speed',
+            'club_speed', 'smash', 'launch_angle', 'back_spin', 'side_spin',
+            'face_angle', 'attack_angle', 'shot_type'
+        ]
+        coach_cols = [c for c in coach_cols if c in df.columns]
+        if coach_cols:
+            from components.export_tools import export_to_csv
+            coach_csv = export_to_csv(df[coach_cols], f"coach_review_{selected_session_id}")
+            st.download_button(
+                label="📥 Download Coach Review CSV",
+                data=coach_csv,
+                file_name=f"coach_review_{selected_session_id}.csv",
+                mime='text/csv',
+                use_container_width=True
+            )
+        else:
+            st.info("No coach review fields available.")
+
+    with col2:
+        st.caption("**Equipment Fitting**")
+        fit_cols = [
+            'session_id', 'date_added', 'club', 'ball_speed', 'club_speed',
+            'launch_angle', 'back_spin', 'side_spin', 'carry', 'total',
+            'smash', 'club_path', 'face_angle', 'dynamic_loft', 'attack_angle'
+        ]
+        fit_cols = [c for c in fit_cols if c in df.columns]
+        if fit_cols:
+            from components.export_tools import export_to_csv
+            fit_csv = export_to_csv(df[fit_cols], f"equipment_fitting_{selected_session_id}")
+            st.download_button(
+                label="📥 Download Equipment Fitting CSV",
+                data=fit_csv,
+                file_name=f"equipment_fitting_{selected_session_id}.csv",
+                mime='text/csv',
+                use_container_width=True
+            )
+        else:
+            st.info("No fitting fields available.")
+
+    st.divider()
+
     st.subheader("📊 Advanced Export Options")
 
     col1, col2 = st.columns(2)

@@ -8,7 +8,9 @@ from google.cloud import bigquery
 from google.oauth2 import service_account
 import json
 from datetime import datetime
+import time
 from dotenv import load_dotenv
+import observability
 
 # Load environment variables from .env file
 load_dotenv()
@@ -90,8 +92,17 @@ def fetch_shots_from_supabase():
     offset = 0
 
     while True:
-        response = supabase.table("shots").select("*").range(offset, offset + page_size - 1).execute()
-        shots = response.data
+        shots = []
+        for attempt in range(1, 4):
+            try:
+                response = supabase.table("shots").select("*").range(offset, offset + page_size - 1).execute()
+                shots = response.data
+                break
+            except Exception as e:
+                if attempt == 3:
+                    raise
+                print(f"Retrying Supabase fetch (attempt {attempt}/3): {e}")
+                time.sleep(1.5 * attempt)
 
         if not shots:
             break
@@ -117,7 +128,7 @@ def export_to_bigquery(shots, mode="append"):
     """
     if not shots:
         print("No shots to export")
-        return
+        return 0
 
     bq_client = get_bigquery_client()
     table_id = create_bigquery_dataset_and_table(bq_client)
@@ -143,6 +154,7 @@ def export_to_bigquery(shots, mode="append"):
         table = bq_client.get_table(table_id)
         print(f"✅ Successfully exported {len(shots)} shots to BigQuery")
         print(f"Table {table_id} now contains {table.num_rows} total rows")
+        return len(shots)
 
     except Exception as e:
         print(f"❌ Error exporting to BigQuery: {e}")
@@ -172,46 +184,87 @@ def sync_incremental():
             print(f"Latest shot in BigQuery: {latest_date}")
 
             # Fetch only newer shots from Supabase
-            response = supabase.table("shots").select("*").gt("date_added", latest_date.isoformat()).execute()
-            new_shots = response.data
+            new_shots = []
+            for attempt in range(1, 4):
+                try:
+                    response = supabase.table("shots").select("*").gt("date_added", latest_date.isoformat()).execute()
+                    new_shots = response.data
+                    break
+                except Exception as e:
+                    if attempt == 3:
+                        raise
+                    print(f"Retrying Supabase incremental fetch (attempt {attempt}/3): {e}")
+                    time.sleep(1.5 * attempt)
 
             if new_shots:
                 print(f"Found {len(new_shots)} new shots to sync")
-                export_to_bigquery(new_shots, mode="append")
+                return export_to_bigquery(new_shots, mode="append")
             else:
                 print("No new shots to sync")
+                return 0
         else:
             print("BigQuery table is empty, doing full sync")
             shots = fetch_shots_from_supabase()
-            export_to_bigquery(shots, mode="replace")
+            return export_to_bigquery(shots, mode="replace")
 
     except Exception as e:
         print(f"Error during incremental sync: {e}")
         print("Falling back to full sync...")
         shots = fetch_shots_from_supabase()
-        export_to_bigquery(shots, mode="replace")
+        return export_to_bigquery(shots, mode="replace")
 
 def main():
     import sys
+    start_time = time.time()
+    mode = "full"
+    status = "success"
+    shot_count = 0
 
-    if len(sys.argv) > 1:
-        command = sys.argv[1]
-        if command == "full":
+    try:
+        if len(sys.argv) > 1:
+            command = sys.argv[1]
+            if command == "full":
+                mode = "full"
+                print("Running FULL sync (replace all data)...")
+                shots = fetch_shots_from_supabase()
+                shot_count = export_to_bigquery(shots, mode="replace")
+            elif command == "incremental":
+                mode = "incremental"
+                print("Running INCREMENTAL sync (add new shots only)...")
+                shot_count = sync_incremental()
+            else:
+                print(f"Unknown command: {command}")
+                print("Usage: python supabase_to_bigquery.py [full|incremental]")
+                sys.exit(1)
+        else:
+            # Default to full sync
+            mode = "full"
             print("Running FULL sync (replace all data)...")
             shots = fetch_shots_from_supabase()
-            export_to_bigquery(shots, mode="replace")
-        elif command == "incremental":
-            print("Running INCREMENTAL sync (add new shots only)...")
-            sync_incremental()
-        else:
-            print(f"Unknown command: {command}")
-            print("Usage: python supabase_to_bigquery.py [full|incremental]")
-            sys.exit(1)
+            shot_count = export_to_bigquery(shots, mode="replace")
+    except Exception as e:
+        status = "failed"
+        observability.append_event(
+            "sync_runs.jsonl",
+            {
+                "status": status,
+                "mode": mode,
+                "shots": shot_count,
+                "duration_sec": round(time.time() - start_time, 2),
+                "error": str(e),
+            },
+        )
+        raise
     else:
-        # Default to full sync
-        print("Running FULL sync (replace all data)...")
-        shots = fetch_shots_from_supabase()
-        export_to_bigquery(shots, mode="replace")
+        observability.append_event(
+            "sync_runs.jsonl",
+            {
+                "status": status,
+                "mode": mode,
+                "shots": shot_count,
+                "duration_sec": round(time.time() - start_time, 2),
+            },
+        )
 
 if __name__ == "__main__":
     main()

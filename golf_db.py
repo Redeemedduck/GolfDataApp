@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import pandas as pd
+import numpy as np
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -13,6 +14,8 @@ SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), "golf_stats.db")
 
 # Detect environment
 IS_CLOUD_RUN = os.getenv('K_SERVICE') is not None
+USE_SUPABASE_READS = os.getenv("USE_SUPABASE_READS", "").lower() in ("1", "true", "yes")
+READ_MODE = "auto"
 
 # Initialize Supabase client
 if SUPABASE_URL and SUPABASE_KEY:
@@ -28,6 +31,19 @@ def clean_value(val, default=0.0):
         return default
     return val
 
+def _normalize_read_mode(mode):
+    if mode in ("auto", "sqlite", "supabase"):
+        return mode
+    return "auto"
+
+def set_read_mode(mode):
+    """Set the preferred read mode: auto, sqlite, or supabase."""
+    global READ_MODE
+    READ_MODE = _normalize_read_mode(mode)
+
+def get_read_mode():
+    return READ_MODE
+
 # --- SQLite Local Database ---
 def init_db():
     """Initialize the local SQLite database and handle migrations."""
@@ -40,6 +56,7 @@ def init_db():
             shot_id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,
             date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            session_type TEXT,
             club TEXT,
             carry REAL,
             total REAL,
@@ -78,7 +95,9 @@ def init_db():
         'optix_x': 'REAL',
         'optix_y': 'REAL',
         'club_lie': 'REAL',
-        'lie_angle': 'TEXT'
+        'lie_angle': 'TEXT',
+        'shot_tag': 'TEXT',
+        'session_type': 'TEXT'
     }
     
     for col, col_type in required_columns.items():
@@ -87,6 +106,17 @@ def init_db():
             cursor.execute(f"ALTER TABLE shots ADD COLUMN {col} {col_type}")
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_shots_session_id ON shots(session_id)')
+
+    # Shared tag catalog
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tag_catalog (
+            tag TEXT PRIMARY KEY,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_default INTEGER DEFAULT 0
+        )
+    ''')
 
     # Create archive table for deleted shots (audit trail)
     cursor.execute('''
@@ -114,6 +144,237 @@ def init_db():
     conn.commit()
     conn.close()
 
+    _ensure_default_tags()
+
+
+def _ensure_default_tags():
+    defaults = [
+        ("Warmup", "Early warmup shots", 1),
+        ("Practice", "Skill work or gapping", 1),
+        ("Round", "On-course or simulator round play", 1),
+        ("Fitting", "Equipment or shaft fitting", 1),
+    ]
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        for tag, desc, is_default in defaults:
+            cursor.execute(
+                "INSERT OR IGNORE INTO tag_catalog (tag, description, is_default) VALUES (?, ?, ?)",
+                (tag, desc, is_default)
+            )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+# --- Data Source Info ---
+def get_read_source():
+    """Return the preferred read source based on environment and configuration."""
+    mode = _normalize_read_mode(READ_MODE)
+    if mode == "sqlite":
+        return "SQLite (forced)"
+    if mode == "supabase":
+        return "Supabase (forced)" if supabase else "SQLite (fallback)"
+    if supabase and not _sqlite_has_data():
+        return "Supabase (auto)"
+    return "SQLite (auto)"
+
+def _sqlite_has_data():
+    try:
+        if not os.path.exists(SQLITE_DB_PATH):
+            return False
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM shots LIMIT 1")
+        row = cursor.fetchone()
+        conn.close()
+        return row is not None
+    except Exception:
+        return False
+
+def get_shot_counts():
+    """Return shot counts for SQLite and Supabase."""
+    counts = {"sqlite": 0, "supabase": 0}
+    try:
+        if os.path.exists(SQLITE_DB_PATH):
+            conn = sqlite3.connect(SQLITE_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM shots")
+            counts["sqlite"] = cursor.fetchone()[0]
+            conn.close()
+    except Exception:
+        pass
+
+    if supabase:
+        try:
+            response = supabase.table('shots').select('shot_id', count='exact').execute()
+            if hasattr(response, "count") and response.count is not None:
+                counts["supabase"] = response.count
+        except Exception:
+            pass
+    return counts
+
+
+def get_sync_status(drift_threshold=0):
+    """Return SQLite/Supabase drift information for reconciliation."""
+    counts = get_shot_counts()
+    drift = None
+    drift_exceeds = False
+    if supabase:
+        drift = abs(counts["sqlite"] - counts["supabase"])
+        drift_exceeds = drift > drift_threshold
+    return {
+        "counts": counts,
+        "drift": drift,
+        "drift_exceeds": drift_exceeds
+    }
+
+
+def get_tag_catalog(read_mode=None):
+    """Return shared tags for consistent labeling across sessions."""
+    mode = _normalize_read_mode(read_mode or READ_MODE)
+    if mode == "supabase" and supabase:
+        tags = _get_tag_catalog_supabase()
+        if tags:
+            return tags
+    return _get_tag_catalog_sqlite()
+
+
+def _get_tag_catalog_sqlite():
+    _ensure_default_tags()
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT tag FROM tag_catalog ORDER BY tag ASC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+    except Exception:
+        return []
+
+
+def _get_tag_catalog_supabase():
+    try:
+        response = supabase.table('tag_catalog').select('tag').order('tag').execute()
+        if hasattr(response, "data") and response.data:
+            return [row["tag"] for row in response.data if row.get("tag")]
+    except Exception:
+        return []
+    return []
+
+
+def add_tag_to_catalog(tag, description=None):
+    """Add or update a tag in the shared catalog."""
+    tag = (tag or "").strip()
+    if not tag:
+        return False
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO tag_catalog (tag, description) VALUES (?, ?) "
+            "ON CONFLICT(tag) DO UPDATE SET description = excluded.description, updated_at = CURRENT_TIMESTAMP",
+            (tag, description)
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        return False
+
+    if supabase:
+        try:
+            supabase.table('tag_catalog').upsert(
+                {'tag': tag, 'description': description}
+            ).execute()
+        except Exception:
+            pass
+    return True
+
+
+def delete_tag_from_catalog(tag):
+    """Remove a tag from the shared catalog."""
+    tag = (tag or "").strip()
+    if not tag:
+        return False
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM tag_catalog WHERE tag = ?", (tag,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        return False
+
+    if supabase:
+        try:
+            supabase.table('tag_catalog').delete().eq('tag', tag).execute()
+        except Exception:
+            pass
+    return True
+
+def _merge_shots(local_df, cloud_df):
+    """Merge local and cloud shots, preferring local rows on conflicts."""
+    if local_df.empty:
+        return cloud_df
+    if cloud_df.empty:
+        return local_df
+    if 'shot_id' not in local_df.columns or 'shot_id' not in cloud_df.columns:
+        return pd.concat([local_df, cloud_df], ignore_index=True)
+    combined = pd.concat([local_df, cloud_df], ignore_index=True)
+    return combined.drop_duplicates(subset=['shot_id'], keep='first')
+
+def _fetch_supabase_shots(session_id=None, page_size=1000):
+    """Fetch shots from Supabase with pagination."""
+    if not supabase:
+        return pd.DataFrame()
+    all_rows = []
+    offset = 0
+    while True:
+        query = supabase.table('shots').select('*').range(offset, offset + page_size - 1)
+        if session_id:
+            query = query.eq('session_id', session_id)
+        response = query.execute()
+        data = response.data or []
+        if not data:
+            break
+        all_rows.extend(data)
+        if len(data) < page_size:
+            break
+        offset += page_size
+    if not all_rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(all_rows)
+    if 'date_added' in df.columns:
+        df['date_added'] = pd.to_datetime(df['date_added'])
+    return df
+
+def _fetch_supabase_sessions(page_size=1000):
+    """Fetch session metadata from Supabase with pagination."""
+    if not supabase:
+        return pd.DataFrame()
+    all_rows = []
+    offset = 0
+    while True:
+        query = (
+            supabase.table('shots')
+            .select('session_id, date_added, session_type')
+            .range(offset, offset + page_size - 1)
+        )
+        response = query.execute()
+        data = response.data or []
+        if not data:
+            break
+        all_rows.extend(data)
+        if len(data) < page_size:
+            break
+        offset += page_size
+    if not all_rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(all_rows)
+    if 'date_added' in df.columns:
+        df['date_added'] = pd.to_datetime(df['date_added'])
+    return df
+
 # --- Hybrid Save (Local + Cloud) ---
 def save_shot(data):
     """Save shot data to local SQLite and Supabase (hybrid)."""
@@ -122,6 +383,7 @@ def save_shot(data):
     payload = {
         'shot_id': data.get('id', data.get('shot_id')),
         'session_id': data.get('session', data.get('session_id')),
+        'session_type': data.get('session_type'),
         'club': data.get('club'),
         'carry': clean_value(data.get('carry', data.get('carry_distance'))),
         'total': clean_value(data.get('total', data.get('total_distance'))),
@@ -149,7 +411,8 @@ def save_shot(data):
         'optix_x': clean_value(data.get('optix_x')),
         'optix_y': clean_value(data.get('optix_y')),
         'club_lie': clean_value(data.get('club_lie')),
-        'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None
+        'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None,
+        'shot_tag': data.get('shot_tag')
     }
 
     # 1. Save to Local SQLite
@@ -173,76 +436,123 @@ def save_shot(data):
             print(f"Supabase Error: {e}")
 
 # --- Data Retrieval (Local-First) ---
-def get_session_data(session_id=None):
+def get_session_data(session_id=None, read_mode=None):
     """Get session data from local SQLite database, with fallback to Supabase."""
     df = pd.DataFrame()
-    
-    # 1. Try Local SQLite
-    try:
-        if os.path.exists(SQLITE_DB_PATH):
-            conn = sqlite3.connect(SQLITE_DB_PATH)
-            query = "SELECT * FROM shots"
-            if session_id:
-                query += " WHERE session_id = ?"
-                df = pd.read_sql_query(query, conn, params=[session_id])
-            else:
-                df = pd.read_sql_query(query, conn)
-            conn.close()
-    except Exception as e:
-        print(f"SQLite Read Error: {e}")
 
-    # 2. Hybrid Fallback: If SQLite is empty (e.g. fresh container) or in Cloud Run, check Supabase
-    if df.empty and supabase:
+    def fetch_from_sqlite():
         try:
-            # Note: pagination might be needed for very large datasets (>1000 shots)
-            query = supabase.table('shots').select('*')
-            if session_id:
-                query = query.eq('session_id', session_id)
-            
-            response = query.execute()
-            if response.data:
-                df = pd.DataFrame(response.data)
-                # Cleanup date format if needed
-                if 'date_added' in df.columns:
-                    df['date_added'] = pd.to_datetime(df['date_added'])
+            if os.path.exists(SQLITE_DB_PATH):
+                conn = sqlite3.connect(SQLITE_DB_PATH)
+                query = "SELECT * FROM shots"
+                if session_id:
+                    query += " WHERE session_id = ?"
+                    local_df = pd.read_sql_query(query, conn, params=[session_id])
+                else:
+                    local_df = pd.read_sql_query(query, conn)
+                conn.close()
+                return local_df
+        except Exception as e:
+            print(f"SQLite Read Error: {e}")
+        return pd.DataFrame()
+
+    def fetch_from_supabase():
+        try:
+            return _fetch_supabase_shots(session_id=session_id)
         except Exception as e:
             print(f"Supabase Read Error: {e}")
-            
-    return df
+            return pd.DataFrame()
 
-def get_unique_sessions():
-    """Get unique sessions from local SQLite, fallback to Supabase."""
-    sessions = []
-    
-    # 1. Try Local SQLite
+    mode = _normalize_read_mode(read_mode or READ_MODE)
+    prefer_supabase = supabase and (USE_SUPABASE_READS or IS_CLOUD_RUN or mode == "supabase")
+
+    local_df = fetch_from_sqlite()
+    if mode == "supabase":
+        cloud_df = fetch_from_supabase()
+        return cloud_df if not cloud_df.empty else local_df
+
+    if mode == "sqlite":
+        return local_df
+
+    if not local_df.empty:
+        return local_df
+
+    if supabase:
+        return fetch_from_supabase()
+
+    if prefer_supabase:
+        return fetch_from_supabase()
+
+    return local_df
+
+def get_all_shots(read_mode=None):
+    """Get all shots from the local SQLite database, with Supabase fallback."""
+    return get_session_data(read_mode=read_mode)
+
+def get_unique_sessions(read_mode=None):
+    """Get unique sessions from local SQLite, optionally merged with Supabase."""
+    local_df = pd.DataFrame()
+    cloud_df = pd.DataFrame()
+
     try:
         if os.path.exists(SQLITE_DB_PATH):
             conn = sqlite3.connect(SQLITE_DB_PATH)
-            query = "SELECT DISTINCT session_id, MAX(date_added) as date_added FROM shots GROUP BY session_id ORDER BY date_added DESC"
-            df = pd.read_sql_query(query, conn)
+            query = (
+                "SELECT session_id, MAX(date_added) as date_added, MAX(session_type) as session_type "
+                "FROM shots GROUP BY session_id ORDER BY date_added DESC"
+            )
+            local_df = pd.read_sql_query(query, conn)
             conn.close()
-            if not df.empty:
-                sessions = df.to_dict('records')
     except Exception as e:
         print(f"SQLite Session Error: {e}")
 
-    # 2. Hybrid Fallback: Use Supabase
-    if not sessions and supabase:
+    mode = _normalize_read_mode(read_mode or READ_MODE)
+    should_check_cloud = supabase and (USE_SUPABASE_READS or IS_CLOUD_RUN or mode == "supabase" or local_df.empty)
+    if should_check_cloud:
         try:
-            # Fetch all shot headers to determine unique sessions
-            response = supabase.table('shots').select('session_id, date_added').execute()
-            if response.data:
-                df = pd.DataFrame(response.data)
-                if not df.empty:
-                    df['date_added'] = pd.to_datetime(df['date_added'])
-                    # Group by session_id and get latest date_added
-                    sessions_df = df.groupby('session_id')['date_added'].max().reset_index()
-                    sessions_df = sessions_df.sort_values('date_added', ascending=False)
-                    sessions = sessions_df.to_dict('records')
+            cloud_df = _fetch_supabase_sessions()
+            if not cloud_df.empty:
+                def _last_non_null(series):
+                    non_null = series.dropna()
+                    return non_null.iloc[-1] if not non_null.empty else None
+
+                cloud_df = cloud_df.sort_values('date_added')
+                cloud_df = (
+                    cloud_df.groupby('session_id')
+                    .agg(
+                        date_added=('date_added', 'max'),
+                        session_type=('session_type', _last_non_null)
+                    )
+                    .reset_index()
+                )
         except Exception as e:
             print(f"Supabase Session Error: {e}")
-            
-    return sessions
+
+    if local_df.empty and cloud_df.empty:
+        return []
+
+    if mode == "supabase":
+        return cloud_df.to_dict('records') if not cloud_df.empty else local_df.to_dict('records')
+
+    if mode == "sqlite":
+        return local_df.to_dict('records')
+
+    if not local_df.empty:
+        return local_df.to_dict('records')
+
+    combined = pd.concat([local_df, cloud_df], ignore_index=True)
+    combined['date_added'] = pd.to_datetime(combined['date_added'])
+    combined = combined.sort_values('date_added')
+    combined = (
+        combined.groupby('session_id')
+        .agg(
+            date_added=('date_added', 'max'),
+            session_type=('session_type', lambda x: x.dropna().iloc[-1] if not x.dropna().empty else None)
+        )
+        .reset_index()
+        .sort_values('date_added', ascending=False)
+    )
+    return combined.to_dict('records')
 
 # --- Data Management ---
 def delete_shot(shot_id):
@@ -301,6 +611,35 @@ def delete_club_session(session_id, club_name):
             supabase.table('shots').delete().eq('session_id', session_id).eq('club', club_name).execute()
         except Exception as e:
             print(f"Supabase Club Delete Error: {e}")
+
+def delete_shots_by_tag(session_id, tag):
+    """Delete all shots for a specific tag within a session."""
+    deleted = 0
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM shots WHERE session_id = ? AND shot_tag = ?",
+            (session_id, tag)
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        cursor.execute(
+            "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
+            ("DELETE_BY_TAG", "session", session_id, f"Deleted {deleted} shots tagged '{tag}'")
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"SQLite Tag Delete Error: {e}")
+
+    if supabase:
+        try:
+            supabase.table('shots').delete().eq('session_id', session_id).eq('shot_tag', tag).execute()
+        except Exception as e:
+            print(f"Supabase Tag Delete Error: {e}")
+
+    return deleted
 
 
 # ============================================================================
@@ -504,6 +843,42 @@ def rename_session(old_session_id, new_session_id):
 
 
 # ============================================================================
+# SESSION METADATA
+# ============================================================================
+
+def update_session_type(session_id, session_type):
+    """Update session_type for all shots in a session."""
+    session_type = (session_type or "").strip() or None
+    updated = 0
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE shots SET session_type = ? WHERE session_id = ?",
+            (session_type, session_id)
+        )
+        updated = cursor.rowcount
+        conn.commit()
+        cursor.execute(
+            "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
+            ("SESSION_TYPE", "session", session_id, f"Set session_type = {session_type}")
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"SQLite Session Type Error: {e}")
+        updated = 0
+
+    if supabase:
+        try:
+            supabase.table('shots').update({'session_type': session_type}).eq('session_id', session_id).execute()
+        except Exception as e:
+            print(f"Supabase Session Type Error: {e}")
+
+    return updated
+
+
+# ============================================================================
 # BULK EDITING FUNCTIONS (Phase 2)
 # ============================================================================
 
@@ -553,6 +928,48 @@ def update_shot_metadata(shot_ids, field, value):
 
     return shots_updated
 
+def update_shot_tags(shot_ids, tag):
+    """Bulk update shot_tag for multiple shots."""
+    if not shot_ids:
+        return 0
+    return update_shot_metadata(shot_ids, "shot_tag", tag)
+
+def split_session_by_tag(session_id, tag, new_session_id):
+    """Split a session into a new session using a tag filter."""
+    shots_moved = 0
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE shots SET session_id = ? WHERE session_id = ? AND shot_tag = ?",
+            (new_session_id, session_id, tag)
+        )
+        shots_moved = cursor.rowcount
+        conn.commit()
+        cursor.execute(
+            "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
+            (
+                "SPLIT_BY_TAG",
+                "session",
+                session_id,
+                f"Moved {shots_moved} shots tagged '{tag}' to {new_session_id}. "
+                f"Undo: move tag '{tag}' from {new_session_id} back to {session_id}."
+            )
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"SQLite Split by Tag Error: {e}")
+        shots_moved = 0
+
+    if supabase:
+        try:
+            supabase.table('shots').update({'session_id': new_session_id}).eq('session_id', session_id).eq('shot_tag', tag).execute()
+        except Exception as e:
+            print(f"Supabase Split by Tag Error: {e}")
+
+    return shots_moved
+
 
 def recalculate_metrics(session_id=None):
     """
@@ -566,38 +983,43 @@ def recalculate_metrics(session_id=None):
     """
     # Get shots to recalculate
     df = get_session_data(session_id) if session_id else get_session_data()
+    if df.empty:
+        return 0
+
     shots_updated = 0
 
     try:
         conn = sqlite3.connect(SQLITE_DB_PATH)
         cursor = conn.cursor()
 
-        for _, shot in df.iterrows():
-            # Recalculate smash factor
-            club_speed = shot.get('club_speed', 0)
-            ball_speed = shot.get('ball_speed', 0)
-            new_smash = round(ball_speed / club_speed, 2) if club_speed > 0 else 0.0
+        df_updates = df.copy()
+        exclude_cols = [
+            'shot_id', 'session_id', 'date_added', 'club',
+            'shot_type', 'impact_img', 'swing_img', 'lie_angle'
+        ]
+        update_cols = [col for col in df_updates.columns if col not in exclude_cols]
 
-            # Clean invalid values (99999 → 0)
-            updates = {}
-            for col in df.columns:
-                if col not in ['shot_id', 'session_id', 'date_added', 'club', 'shot_type', 'impact_img', 'swing_img', 'lie_angle']:
-                    val = shot[col]
-                    if val == 99999 or (pd.isna(val) and col != 'smash'):
-                        updates[col] = 0
+        numeric_cols = df_updates[update_cols].select_dtypes(include=['number']).columns
+        df_updates[numeric_cols] = df_updates[numeric_cols].replace(99999, 0).fillna(0)
 
-            updates['smash'] = new_smash
+        if 'ball_speed' in df_updates.columns and 'club_speed' in df_updates.columns and 'smash' in df_updates.columns:
+            df_updates['smash'] = 0.0
+            valid_speed = df_updates['club_speed'] > 0
+            df_updates.loc[valid_speed, 'smash'] = (
+                df_updates.loc[valid_speed, 'ball_speed'] / df_updates.loc[valid_speed, 'club_speed']
+            ).round(2)
 
-            # Build update query
-            if updates:
-                set_clause = ', '.join([f"{k} = ?" for k in updates.keys()])
-                values = list(updates.values()) + [shot['shot_id']]
-                cursor.execute(f"UPDATE shots SET {set_clause} WHERE shot_id = ?", values)
-                shots_updated += cursor.rowcount
+        if update_cols:
+            set_clause = ', '.join([f"{col} = ?" for col in update_cols])
+            values = df_updates[update_cols + ['shot_id']].values.tolist()
+            cursor.executemany(
+                f"UPDATE shots SET {set_clause} WHERE shot_id = ?",
+                values
+            )
+            shots_updated = len(values)
 
         conn.commit()
 
-        # Log the recalculation
         cursor.execute(
             "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
             ("RECALCULATE", "shot", session_id or "all", f"Recalculated {shots_updated} shots")
@@ -674,53 +1096,65 @@ def find_outliers(session_id=None, club=None):
     if club:
         df = df[df['club'] == club]
 
-    outliers = []
+    reasons_df = pd.DataFrame(index=df.index)
 
-    for _, shot in df.iterrows():
-        reasons = []
+    if 'carry' in df.columns:
+        reasons_df['carry'] = np.where(
+            df['carry'] > 400,
+            df['carry'].map(lambda v: f"Carry too high: {v:.0f} yds"),
+            ""
+        )
+    if 'smash' in df.columns:
+        reasons_df['smash_high'] = np.where(
+            df['smash'] > 1.6,
+            df['smash'].map(lambda v: f"Smash too high: {v:.2f}"),
+            ""
+        )
+        reasons_df['smash_low'] = np.where(
+            (df['smash'] > 0) & (df['smash'] < 0.8),
+            df['smash'].map(lambda v: f"Smash too low: {v:.2f}"),
+            ""
+        )
+    if 'ball_speed' in df.columns:
+        reasons_df['ball_speed'] = np.where(
+            df['ball_speed'] > 200,
+            df['ball_speed'].map(lambda v: f"Ball speed too high: {v:.0f} mph"),
+            ""
+        )
+    if 'back_spin' in df.columns:
+        reasons_df['back_spin'] = np.where(
+            df['back_spin'] > 10000,
+            df['back_spin'].map(lambda v: f"Back spin too high: {v:.0f} rpm"),
+            ""
+        )
+    if 'side_spin' in df.columns:
+        reasons_df['side_spin'] = np.where(
+            df['side_spin'].abs() > 5000,
+            df['side_spin'].map(lambda v: f"Side spin excessive: {v:.0f} rpm"),
+            ""
+        )
 
-        # Check carry distance
-        if shot.get('carry', 0) > 400:
-            reasons.append(f"Carry too high: {shot['carry']:.0f} yds")
+    if reasons_df.empty:
+        return pd.DataFrame()
 
-        # Check smash factor
-        if shot.get('smash', 0) > 1.6:
-            reasons.append(f"Smash too high: {shot['smash']:.2f}")
-        elif shot.get('smash', 0) > 0 and shot.get('smash', 0) < 0.8:
-            reasons.append(f"Smash too low: {shot['smash']:.2f}")
+    def join_reasons(row):
+        return '; '.join([val for val in row if val])
 
-        # Check ball speed
-        if shot.get('ball_speed', 0) > 200:
-            reasons.append(f"Ball speed too high: {shot['ball_speed']:.0f} mph")
+    reason_series = reasons_df.apply(join_reasons, axis=1)
+    outlier_rows = df[reason_series != ""].copy()
+    outlier_rows['reasons'] = reason_series[reason_series != ""]
 
-        # Check spin rates
-        if shot.get('back_spin', 0) > 10000:
-            reasons.append(f"Back spin too high: {shot['back_spin']:.0f} rpm")
-        if abs(shot.get('side_spin', 0)) > 5000:
-            reasons.append(f"Side spin excessive: {shot['side_spin']:.0f} rpm")
-
-        if reasons:
-            outliers.append({
-                'shot_id': shot['shot_id'],
-                'session_id': shot['session_id'],
-                'club': shot['club'],
-                'carry': shot.get('carry', 0),
-                'smash': shot.get('smash', 0),
-                'ball_speed': shot.get('ball_speed', 0),
-                'reasons': '; '.join(reasons)
-            })
-
-    return pd.DataFrame(outliers)
+    return outlier_rows[['shot_id', 'session_id', 'club', 'carry', 'smash', 'ball_speed', 'reasons']]
 
 
-def validate_shot_data():
+def validate_shot_data(session_id=None):
     """
     Find shots missing critical fields.
 
     Returns:
         DataFrame of invalid shots with missing fields
     """
-    df = get_session_data()
+    df = get_session_data(session_id)
 
     if df.empty:
         return pd.DataFrame()

@@ -1,7 +1,9 @@
 import os
 import re
 import requests
+import time
 import golf_db
+import observability
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -13,6 +15,22 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 API_BASE_URL = "https://api-v2.golfsvc.com/v2/oldmyuneekor/report"
+
+def request_with_retries(url, timeout=30, max_retries=3, backoff=1.5):
+    """Fetch a URL with basic retry/backoff for transient failures."""
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.get(url, timeout=timeout)
+            if response.status_code in (429,) or response.status_code >= 500:
+                last_err = requests.HTTPError(f"HTTP {response.status_code} for {url}")
+                time.sleep(backoff * attempt)
+                continue
+            return response
+        except requests.exceptions.RequestException as e:
+            last_err = e
+            time.sleep(backoff * attempt)
+    raise last_err
 
 def extract_url_params(url):
     """Extract report_id and key from Uneekor URL"""
@@ -38,12 +56,32 @@ def run_scraper(url, progress_callback):
     """
     Main scraper function using Uneekor API
     """
+    start_time = time.time()
+    error_count = 0
+    report_id = None
+    sessions_found = 0
+
+    def log_run(status, message=None):
+        observability.append_event(
+            "import_runs.jsonl",
+            {
+                "status": status,
+                "report_id": report_id,
+                "sessions": sessions_found,
+                "shots_imported": total_shots_imported,
+                "errors": error_count,
+                "duration_sec": round(time.time() - start_time, 2),
+                "message": message,
+            },
+        )
 
     # 1. Extract report_id and key from URL
     progress_callback("Parsing URL...")
     report_id, key = extract_url_params(url)
 
     if not report_id or not key:
+        total_shots_imported = 0
+        log_run("failed", "Invalid report URL")
         return "Error: Could not extract report ID and key from URL. Please use a valid Uneekor report URL."
 
     # 2. Fetch shot data from API
@@ -51,18 +89,25 @@ def run_scraper(url, progress_callback):
     api_url = f"{API_BASE_URL}/{report_id}/{key}"
 
     try:
-        response = requests.get(api_url, timeout=30)
+        response = request_with_retries(api_url, timeout=30)
         response.raise_for_status()
         sessions_data = response.json()
     except requests.exceptions.RequestException as e:
+        total_shots_imported = 0
+        log_run("failed", f"Uneekor API request failed: {str(e)}")
         return f"Error: Failed to fetch data from Uneekor API: {str(e)}"
     except ValueError as e:
+        total_shots_imported = 0
+        log_run("failed", f"Invalid JSON response: {str(e)}")
         return f"Error: Invalid JSON response from API: {str(e)}"
 
     if not sessions_data or not isinstance(sessions_data, list):
+        total_shots_imported = 0
+        log_run("failed", "No session data in API response")
         return "Error: No session data found in API response"
 
-    progress_callback(f"Found {len(sessions_data)} club sessions")
+    sessions_found = len(sessions_data)
+    progress_callback(f"Found {sessions_found} club sessions")
 
     total_shots_imported = 0
 
@@ -144,10 +189,12 @@ def run_scraper(url, progress_callback):
                 total_shots_imported += 1
 
             except Exception as e:
+                error_count += 1
                 print(f"Error processing shot {shot.get('id')}: {e}")
                 continue
 
     progress_callback(f"Import complete!")
+    log_run("success", "Import complete")
     return f"Success! Imported {total_shots_imported} shots (with images) from {len(sessions_data)} club sessions."
 
 def upload_shot_images(report_id, key, session_id, shot_id):
@@ -163,7 +210,7 @@ def upload_shot_images(report_id, key, session_id, shot_id):
     uploaded_urls = {}
 
     try:
-        response = requests.get(image_api_url, timeout=30)
+        response = request_with_retries(image_api_url, timeout=30)
         if response.status_code != 200:
             return {}
             
@@ -177,7 +224,7 @@ def upload_shot_images(report_id, key, session_id, shot_id):
                 full_url = f"https://api-v2.golfsvc.com/v2{img_path}"
 
                 # Download image into memory
-                img_response = requests.get(full_url, timeout=30)
+                img_response = request_with_retries(full_url, timeout=30)
                 if img_response.status_code == 200:
                     image_bytes = img_response.content
                     
@@ -186,15 +233,20 @@ def upload_shot_images(report_id, key, session_id, shot_id):
                     storage_path = f"{report_id}/{shot_id}_{img_name}.jpg"
                     
                     try:
-                        # Upload to Supabase
                         bucket = "shot-images"
-                        supabase.storage.from_(bucket).upload(
-                            path=storage_path,
-                            file=image_bytes,
-                            file_options={"content-type": "image/jpeg", "upsert": "true"}
-                        )
-                        
-                        # Get Public URL
+                        for attempt in range(1, 4):
+                            try:
+                                supabase.storage.from_(bucket).upload(
+                                    path=storage_path,
+                                    file=image_bytes,
+                                    file_options={"content-type": "image/jpeg", "upsert": "true"}
+                                )
+                                break
+                            except Exception as upload_err:
+                                if attempt == 3:
+                                    raise upload_err
+                                time.sleep(1.5 * attempt)
+
                         public_url = supabase.storage.from_(bucket).get_public_url(storage_path)
                         
                         if img_name == 'ballimpact':
