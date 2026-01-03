@@ -20,12 +20,17 @@ This folder provides a ready-to-use MCP connector configuration for accessing Su
    - Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`
 
 ## Codex CLI Notes
-- Use the generated JSON from `scripts/mcp_supabase_config.py` and merge it into your Codex MCP config.
-- Start the MCP server with:
+- Codex stores MCP config at `~/.codex/config.toml` (per Codex MCP docs).
+- Use the generated snippet from `scripts/mcp_supabase_config.py`:
+  - `mcp/codex_config.supabase.generated.toml`
+- Ensure `SUPABASE_DB_URI` is in your environment, then start the server:
   ```bash
   scripts/start_mcp_supabase.sh
   ```
-  Keep it running while Codex connects and issues SQL queries.
+- You can also add the server via CLI:
+  ```bash
+  codex mcp add supabase-golf-data -- bash scripts/start_mcp_supabase.sh
+  ```
 
 ## What This Provides
 - MCP server config using `@modelcontextprotocol/server-postgres`

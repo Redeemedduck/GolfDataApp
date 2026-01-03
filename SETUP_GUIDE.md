@@ -514,6 +514,7 @@ To connect Supabase Postgres directly to MCP clients:
    ```bash
    scripts/start_mcp_supabase.sh
    ```
+5. For Codex, merge `mcp/codex_config.supabase.generated.toml` into `~/.codex/config.toml`.
 
 ### 10.2 Features
 - **Conversational Analytics**: Chat with your BigQuery data directly without SQL.
