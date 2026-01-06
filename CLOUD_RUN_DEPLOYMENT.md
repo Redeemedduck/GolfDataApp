@@ -165,18 +165,33 @@ echo -n "your-supabase-anon-key" | \
 echo -n "your-gemini-api-key" | \
   gcloud secrets create gemini-api-key --data-file=-
 
-# 3. Grant Cloud Run access to secrets
+# 3. Create dedicated service account (recommended for security)
+export SERVICE_ACCOUNT="golf-app-sa"
+gcloud iam service-accounts create ${SERVICE_ACCOUNT} \
+  --display-name="Golf Data App Service Account"
+
+# 4. Grant service account access to secrets
+export SA_EMAIL="${SERVICE_ACCOUNT}@${PROJECT_ID}.iam.gserviceaccount.com"
+
 gcloud secrets add-iam-policy-binding supabase-url \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor"
 
-# Repeat for other secrets...
+# Repeat for other secrets
+gcloud secrets add-iam-policy-binding supabase-key \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/secretmanager.secretAccessor"
 
-# 4. Deploy with secrets
+gcloud secrets add-iam-policy-binding gemini-api-key \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/secretmanager.secretAccessor"
+
+# 5. Deploy with secrets and dedicated service account
 gcloud run deploy golf-data-app \
   --set-secrets="SUPABASE_URL=supabase-url:latest" \
   --set-secrets="SUPABASE_KEY=supabase-key:latest" \
-  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest"
+  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
+  --service-account="${SA_EMAIL}"
 ```
 
 ---
@@ -304,7 +319,7 @@ gcloud run services logs read golf-data-app --region us-central1 --limit 50
 
 ```bash
 # Create alert for high error rate
-gcloud alpha monitoring policies create \
+gcloud monitoring policies create \
   --notification-channels=CHANNEL_ID \
   --display-name="Golf App Errors" \
   --condition-display-name="Error rate > 5%" \

@@ -26,38 +26,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY golf_db.py .
 COPY golf_scraper.py .
+COPY gemini_coach.py .
 COPY pages/ ./pages/
 COPY components/ ./components/
+
+# Copy Streamlit configuration
+COPY .streamlit/ /root/.streamlit/
 
 # Copy optional files if they exist
 COPY .env* ./
 
 # Create directory for SQLite database
 RUN mkdir -p /app/data
-
-# Create Streamlit config directory and config file
-RUN mkdir -p ~/.streamlit
-RUN echo "\
-    [server]\n\
-    port = 8080\n\
-    address = \"0.0.0.0\"\n\
-    headless = true\n\
-    enableCORS = false\n\
-    enableXsrfProtection = true\n\
-    maxUploadSize = 200\n\
-    \n\
-    [browser]\n\
-    gatherUsageStats = false\n\
-    serverAddress = \"0.0.0.0\"\n\
-    serverPort = 8080\n\
-    \n\
-    [theme]\n\
-    primaryColor = \"#1f77b4\"\n\
-    backgroundColor = \"#ffffff\"\n\
-    secondaryBackgroundColor = \"#f0f2f6\"\n\
-    textColor = \"#262730\"\n\
-    font = \"sans serif\"\n\
-    " > ~/.streamlit/config.toml
 
 # Expose port 8080 (Cloud Run requirement)
 EXPOSE 8080
