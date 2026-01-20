@@ -1,0 +1,17 @@
+"""
+Shared configuration for the Uneekor scraper.
+"""
+import os
+from dotenv import load_dotenv
+from supabase import create_client, Client
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+API_BASE_URL = "https://api-v2.golfsvc.com/v2/oldmyuneekor/report"
+
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase: Client | None = create_client(SUPABASE_URL, SUPABASE_KEY)
+else:
+    supabase = None
