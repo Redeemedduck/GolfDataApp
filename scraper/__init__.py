@@ -1,5 +1,5 @@
 """
-Backward-compatible facade for the Uneekor scraper.
+Scraper package for fetching and processing Uneekor data.
 """
 
 from scraper.run import run_scraper
