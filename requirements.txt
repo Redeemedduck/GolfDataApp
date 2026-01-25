@@ -12,3 +12,7 @@ plotly
 plotly-express
 openpyxl
 numpy
+
+# Automation dependencies
+playwright
+cryptography

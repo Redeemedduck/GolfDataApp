@@ -11,16 +11,27 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
-# Install system dependencies
+# Install system dependencies including Playwright browser deps
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     git \
+    # Playwright/Chromium dependencies
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libgtk-3-0 \
+    libgbm1 \
+    libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright browsers (chromium only for smaller image)
+RUN playwright install chromium --with-deps || true
 
 # Copy application files
 COPY app.py .
@@ -28,9 +39,11 @@ COPY observability.py .
 COPY golf_db.py .
 COPY golf_scraper.py .
 COPY gemini_coach.py .
+COPY automation_runner.py .
 COPY pages/ ./pages/
 COPY components/ ./components/
 COPY services/ ./services/
+COPY automation/ ./automation/
 
 # Copy optional files if they exist
 COPY .env* ./
