@@ -72,6 +72,23 @@ GolfDataApp/
 
 **Key Difference**: No `utils/` directory, no `models/` directory, no ML training scripts.
 
+### Automation Module (NEW)
+
+```
+automation/                             # Scraper automation system
+├── __init__.py                        # Module exports
+├── credential_manager.py              # Cookie persistence + encryption
+├── rate_limiter.py                    # Token bucket throttling
+├── browser_client.py                  # Playwright browser lifecycle
+├── uneekor_portal.py                  # Portal navigation & extraction
+├── session_discovery.py               # Discovery + deduplication
+├── naming_conventions.py              # Club/session standardization
+├── backfill_runner.py                 # Historical import with checkpointing
+└── notifications.py                   # Slack integration
+
+automation_runner.py                    # CLI entry point
+```
+
 ---
 
 ## 🚀 Running the Application
@@ -281,6 +298,150 @@ change_log       -- Audit trail for all modifications
 - 6 function calling tools for data access
 - Multi-model support (Flash/Pro)
 - Conversation history management
+
+### Scraper Automation Module (NEW)
+
+**Automation System** (4,400+ lines):
+- Browser automation with Playwright
+- Cookie persistence for session reuse
+- Historical backfill with rate limiting
+- Club name normalization
+- Automatic session tagging
+- Slack notifications
+
+---
+
+## 🤖 Scraper Automation
+
+### Overview
+
+The automation module provides hands-free data import from Uneekor:
+
+1. **Browser Automation**: Playwright-based portal navigation
+2. **Session Discovery**: Find and track sessions automatically
+3. **Deduplication**: Never import the same data twice
+4. **Historical Backfill**: Import past sessions with rate limiting
+5. **Naming Conventions**: Standardize club names and session labels
+6. **Notifications**: Slack alerts for import events
+
+### Quick Start
+
+```bash
+# 1. Install Playwright browser
+pip install -r requirements.txt
+playwright install chromium
+
+# 2. First-time login (saves cookies)
+python automation_runner.py login
+
+# 3. Discover sessions
+python automation_runner.py discover --headless
+
+# 4. Run historical backfill
+python automation_runner.py backfill --start 2025-01-01
+```
+
+### CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `login` | Interactive login to save cookies |
+| `discover` | Find sessions from Uneekor portal |
+| `backfill` | Import historical sessions |
+| `status` | Show automation status |
+| `notify` | Test Slack notification |
+| `normalize` | Test club name normalization |
+
+### Rate Limiting
+
+The system uses conservative rate limits to avoid being blocked:
+
+- **Default**: 6 requests/minute (one every 10 seconds)
+- **Backfill**: 10 requests/minute
+- **Jitter**: Random delays for natural patterns
+
+```python
+# Rate limit estimation
+# 100 sessions × 10 seconds/session = ~17 minutes
+limiter.estimate_time_for_requests(100)  # Returns ~1000 seconds
+```
+
+### Club Name Normalization
+
+Standardizes club names from various Uneekor formats:
+
+| Input | Normalized |
+|-------|------------|
+| `7i`, `7 iron`, `Iron 7` | `7 Iron` |
+| `DR`, `driver`, `1W` | `Driver` |
+| `pw`, `pitching wedge` | `PW` |
+| `56 deg`, `sand wedge` | `SW` |
+
+### Session Naming
+
+Auto-generated session names based on type:
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| Practice | `Practice - {date}` | Practice - Jan 25, 2026 |
+| Drill | `Drill - {focus} - {date}` | Drill - Driver Consistency - Jan 25, 2026 |
+| Round | `{course} Round - {date}` | Pebble Beach Round - Jan 25, 2026 |
+| Warmup | `Warmup - {date}` | Warmup - Jan 25, 2026 |
+
+### Auto-Tagging Rules
+
+Sessions are automatically tagged based on characteristics:
+
+- **Driver Focus**: Single-club driver sessions
+- **Short Game**: Wedge-only sessions
+- **Full Bag**: 10+ clubs used
+- **High Volume**: 100+ shots
+- **Warmup**: <10 shots
+
+### Slack Notifications
+
+Configure Slack for import alerts:
+
+```bash
+# .env
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+Test notification:
+```bash
+python automation_runner.py notify "Test message"
+```
+
+### Database Tables
+
+The automation module adds tracking tables:
+
+```sql
+sessions_discovered    -- Track discovered sessions and import status
+automation_runs        -- Log automation run history
+backfill_runs          -- Track backfill progress and checkpoints
+```
+
+### Code Example
+
+```python
+from automation import (
+    SessionDiscovery,
+    normalize_club,
+    get_notifier,
+)
+
+# Discover sessions
+discovery = SessionDiscovery()
+result = await discovery.discover_sessions(headless=True)
+print(f"Found {result.new_sessions} new sessions")
+
+# Normalize club name
+normalized = normalize_club("7i")  # Returns "7 Iron"
+
+# Send notification
+await get_notifier().send("Import complete!", level='info')
+```
 
 ---
 
@@ -588,11 +749,17 @@ anthropic              # Claude AI (optional)
 ### Export & Scraping
 ```
 openpyxl               # Excel file handling
-selenium               # Web automation (optional)
-webdriver-manager      # Browser driver (optional)
+selenium               # Web automation (legacy)
+webdriver-manager      # Browser driver (legacy)
 ```
 
-**Total**: 14 dependencies
+### Automation
+```
+playwright             # Browser automation for scraper
+cryptography           # Cookie encryption
+```
+
+**Total**: 16 dependencies
 
 ---
 
@@ -710,17 +877,31 @@ Dashboard page → Export Data tab → Download CSV + summary
 | **app.py** | 208 | Landing page with AI Coach nav |
 | **golf_db.py** | 866 | Database layer |
 | **golf_scraper.py** | ~300 | Uneekor API client |
-| **gemini_coach.py** | 600+ | Gemini 3.0 AI Coach (NEW) |
+| **gemini_coach.py** | 600+ | Gemini 3.0 AI Coach |
+| **automation_runner.py** | 350+ | Automation CLI (NEW) |
+| **automation/** (8 files) | 4,400+ | Scraper automation (NEW) |
 | **pages/1_📥_Data_Import.py** | 131 | Import UI |
 | **pages/2_📊_Dashboard.py** | 435 | Analytics (5 tabs) |
 | **pages/3_🗄️_Database_Manager.py** | 475 | CRUD (6 tabs) |
-| **pages/4_🤖_AI_Coach.py** | 240+ | Chat interface (NEW) |
+| **pages/4_🤖_AI_Coach.py** | 240+ | Chat interface |
 | **components/** (8 files) | 1,198 | Reusable UI |
-| **Total** | ~4,450+ | Core app |
+| **Total** | ~8,900+ | Core app + automation |
 
 ---
 
 ## 📝 Changelog (This Branch)
+
+### 2026-01-25: Scraper Automation Module
+- Created automation/ module (4,400+ lines)
+- Playwright browser automation with cookie persistence
+- Session discovery and deduplication system
+- Historical backfill with rate limiting and checkpointing
+- Club name normalization (e.g., "7i" -> "7 Iron")
+- Automatic session naming and tagging
+- Slack notification integration
+- CLI runner (automation_runner.py)
+- Updated Dockerfile for Playwright support
+- Added cryptography dependency for cookie encryption
 
 ### 2025-12-28: Cloud-Native AI Coach Implementation
 - Created gemini_coach.py (600+ lines) - Gemini 3.0 integration
@@ -736,7 +917,7 @@ Dashboard page → Export Data tab → Download CSV + summary
 
 ---
 
-**Last Updated**: 2025-12-28
+**Last Updated**: 2026-01-25
 **Branch**: `production-no-ml`
-**Status**: Production-ready cloud-native AI coaching with Gemini 3.0
-**Deployment**: Ready for Google Cloud Run
+**Status**: Production-ready with automated scraping and AI coaching
+**Deployment**: Ready for Google Cloud Run (includes Playwright)

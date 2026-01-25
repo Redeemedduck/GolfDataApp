@@ -19,6 +19,9 @@ This guide explains how to deploy the Golf Data App as a containerized service o
    docker --version
    ```
 
+> **Note**: The Docker image includes Playwright/Chromium for browser automation.
+> This adds ~350MB to the image size but enables automated session discovery.
+
 4. **Project Setup**
    ```bash
    # Set your GCP project ID
@@ -178,6 +181,34 @@ gcloud run deploy golf-data-app \
   --set-secrets="SUPABASE_KEY=supabase-key:latest" \
   --set-secrets="GEMINI_API_KEY=gemini-api-key:latest"
 ```
+
+### Option 3: Automation Secrets (For Scraper Automation)
+
+If using the browser automation feature for hands-free data import:
+
+```bash
+# Create automation secrets
+echo -n "your-uneekor-email" | \
+  gcloud secrets create uneekor-username --data-file=-
+
+echo -n "your-uneekor-password" | \
+  gcloud secrets create uneekor-password --data-file=-
+
+echo -n "https://hooks.slack.com/services/..." | \
+  gcloud secrets create slack-webhook --data-file=-
+
+# Deploy with automation secrets
+gcloud run deploy golf-data-app \
+  --set-secrets="SUPABASE_URL=supabase-url:latest" \
+  --set-secrets="SUPABASE_KEY=supabase-key:latest" \
+  --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
+  --set-secrets="UNEEKOR_USERNAME=uneekor-username:latest" \
+  --set-secrets="UNEEKOR_PASSWORD=uneekor-password:latest" \
+  --set-secrets="SLACK_WEBHOOK_URL=slack-webhook:latest"
+```
+
+> **Note**: Browser automation on Cloud Run runs in headless mode.
+> Cookies cannot persist (ephemeral storage), so env credentials are required.
 
 ---
 
@@ -510,5 +541,5 @@ gcloud run services describe golf-data-app \
 
 ---
 
-**Last Updated**: 2025-12-28
-**For**: Branch `claude/database-ui-ai-coaching-DE7uU`
+**Last Updated**: 2026-01-25
+**For**: Branch `production-no-ml` with Playwright automation

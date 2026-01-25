@@ -4,9 +4,11 @@ Since you already have Supabase set up, here's the streamlined process to get yo
 
 ---
 
-## 0. Initial Data Capture (Streamlit)
+## 0. Initial Data Capture
 
-Before you can sync data to BigQuery, you need to capture it from Uneekor using the local Streamlit dashboard.
+Before you can sync data to BigQuery, you need to capture it from Uneekor. Two options:
+
+### Option A: Manual Import (Streamlit Dashboard)
 
 1. **Setup Local Environment**:
    ```bash
@@ -25,7 +27,32 @@ Before you can sync data to BigQuery, you need to capture it from Uneekor using 
    - Paste your **Uneekor Report URL** in the sidebar.
    - Click **Run Import** to download shots and images to Supabase.
 
-For a detailed setup guide including Supabase and GCP configuration, see [SETUP_GUIDE.md](file:///Users/duck/Library/CloudStorage/GoogleDrive-matt@coloradolawclassic.org/My%20Drive/2025%20Golf%20Season/GolfDataApp/SETUP_GUIDE.md).
+### Option B: Automated Import (Recommended)
+
+Use browser automation for hands-free data import:
+
+1. **Install Playwright**:
+   ```bash
+   pip install -r requirements.txt
+   playwright install chromium
+   ```
+
+2. **First-Time Login** (saves cookies for future runs):
+   ```bash
+   python automation_runner.py login
+   ```
+
+3. **Discover and Import Sessions**:
+   ```bash
+   python automation_runner.py discover --headless
+   ```
+
+4. **Historical Backfill** (import all past sessions):
+   ```bash
+   python automation_runner.py backfill --start 2025-01-01
+   ```
+
+For detailed automation setup, see [AUTOMATION_GUIDE.md](AUTOMATION_GUIDE.md).
 
 ---
 
