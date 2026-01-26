@@ -95,7 +95,33 @@ python scripts/auto_sync.py --analyze
 
 ---
 
-### 3. `setup_cron.sh` - Automation Setup Wizard
+### 3. `uneekor_playwright.py` - Automated Uneekor Report Discovery
+
+**Best for**: Hands-free ingestion of Uneekor sessions
+
+**Usage:**
+```bash
+# Discover new sessions (prints URLs only)
+python scripts/uneekor_playwright.py --mode incremental --dry-run
+
+# Backfill historical sessions
+python scripts/uneekor_playwright.py --mode backfill --since 2024-01-01 --ingest
+```
+
+**What it does:**
+- Logs into Uneekor using Playwright
+- Navigates the report list and collects report URLs
+- Skips sessions already in your local database
+- Optionally calls the existing API scraper to ingest data
+
+**Required environment variables:**
+- `UNEEKOR_EMAIL`, `UNEEKOR_PASSWORD`
+- `UNEEKOR_EMAIL_SELECTOR`, `UNEEKOR_PASSWORD_SELECTOR`, `UNEEKOR_SUBMIT_SELECTOR`
+- `UNEEKOR_SESSION_ROW_SELECTOR`, `UNEEKOR_SESSION_LINK_SELECTOR`, `UNEEKOR_SESSION_DATE_SELECTOR`
+
+---
+
+### 4. `setup_cron.sh` - Automation Setup Wizard
 
 **Best for**: One-time setup of scheduled syncing
 

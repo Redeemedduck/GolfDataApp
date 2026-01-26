@@ -15,15 +15,14 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and
 API_BASE_URL = "https://api-v2.golfsvc.com/v2/oldmyuneekor/report"
 
 def extract_url_params(url):
-    """Extract report_id and key from Uneekor URL"""
+    """Extract report_id and key from Uneekor URL."""
     try:
-        report_id_match = re.search(r'id=(\d+)', url)
-        key_match = re.search(r'key=([^&]+)', url)
+        report_id_match = re.search(r"[?&]id=(\d+)", url)
+        key_match = re.search(r"[?&]key=([^&]+)", url)
 
         if report_id_match and key_match:
             return report_id_match.group(1), key_match.group(1)
-        else:
-            return None, None
+        return None, None
     except Exception as e:
         print(f"Error parsing URL: {e}")
         return None, None

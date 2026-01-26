@@ -1,6 +1,7 @@
 streamlit
 selenium
 webdriver-manager
+playwright
 pandas
 requests
 psycopg2-binary
