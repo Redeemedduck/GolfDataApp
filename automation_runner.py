@@ -145,6 +145,74 @@ def cmd_discover(args):
     return asyncio.run(do_discover())
 
 
+def _cmd_retry_failed(args):
+    """Retry previously failed imports."""
+    discovery = get_discovery()
+
+    # Get failed sessions
+    failed = discovery.get_failed_sessions(include_needs_review=True, limit=100)
+
+    if not failed:
+        print("No failed sessions to retry.")
+        return 0
+
+    print(f"Found {len(failed)} failed session(s):")
+    for item in failed[:10]:
+        date_str = item.session_date.strftime('%Y-%m-%d') if item.session_date else 'unknown'
+        print(f"  - {item.report_id}: {item.portal_name or 'Unnamed'} ({date_str})")
+        print(f"    Status: {item.status.value}, Attempts: {item.attempts}")
+        if item.error_message:
+            # Truncate long error messages
+            error_preview = item.error_message[:80] + '...' if len(item.error_message) > 80 else item.error_message
+            print(f"    Error: {error_preview}")
+    if len(failed) > 10:
+        print(f"  ... and {len(failed) - 10} more")
+
+    print()
+
+    # Reset failed sessions to pending
+    report_ids = [item.report_id for item in failed]
+    reset_count = discovery.reset_for_retry(report_ids)
+    print(f"Reset {reset_count} session(s) for retry.")
+
+    # Now run a regular backfill
+    print()
+    print("Starting retry backfill...")
+
+    config = BackfillConfig(
+        max_sessions_per_run=args.max or 50,
+        normalize_clubs=not getattr(args, 'no_normalize', False),
+        auto_tag=not getattr(args, 'no_tags', False),
+    )
+
+    runner = BackfillRunner(config=config)
+
+    async def do_retry():
+        def progress_callback(progress):
+            pct = (progress.sessions_processed / progress.sessions_total * 100) if progress.sessions_total > 0 else 0
+            print(f"  Progress: {progress.sessions_processed}/{progress.sessions_total} ({pct:.0f}%) - {progress.total_shots} shots")
+
+        result = await runner.run(progress_callback=progress_callback)
+
+        print()
+        print("="*60)
+        print("RETRY RESULTS")
+        print("="*60)
+        print(f"Sessions imported: {result.sessions_imported}")
+        print(f"Sessions failed:   {result.sessions_failed}")
+        print(f"Total shots:       {result.total_shots}")
+
+        if result.errors:
+            print()
+            print("Errors:")
+            for error in result.errors[:5]:
+                print(f"  - {error}")
+
+        return 0 if result.status.value == 'completed' else 1
+
+    return asyncio.run(do_retry())
+
+
 def cmd_backfill(args):
     """Run historical backfill."""
     if args.status:
@@ -165,6 +233,10 @@ def cmd_backfill(args):
 
         return 0
 
+    # Handle retry-failed option
+    if args.retry_failed:
+        return _cmd_retry_failed(args)
+
     if args.resume:
         # Find most recent paused run
         runs = list_backfill_runs(limit=10)
@@ -181,6 +253,11 @@ def cmd_backfill(args):
         print(f"Resuming backfill run {paused_run['run_id']}...")
         runner = BackfillRunner(resume_run_id=paused_run['run_id'])
     else:
+        # Parse clubs filter
+        clubs_filter = None
+        if args.clubs:
+            clubs_filter = [c.strip() for c in args.clubs.split(',') if c.strip()]
+
         # Start new backfill
         config = BackfillConfig(
             date_start=datetime.strptime(args.start, '%Y-%m-%d').date() if args.start else None,
@@ -188,11 +265,23 @@ def cmd_backfill(args):
             max_sessions_per_run=args.max or 50,
             normalize_clubs=not args.no_normalize,
             auto_tag=not args.no_tags,
+            clubs_filter=clubs_filter,
+            dry_run=args.dry_run,
+            delay_seconds=args.delay,
+            recent_first=args.recent,
         )
 
         print("Starting new backfill run...")
         print(f"  Date range: {config.date_start or 'any'} to {config.date_end or 'any'}")
         print(f"  Max sessions: {config.max_sessions_per_run}")
+        if config.recent_first:
+            print(f"  Order: newest first")
+        if config.delay_seconds:
+            print(f"  Delay: {config.delay_seconds}s between imports ({config.delay_seconds // 60} min)")
+        if clubs_filter:
+            print(f"  Clubs filter: {', '.join(clubs_filter)}")
+        if args.dry_run:
+            print("  Mode: DRY RUN (no changes will be made)")
         print()
 
         runner = BackfillRunner(config=config)
@@ -351,6 +440,16 @@ def main():
                                   help='Skip club name normalization')
     backfill_parser.add_argument('--no-tags', action='store_true',
                                   help='Skip auto-tagging')
+    backfill_parser.add_argument('--clubs', type=str,
+                                  help='Only import sessions with these clubs (comma-separated, e.g. "Driver,7 Iron")')
+    backfill_parser.add_argument('--dry-run', action='store_true',
+                                  help='Preview what would be imported without making changes')
+    backfill_parser.add_argument('--retry-failed', action='store_true',
+                                  help='Retry previously failed imports')
+    backfill_parser.add_argument('--delay', type=int,
+                                  help='Seconds between imports (default: rate limiter, e.g. --delay 300 for 5 min)')
+    backfill_parser.add_argument('--recent', action='store_true',
+                                  help='Import newest sessions first (default: oldest first)')
 
     # Status command
     status_parser = subparsers.add_parser('status', help='Show automation status')

@@ -78,7 +78,7 @@ class UneekorPortalNavigator:
 
     # Known Uneekor portal URLs
     LOGIN_URL = 'https://my.uneekor.com/login'
-    REPORTS_URL = 'https://my.uneekor.com/reports'
+    REPORTS_URL = 'https://my.uneekor.com/report'  # Note: singular 'report', not 'reports'
     REPORT_URL_PATTERN = r'https://my\.uneekor\.com/report\?id=(\d+)&key=([^&]+)'
 
     # Alternative URL patterns (Uneekor has used different URL structures)
@@ -159,6 +159,8 @@ class UneekorPortalNavigator:
         """
         Get all sessions from the portal.
 
+        Iterates through all pagination pages to collect complete session list.
+
         Args:
             max_sessions: Maximum number of sessions to retrieve
             since_date: Only get sessions after this date
@@ -171,32 +173,104 @@ class UneekorPortalNavigator:
 
         sessions = []
         page = self.client.page
+        page_num = 1
+        seen_report_ids = set()  # Track to avoid duplicates across pages
 
         # Navigate to reports page
         await self._rate_limiter.wait_async('navigate_reports')
         await page.goto(self.REPORTS_URL)
         await page.wait_for_load_state('networkidle')
 
-        # Try to find session links
-        session_links = await self._find_session_links()
+        while True:
+            print(f"Scanning page {page_num}...")
 
-        for link_info in session_links:
-            if max_sessions and len(sessions) >= max_sessions:
+            # Find session links on current page
+            session_links = await self._find_session_links()
+
+            if not session_links:
+                print(f"No sessions found on page {page_num}, stopping pagination")
                 break
 
-            try:
-                session = await self._parse_session_from_link(link_info)
-                if session:
-                    # Apply date filter if specified
-                    if since_date and session.session_date:
-                        if session.session_date < since_date:
+            sessions_on_page = 0
+            for link_info in session_links:
+                if max_sessions and len(sessions) >= max_sessions:
+                    print(f"Reached max_sessions limit ({max_sessions})")
+                    return sessions
+
+                try:
+                    session = await self._parse_session_from_link(link_info)
+                    if session:
+                        # Skip duplicates (same session can appear in multiple sections)
+                        if session.report_id in seen_report_ids:
                             continue
-                    sessions.append(session)
+                        seen_report_ids.add(session.report_id)
+
+                        # Apply date filter if specified
+                        if since_date and session.session_date:
+                            if session.session_date < since_date:
+                                continue
+                        sessions.append(session)
+                        sessions_on_page += 1
+                except Exception as e:
+                    print(f"Error parsing session: {e}")
+                    continue
+
+            print(f"Found {sessions_on_page} sessions on page {page_num} (total: {len(sessions)})")
+
+            # Try to navigate to next page
+            next_page_num = page_num + 1
+            next_btn = await self._find_pagination_button(next_page_num)
+
+            if not next_btn:
+                print(f"No page {next_page_num} button found, finished at page {page_num}")
+                break
+
+            # Click next page and wait for content to load
+            try:
+                await self._rate_limiter.wait_async('navigate_page')
+                await next_btn.click()
+                await page.wait_for_load_state('networkidle')
+                # Brief pause for any client-side rendering
+                await asyncio.sleep(0.5)
+                page_num = next_page_num
             except Exception as e:
-                print(f"Error parsing session: {e}")
+                print(f"Error navigating to page {next_page_num}: {e}")
+                break
+
+        print(f"Pagination complete. Total sessions found: {len(sessions)}")
+        return sessions
+
+    async def _find_pagination_button(self, page_num: int):
+        """
+        Find a pagination button for the given page number.
+
+        Args:
+            page_num: Page number to find button for
+
+        Returns:
+            Element handle or None if not found
+        """
+        page = self.client.page
+
+        # Try various pagination button selectors
+        selectors = [
+            f'button:text-is("{page_num}")',
+            f'a:text-is("{page_num}")',
+            f'[class*="pagination"] button:text-is("{page_num}")',
+            f'[class*="pagination"] a:text-is("{page_num}")',
+            f'[class*="page"] button:text-is("{page_num}")',
+            f'[class*="page"] a:text-is("{page_num}")',
+        ]
+
+        for selector in selectors:
+            try:
+                btn = await page.query_selector(selector)
+                if btn and await btn.is_visible():
+                    return btn
+            except Exception:
                 continue
 
-        return sessions
+        return None
 
     async def _find_session_links(self) -> List[Dict[str, Any]]:
         """

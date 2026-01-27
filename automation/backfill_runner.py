@@ -76,6 +76,11 @@ class BackfillConfig:
     auto_tag: bool = True                       # Apply automatic tagging
     notify_on_complete: bool = True             # Send notification when done
     notify_on_error: bool = True                # Send notification on errors
+    dry_run: bool = False                       # Preview mode - no actual imports
+    max_retries: int = 3                        # Max retries for failed imports
+    retry_delay_base: int = 10                  # Base delay in seconds for retry backoff
+    delay_seconds: Optional[int] = None         # Fixed delay between imports (overrides rate limiter)
+    recent_first: bool = False                  # Import newest sessions first
 
 
 @dataclass
@@ -430,16 +435,19 @@ class BackfillRunner:
                 limit=self.config.max_sessions_per_run,
                 date_start=date_start_dt,
                 date_end=date_end_dt,
+                clubs_filter=self.config.clubs_filter,
+                recent_first=self.config.recent_first,
             )
 
-            # Filter by clubs if specified
+            # Log filtered clubs if specified
             if self.config.clubs_filter:
-                # This would require checking session clubs, which we may not have
-                # For now, we'll import and filter during processing
-                pass
+                print(f"Filtering for clubs: {', '.join(self.config.clubs_filter)}")
 
             self.sessions_total = len(pending)
             print(f"Backfill run {self.run_id}: {self.sessions_total} sessions to process")
+
+            # Track processed IDs for this run to avoid duplicates
+            processed_in_run = set()
 
             # Process sessions
             for i, item in enumerate(pending):
@@ -452,18 +460,27 @@ class BackfillRunner:
                     print(f"Reached max sessions per run ({self.config.max_sessions_per_run})")
                     break
 
-                # Skip if already processed (for resume)
-                if self.last_processed_id and item.report_id <= self.last_processed_id:
+                # Skip if already processed in this run
+                if item.report_id in processed_in_run:
                     continue
 
-                # Rate limit
-                await self.rate_limiter.wait_async('import_session')
+                # Rate limit - use custom delay if specified, otherwise use rate limiter
+                if self.config.delay_seconds:
+                    # Only delay between sessions (not before the first one)
+                    if self.sessions_processed > 0:
+                        remaining = self.sessions_total - self.sessions_processed
+                        eta_min = (remaining * self.config.delay_seconds) // 60
+                        print(f"  Waiting {self.config.delay_seconds}s before next import... (ETA: ~{eta_min} min)")
+                        await asyncio.sleep(self.config.delay_seconds)
+                else:
+                    await self.rate_limiter.wait_async('import_session')
 
                 # Import the session
                 success = await self._import_session(item)
 
                 self.sessions_processed += 1
                 self.last_processed_id = item.report_id
+                processed_in_run.add(item.report_id)
 
                 # Checkpoint periodically
                 if self.sessions_processed % self.config.checkpoint_interval == 0:
@@ -506,34 +523,48 @@ class BackfillRunner:
             errors=self.errors,
         )
 
-    async def _import_session(self, item: ImportQueueItem) -> bool:
+    async def _import_session(self, item: ImportQueueItem, attempt: int = 1) -> bool:
         """
-        Import a single session.
+        Import a single session with retry support.
 
         Args:
             item: ImportQueueItem to import
+            attempt: Current attempt number (for retry logic)
 
         Returns:
             True if import successful
         """
+        # Handle dry-run mode
+        if self.config.dry_run:
+            clubs_str = ', '.join(item.clubs_used) if item.clubs_used else 'unknown clubs'
+            date_str = item.session_date.strftime('%Y-%m-%d') if item.session_date else 'unknown date'
+            print(f"  [DRY RUN] Would import {item.report_id}: {item.portal_name or 'Unnamed'} ({date_str}) - {clubs_str}")
+            self.sessions_imported += 1
+            return True
+
         if not HAS_SCRAPER:
             self.errors.append("golf_scraper not available")
             self.sessions_failed += 1
             return False
 
         try:
-            # Mark as importing
+            # Mark as importing and update attempt count
             self.discovery.mark_importing(item.report_id)
+            self.discovery.update_attempt_count(item.report_id, attempt)
 
             # Build the import URL
             import_url = f"https://my.uneekor.com/report?id={item.report_id}&key={item.api_key}"
 
             # Run the scraper
             # Note: run_scraper is synchronous, so we run it in executor
+            def progress_callback(msg):
+                """Simple progress callback for automation."""
+                print(f"    [scraper] {msg}")
+
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None,
-                lambda: golf_scraper.run_scraper(import_url)
+                lambda: golf_scraper.run_scraper(import_url, progress_callback)
             )
 
             if result and result.get('status') == 'success':
@@ -589,17 +620,39 @@ class BackfillRunner:
                 self.rate_limiter.report_success()
                 return True
             else:
-                error_msg = result.get('error', 'Unknown error') if result else 'No result'
-                self.discovery.mark_failed(item.report_id, error_msg)
-                self.sessions_failed += 1
-                self.errors.append(f"Failed {item.report_id}: {error_msg}")
-                self.rate_limiter.report_error()
-                return False
+                error_msg = result.get('message', 'Unknown error') if result else 'No result'
+                return await self._handle_import_failure(item, error_msg, attempt)
 
         except Exception as e:
-            self.discovery.mark_failed(item.report_id, str(e))
+            return await self._handle_import_failure(item, str(e), attempt)
+
+    async def _handle_import_failure(self, item: ImportQueueItem, error_msg: str, attempt: int) -> bool:
+        """
+        Handle a failed import with retry logic.
+
+        Args:
+            item: ImportQueueItem that failed
+            error_msg: Error message from the failure
+            attempt: Current attempt number
+
+        Returns:
+            True if retry succeeded, False otherwise
+        """
+        if attempt < self.config.max_retries:
+            # Calculate exponential backoff delay
+            delay = self.config.retry_delay_base * (3 ** (attempt - 1))  # 10s, 30s, 90s
+            print(f"  Attempt {attempt}/{self.config.max_retries} failed for {item.report_id}: {error_msg}")
+            print(f"  Retrying in {delay}s...")
+
+            await asyncio.sleep(delay)
+
+            # Retry the import
+            return await self._import_session(item, attempt + 1)
+        else:
+            # Max retries exceeded - mark as needs_review
+            self.discovery.mark_needs_review(item.report_id, error_msg, attempt)
             self.sessions_failed += 1
-            self.errors.append(f"Error importing {item.report_id}: {str(e)}")
+            self.errors.append(f"Failed {item.report_id} after {attempt} attempts: {error_msg}")
             self.rate_limiter.report_error()
             return False
 

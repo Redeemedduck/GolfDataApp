@@ -43,6 +43,7 @@ class ImportStatus(Enum):
     IMPORTED = 'imported'
     SKIPPED = 'skipped'
     FAILED = 'failed'
+    NEEDS_REVIEW = 'needs_review'  # Failed after max retries, needs manual review
 
 
 @dataclass
@@ -68,6 +69,11 @@ class ImportQueueItem:
     attempts: int
     last_attempt: Optional[datetime]
     error_message: Optional[str]
+    clubs_used: List[str] = None  # Clubs discovered in the session
+
+    def __post_init__(self):
+        if self.clubs_used is None:
+            self.clubs_used = []
 
 
 class SessionDiscovery:
@@ -120,7 +126,9 @@ class SessionDiscovery:
             priority INTEGER DEFAULT 0,
             session_name TEXT,
             session_type TEXT,
-            tags_json TEXT
+            tags_json TEXT,
+            attempt_count INTEGER DEFAULT 0,
+            last_attempt_at TIMESTAMP
         )
     '''
 
@@ -174,6 +182,21 @@ class SessionDiscovery:
             cursor.execute(self.CREATE_AUTOMATION_RUNS_SQL)
             for index_sql in self.CREATE_INDEXES_SQL:
                 cursor.execute(index_sql)
+
+            # Migration: Add new columns if table already existed
+            cursor.execute("PRAGMA table_info(sessions_discovered)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+
+            new_columns = {
+                'attempt_count': 'INTEGER DEFAULT 0',
+                'last_attempt_at': 'TIMESTAMP',
+            }
+
+            for col, col_type in new_columns.items():
+                if col not in existing_columns:
+                    print(f"Migrating: Adding column {col} to sessions_discovered")
+                    cursor.execute(f"ALTER TABLE sessions_discovered ADD COLUMN {col} {col_type}")
+
             conn.commit()
             print("Discovery tables initialized")
         finally:
@@ -292,6 +315,8 @@ class SessionDiscovery:
         limit: int = 10,
         date_start: Optional[datetime] = None,
         date_end: Optional[datetime] = None,
+        clubs_filter: Optional[List[str]] = None,
+        recent_first: bool = True,
     ) -> List[ImportQueueItem]:
         """
         Get sessions pending import.
@@ -300,6 +325,8 @@ class SessionDiscovery:
             limit: Maximum number to return
             date_start: Only include sessions after this date
             date_end: Only include sessions before this date
+            clubs_filter: Only include sessions that used these clubs (normalized)
+            recent_first: If True, return newest sessions first (default); if False, oldest first
 
         Returns:
             List of ImportQueueItem objects
@@ -320,7 +347,9 @@ class SessionDiscovery:
                 query += ' AND session_date <= ?'
                 params.append(date_end.isoformat())
 
-            query += ' ORDER BY priority DESC, session_date DESC LIMIT ?'
+            # Order by session date (recent_first=True means DESC, False means ASC)
+            order_dir = 'DESC' if recent_first else 'ASC'
+            query += f' ORDER BY priority DESC, session_date {order_dir} LIMIT ?'
             params.append(limit)
 
             cursor = conn.execute(query, params)
@@ -328,6 +357,24 @@ class SessionDiscovery:
 
             items = []
             for row in rows:
+                # Parse clubs from JSON
+                clubs_used = []
+                if row['clubs_json']:
+                    try:
+                        clubs_used = json.loads(row['clubs_json'])
+                    except (json.JSONDecodeError, TypeError):
+                        clubs_used = []
+
+                # Apply clubs filter if specified
+                if clubs_filter:
+                    # Normalize filter clubs for comparison
+                    filter_set = {c.lower().strip() for c in clubs_filter}
+                    session_clubs = {c.lower().strip() for c in clubs_used}
+
+                    # Check if any filter club matches any session club
+                    if not filter_set.intersection(session_clubs):
+                        continue
+
                 items.append(ImportQueueItem(
                     report_id=row['report_id'],
                     api_key=row['api_key'],
@@ -338,6 +385,7 @@ class SessionDiscovery:
                     attempts=0,  # Not tracked in current schema
                     last_attempt=None,
                     error_message=row['import_error'],
+                    clubs_used=clubs_used,
                 ))
 
             return items
@@ -425,6 +473,133 @@ class SessionDiscovery:
                 WHERE report_id = ?
             ''', (reason, report_id))
             conn.commit()
+        finally:
+            conn.close()
+
+    def update_attempt_count(self, report_id: str, attempt: int) -> None:
+        """Update the attempt count for a session."""
+        conn = self._get_connection()
+        try:
+            conn.execute('''
+                UPDATE sessions_discovered
+                SET attempt_count = ?,
+                    last_attempt_at = ?
+                WHERE report_id = ?
+            ''', (attempt, datetime.utcnow().isoformat(), report_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def mark_needs_review(self, report_id: str, error: str, attempts: int) -> None:
+        """Mark a session as needing manual review after max retries."""
+        conn = self._get_connection()
+        try:
+            conn.execute('''
+                UPDATE sessions_discovered
+                SET import_status = 'needs_review',
+                    import_error = ?,
+                    attempt_count = ?
+                WHERE report_id = ?
+            ''', (f"Failed after {attempts} attempts: {error}", attempts, report_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_failed_sessions(
+        self,
+        include_needs_review: bool = True,
+        limit: int = 50,
+    ) -> List[ImportQueueItem]:
+        """
+        Get sessions that failed import for retry.
+
+        Args:
+            include_needs_review: Include sessions marked as needs_review
+            limit: Maximum number to return
+
+        Returns:
+            List of ImportQueueItem objects
+        """
+        conn = self._get_connection()
+        try:
+            statuses = ["'failed'"]
+            if include_needs_review:
+                statuses.append("'needs_review'")
+
+            query = f'''
+                SELECT * FROM sessions_discovered
+                WHERE import_status IN ({','.join(statuses)})
+                ORDER BY last_attempt_at ASC
+                LIMIT ?
+            '''
+
+            cursor = conn.execute(query, (limit,))
+            rows = cursor.fetchall()
+
+            items = []
+            for row in rows:
+                clubs_used = []
+                if row['clubs_json']:
+                    try:
+                        clubs_used = json.loads(row['clubs_json'])
+                    except (json.JSONDecodeError, TypeError):
+                        clubs_used = []
+
+                # Safely get optional fields that may not exist in older databases
+                attempt_count = 0
+                last_attempt_at = None
+                try:
+                    attempt_count = row['attempt_count'] or 0
+                except (KeyError, IndexError):
+                    pass
+                try:
+                    last_attempt_at = row['last_attempt_at']
+                except (KeyError, IndexError):
+                    pass
+
+                items.append(ImportQueueItem(
+                    report_id=row['report_id'],
+                    api_key=row['api_key'],
+                    portal_name=row['portal_name'],
+                    session_date=datetime.fromisoformat(row['session_date']) if row['session_date'] else None,
+                    priority=row['priority'] or 0,
+                    status=ImportStatus(row['import_status']),
+                    attempts=attempt_count,
+                    last_attempt=datetime.fromisoformat(last_attempt_at) if last_attempt_at else None,
+                    error_message=row['import_error'],
+                    clubs_used=clubs_used,
+                ))
+
+            return items
+        finally:
+            conn.close()
+
+    def reset_for_retry(self, report_ids: List[str]) -> int:
+        """
+        Reset failed sessions back to pending for retry.
+
+        Args:
+            report_ids: List of report IDs to reset
+
+        Returns:
+            Number of sessions reset
+        """
+        if not report_ids:
+            return 0
+
+        conn = self._get_connection()
+        try:
+            placeholders = ','.join(['?'] * len(report_ids))
+            cursor = conn.execute(f'''
+                UPDATE sessions_discovered
+                SET import_status = 'pending',
+                    import_error = NULL,
+                    attempt_count = 0
+                WHERE report_id IN ({placeholders})
+                AND import_status IN ('failed', 'needs_review')
+            ''', report_ids)
+            conn.commit()
+            return cursor.rowcount
         finally:
             conn.close()
 
