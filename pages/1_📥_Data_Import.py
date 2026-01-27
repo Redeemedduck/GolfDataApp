@@ -64,11 +64,13 @@ with col1:
             progress_bar.empty()
             status_text.empty()
 
-            st.success(result)
-
-            # Show success message with next steps
-            st.balloons()
-            st.info("✅ Import complete! Go to the **Dashboard** page to view your data.")
+            # Handle result (now returns dict with status and message)
+            if result.get('status') == 'success':
+                st.success(f"✅ {result.get('message', 'Import complete!')}")
+                st.balloons()
+                st.info("Go to the **Dashboard** page to view your data.")
+            else:
+                st.error(f"❌ Import failed: {result.get('message', 'Unknown error')}")
             report_id, _ = golf_scraper.extract_url_params(uneekor_url)
             invalid_shots_df = golf_db.validate_shot_data(session_id=report_id)
             if not invalid_shots_df.empty:
@@ -92,7 +94,11 @@ with col2:
         # Display last 5 imports
         recent_sessions = unique_sessions[:5]
         for session in recent_sessions:
-            st.caption(f"📊 {session['session_id']} - {session.get('date_added', 'Unknown')}")
+            # Prefer session_date (actual session date) over date_added (import timestamp)
+            display_date = session.get('session_date') or session.get('date_added', 'Unknown')
+            if display_date and display_date != 'Unknown' and hasattr(display_date, 'strftime'):
+                display_date = display_date.strftime('%Y-%m-%d')
+            st.caption(f"📊 {session['session_id']} - {display_date}")
     else:
         st.info("No sessions imported yet")
 

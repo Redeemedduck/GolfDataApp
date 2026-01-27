@@ -58,6 +58,8 @@ from automation.backfill_runner import BackfillRunner, BackfillConfig, list_back
 from automation.notifications import get_notifier, notify
 from automation.browser_client import PlaywrightClient, BrowserConfig
 from automation.naming_conventions import get_normalizer
+from automation.uneekor_portal import UneekorPortalNavigator
+import golf_db
 
 
 def cmd_login(args):
@@ -384,6 +386,191 @@ def cmd_notify(args):
     return asyncio.run(do_notify())
 
 
+def cmd_reclassify_dates(args):
+    """Manage session date reclassification."""
+    discovery = get_discovery()
+
+    # Handle --status first
+    if args.status:
+        print("="*60)
+        print("SESSION DATE STATUS")
+        print("="*60)
+        print()
+
+        # Get sessions missing dates
+        missing = discovery.get_sessions_missing_dates(limit=100)
+        print(f"Sessions missing dates: {len(missing)}")
+        if missing:
+            print()
+            print("Sessions without dates:")
+            for session in missing[:10]:
+                print(f"  - {session['report_id']}: {session['portal_name'] or 'Unnamed'} ({session['shot_count']} shots)")
+            if len(missing) > 10:
+                print(f"  ... and {len(missing) - 10} more")
+
+        # Get sessions with dates
+        with_dates = discovery.get_sessions_with_dates()
+        print()
+        print(f"Sessions with dates: {len(with_dates)}")
+
+        # Get shots missing session_date
+        shots_missing = golf_db.get_sessions_missing_dates(limit=100)
+        print()
+        print(f"Sessions with shots missing session_date: {len(shots_missing)}")
+
+        return 0
+
+    # Handle --manual
+    if args.manual:
+        if len(args.manual) != 2:
+            print("Error: --manual requires two arguments: <report_id> <date>")
+            print("Example: --manual 43285 2026-01-15")
+            return 1
+
+        report_id = args.manual[0]
+        date_str = args.manual[1]
+
+        try:
+            session_date = datetime.strptime(date_str, '%Y-%m-%d')
+        except ValueError:
+            print(f"Error: Invalid date format '{date_str}'. Use YYYY-MM-DD.")
+            return 1
+
+        if args.dry_run:
+            print(f"[DRY RUN] Would set session_date for {report_id} to {date_str}")
+            return 0
+
+        # Update sessions_discovered
+        success = discovery.update_session_date(report_id, session_date, source='manual')
+        if not success:
+            print(f"Error: Failed to update session {report_id} in sessions_discovered")
+            return 1
+
+        # Update shots table
+        updated = golf_db.update_session_date_for_shots(report_id, date_str)
+        print(f"Updated {updated} shots with session_date = {date_str}")
+        return 0
+
+    # Handle --backfill
+    if args.backfill:
+        print("Backfilling session dates from sessions_discovered to shots...")
+        print()
+
+        if args.dry_run:
+            # Show what would be updated
+            sessions = discovery.get_sessions_with_dates()
+            shots_missing = golf_db.get_sessions_missing_dates(limit=1000)
+            missing_ids = {s['session_id'] for s in shots_missing}
+
+            would_update = [s for s in sessions if s['report_id'] in missing_ids]
+            print(f"[DRY RUN] Would update {len(would_update)} sessions with dates:")
+            for s in would_update[:10]:
+                print(f"  - {s['report_id']}: {s['session_date']}")
+            if len(would_update) > 10:
+                print(f"  ... and {len(would_update) - 10} more")
+            return 0
+
+        result = golf_db.backfill_session_dates()
+        print()
+        print("="*60)
+        print("BACKFILL RESULTS")
+        print("="*60)
+        print(f"Shots updated:  {result['updated']}")
+        print(f"Sessions skipped: {result['skipped']}")
+        print(f"Errors:         {result['errors']}")
+        return 0 if result['errors'] == 0 else 1
+
+    # Handle --scrape
+    if args.scrape:
+        print("Scraping session dates from report pages...")
+        print()
+
+        # Get sessions missing dates
+        missing = discovery.get_sessions_missing_dates(limit=args.max or 20)
+        if not missing:
+            print("No sessions missing dates!")
+            return 0
+
+        print(f"Found {len(missing)} sessions missing dates")
+        print()
+
+        async def do_scrape():
+            config = BrowserConfig(headless=args.headless)
+            client = PlaywrightClient(config=config)
+
+            async with client:
+                login_success = await client.login()
+                if not login_success:
+                    print("Error: Failed to log in")
+                    return 1
+
+                navigator = UneekorPortalNavigator(browser_client=client)
+
+                scraped = 0
+                failed = 0
+
+                for i, session in enumerate(missing):
+                    report_url = f"https://my.uneekor.com/report?id={session['report_id']}&key={session['api_key']}"
+
+                    if args.dry_run:
+                        print(f"[DRY RUN] Would scrape: {session['report_id']}")
+                        scraped += 1
+                        continue
+
+                    print(f"[{i+1}/{len(missing)}] Scraping {session['report_id']}...")
+
+                    try:
+                        extracted_date = await navigator.extract_date_from_report_page(report_url)
+
+                        if extracted_date:
+                            # Update sessions_discovered
+                            discovery.update_session_date(
+                                session['report_id'],
+                                extracted_date,
+                                source='report_page'
+                            )
+
+                            # Update shots table
+                            updated = golf_db.update_session_date_for_shots(
+                                session['report_id'],
+                                extracted_date.isoformat()
+                            )
+
+                            print(f"  Found date: {extracted_date.strftime('%Y-%m-%d')} ({updated} shots updated)")
+                            scraped += 1
+                        else:
+                            print(f"  No date found on report page")
+                            failed += 1
+
+                    except Exception as e:
+                        print(f"  Error: {e}")
+                        failed += 1
+
+                    # Rate limit: wait between scrapes
+                    if i < len(missing) - 1:
+                        delay = args.delay or 300  # Default 5 minutes
+                        print(f"  Waiting {delay}s before next scrape...")
+                        await asyncio.sleep(delay)
+
+                print()
+                print("="*60)
+                print("SCRAPE RESULTS")
+                print("="*60)
+                print(f"Sessions scraped: {scraped}")
+                print(f"Failed:           {failed}")
+                return 0 if failed == 0 else 1
+
+        return asyncio.run(do_scrape())
+
+    # No action specified
+    print("No action specified. Use one of:")
+    print("  --scrape     Extract dates from report pages")
+    print("  --manual     Set date manually for a session")
+    print("  --backfill   Copy dates from sessions_discovered to shots")
+    print("  --status     Show date status summary")
+    return 1
+
+
 def cmd_normalize(args):
     """Normalize club names in database."""
     normalizer = get_normalizer()
@@ -465,6 +652,26 @@ def main():
     normalize_parser.add_argument('--test', type=str,
                                    help='Test normalization on comma-separated club names')
 
+    # Reclassify-dates command
+    reclassify_parser = subparsers.add_parser('reclassify-dates',
+                                               help='Manage session date reclassification')
+    reclassify_parser.add_argument('--scrape', action='store_true',
+                                    help='Scrape dates from report pages (rate-limited)')
+    reclassify_parser.add_argument('--manual', nargs=2, metavar=('REPORT_ID', 'DATE'),
+                                    help='Set date manually (YYYY-MM-DD format)')
+    reclassify_parser.add_argument('--backfill', action='store_true',
+                                    help='Copy dates from sessions_discovered to shots table')
+    reclassify_parser.add_argument('--status', action='store_true',
+                                    help='Show session date status summary')
+    reclassify_parser.add_argument('--max', type=int, default=20,
+                                    help='Maximum sessions to scrape (default: 20)')
+    reclassify_parser.add_argument('--delay', type=int, default=300,
+                                    help='Seconds between scrapes (default: 300 = 5 min)')
+    reclassify_parser.add_argument('--headless', action='store_true',
+                                    help='Run browser in headless mode')
+    reclassify_parser.add_argument('--dry-run', action='store_true',
+                                    help='Preview without making changes')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -479,6 +686,7 @@ def main():
         'status': cmd_status,
         'notify': cmd_notify,
         'normalize': cmd_normalize,
+        'reclassify-dates': cmd_reclassify_dates,
     }
 
     handler = handlers.get(args.command)

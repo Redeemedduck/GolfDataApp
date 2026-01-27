@@ -111,6 +111,7 @@ class SessionDiscovery:
             api_key TEXT NOT NULL,
             portal_name TEXT,
             session_date TIMESTAMP,
+            date_source TEXT,
             shot_count_expected INTEGER,
             clubs_json TEXT,
             source_url TEXT,
@@ -190,6 +191,7 @@ class SessionDiscovery:
             new_columns = {
                 'attempt_count': 'INTEGER DEFAULT 0',
                 'last_attempt_at': 'TIMESTAMP',
+                'date_source': 'TEXT',
             }
 
             for col, col_type in new_columns.items():
@@ -612,6 +614,107 @@ class SessionDiscovery:
                 (priority, report_id)
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    def update_session_date(
+        self,
+        report_id: str,
+        session_date: datetime,
+        source: str = 'manual'
+    ) -> bool:
+        """
+        Update the session_date for a discovered session.
+
+        Args:
+            report_id: The report ID
+            session_date: The actual session date
+            source: Where the date came from ('portal', 'report_page', 'manual')
+
+        Returns:
+            True if update was successful
+        """
+        conn = self._get_connection()
+        try:
+            conn.execute('''
+                UPDATE sessions_discovered
+                SET session_date = ?,
+                    date_source = ?,
+                    last_checked_at = ?
+                WHERE report_id = ?
+            ''', (
+                session_date.isoformat() if session_date else None,
+                source,
+                datetime.utcnow().isoformat(),
+                report_id,
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating session date: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def get_sessions_missing_dates(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Get sessions that are missing session_date values.
+
+        Args:
+            limit: Maximum number of sessions to return
+
+        Returns:
+            List of dicts with report_id, api_key, portal_name, source_url
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute('''
+                SELECT report_id, api_key, portal_name, source_url,
+                       import_status, import_shots_actual
+                FROM sessions_discovered
+                WHERE session_date IS NULL
+                ORDER BY discovered_at DESC
+                LIMIT ?
+            ''', (limit,))
+
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'report_id': row['report_id'],
+                    'api_key': row['api_key'],
+                    'portal_name': row['portal_name'],
+                    'source_url': row['source_url'],
+                    'import_status': row['import_status'],
+                    'shot_count': row['import_shots_actual'] or 0,
+                })
+            return results
+        finally:
+            conn.close()
+
+    def get_sessions_with_dates(self) -> List[Dict[str, Any]]:
+        """
+        Get all sessions that have session_date values set.
+
+        Returns:
+            List of dicts with report_id, session_date, date_source
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute('''
+                SELECT report_id, session_date, date_source
+                FROM sessions_discovered
+                WHERE session_date IS NOT NULL
+                ORDER BY session_date DESC
+            ''')
+
+            results = []
+            for row in cursor.fetchall():
+                results.append({
+                    'report_id': row['report_id'],
+                    'session_date': row['session_date'],
+                    'date_source': row['date_source'],
+                })
+            return results
         finally:
             conn.close()
 

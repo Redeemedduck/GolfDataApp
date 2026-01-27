@@ -561,10 +561,13 @@ class BackfillRunner:
                 """Simple progress callback for automation."""
                 print(f"    [scraper] {msg}")
 
+            # Pass session_date to scraper if available
+            session_date = item.session_date
+
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None,
-                lambda: golf_scraper.run_scraper(import_url, progress_callback)
+                lambda: golf_scraper.run_scraper(import_url, progress_callback, session_date=session_date)
             )
 
             if result and result.get('status') == 'success':

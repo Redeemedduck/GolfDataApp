@@ -13,7 +13,7 @@ def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
     Render a trend chart showing metric performance over multiple sessions.
 
     Args:
-        all_sessions_data: List of dicts with session_id, date_added, and metric values
+        all_sessions_data: List of dicts with session_id, session_date/date_added, and metric values
         metric: Metric to display (carry, smash, ball_speed, etc.)
     """
     st.subheader(f"{metric.replace('_', ' ').title()} Trend Over Time")
@@ -29,16 +29,22 @@ def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
         st.warning(f"No {metric} data available")
         return
 
+    # Use session_date if available, fall back to date_added
+    # session_date = actual session date, date_added = import timestamp
+    if 'session_date' in df.columns and df['session_date'].notna().any():
+        df['display_date'] = pd.to_datetime(df['session_date'].fillna(df.get('date_added', pd.NaT)))
+    else:
+        df['display_date'] = pd.to_datetime(df['date_added'])
+
     # Sort by date
-    df['date_added'] = pd.to_datetime(df['date_added'])
-    df = df.sort_values('date_added')
+    df = df.sort_values('display_date')
 
     # Create figure
     fig = go.Figure()
 
     # Add line chart
     fig.add_trace(go.Scatter(
-        x=df['date_added'],
+        x=df['display_date'],
         y=df[metric],
         mode='lines+markers',
         name=metric.replace('_', ' ').title(),
@@ -46,7 +52,7 @@ def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
         marker=dict(size=10, color='darkblue', line=dict(width=2, color='white')),
         hovertemplate=(
             "<b>Session: %{text}</b><br>" +
-            "Date: %{x|%Y-%m-%d %H:%M}<br>" +
+            "Date: %{x|%Y-%m-%d}<br>" +
             f"{metric.replace('_', ' ').title()}: %{{y:.2f}}<extra></extra>"
         ),
         text=df['session_id']
@@ -59,7 +65,7 @@ def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
         trend_y = p(range(len(df)))
 
         fig.add_trace(go.Scatter(
-            x=df['date_added'],
+            x=df['display_date'],
             y=trend_y,
             mode='lines',
             name='Trend',
@@ -76,7 +82,7 @@ def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
 
         # Add annotation for improvement
         fig.add_annotation(
-            x=df['date_added'].iloc[-1],
+            x=df['display_date'].iloc[-1],
             y=last_value,
             text=f"Change: {improvement:+.1f} ({improvement_pct:+.1f}%)",
             showarrow=True,

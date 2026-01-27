@@ -1,6 +1,78 @@
-# Project Change Log: GolfDataApp Optimization & GitHub Integration
+# Project Change Log: GolfDataApp
 
-This log summarizes all changes made to the `GolfDataApp` project to facilitate syncing with other development agents.
+This log summarizes all changes made to the `GolfDataApp` project.
+
+---
+
+## 2026-01-26: Session Date Reclassification
+
+### Problem Solved
+Sessions were missing accurate dates - only import timestamps (`date_added`) were stored, making trend analysis inaccurate.
+
+### Features Added
+
+**Database Schema**
+- Added `session_date TIMESTAMP` column to `shots` table
+- Added `date_source TEXT` column to `sessions_discovered` table
+- Created index `idx_shots_session_date` for efficient date queries
+- Added migration support for existing databases
+
+**Date Parsing (automation/uneekor_portal.py)**
+- Enhanced `_parse_date_from_text()` with 7 date format patterns:
+  - `YYYY.MM.DD` (Uneekor report page format)
+  - `YYYY-MM-DD` (ISO format)
+  - `DD.MM.YYYY` (European format)
+  - `MM/DD/YYYY` (US format)
+  - Abbreviated/full month names
+
+**Report Page Extraction**
+- New method `extract_date_from_report_page()` navigates to report pages and extracts dates from headers
+- Most reliable date source (YYYY.MM.DD format in headers)
+
+**CLI Commands (automation_runner.py)**
+- New `reclassify-dates` command with options:
+  - `--status`: Show date status summary
+  - `--backfill`: Copy dates from sessions_discovered to shots
+  - `--scrape`: Extract dates from report pages (rate-limited)
+  - `--manual REPORT_ID DATE`: Set date manually
+  - `--dry-run`: Preview without changes
+
+**Database Functions (golf_db.py)**
+- `backfill_session_dates()`: Copy dates from sessions_discovered to shots
+- `get_sessions_missing_dates()`: Find sessions without dates
+- `update_session_date_for_shots()`: Update all shots for a session
+
+**UI Updates**
+- Data Import page shows actual session dates
+- AI Coach session picker uses session dates
+- Trend chart uses session_date for accurate temporal analysis
+
+**Tests**
+- `tests/unit/test_date_parsing.py`: 15 test cases for date formats
+- `tests/integration/test_date_reclassification.py`: Database operation tests
+
+### Usage
+```bash
+python automation_runner.py reclassify-dates --status
+python automation_runner.py reclassify-dates --backfill
+python automation_runner.py reclassify-dates --scrape --max 10
+python automation_runner.py reclassify-dates --manual 43285 2026-01-15
+```
+
+---
+
+## 2026-01-25: Scraper Automation Features
+
+### Features Added
+- `--clubs "Driver,7 Iron"`: Filter sessions by clubs used
+- `--dry-run`: Preview imports without database changes
+- `--retry-failed`: Retry failed imports with exponential backoff
+- Pagination support for portal session discovery
+- Improved session naming and auto-tagging
+
+---
+
+## Previous Changes
 
 ## 1. Documentation Improvements
 Developed comprehensive documentation for missing setup steps and local workflows.

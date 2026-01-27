@@ -201,6 +201,44 @@ Normalization preview:
   '56 deg' -> 'SW' (90%)
 ```
 
+### `reclassify-dates` - Session Date Management
+
+Manage and fix session dates in your database. Session dates are the actual dates when practice sessions occurred (vs. `date_added` which is when data was imported).
+
+```bash
+# Check date status
+python automation_runner.py reclassify-dates --status
+
+# Backfill dates from sessions_discovered to shots table
+python automation_runner.py reclassify-dates --backfill
+
+# Scrape dates from Uneekor report pages (slow, rate-limited)
+python automation_runner.py reclassify-dates --scrape --max 10 --delay 300
+
+# Set date manually for a specific session
+python automation_runner.py reclassify-dates --manual 43285 2026-01-15
+
+# Preview what would change (dry run)
+python automation_runner.py reclassify-dates --scrape --dry-run
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--status` | Show summary of sessions with/without dates |
+| `--backfill` | Copy dates from sessions_discovered to shots table |
+| `--scrape` | Navigate to report pages and extract dates (slow) |
+| `--manual REPORT_ID DATE` | Set date for a specific session |
+| `--max N` | Maximum sessions to scrape (default: 20) |
+| `--delay N` | Seconds between scrapes (default: 300 = 5 min) |
+| `--headless` | Run browser in headless mode |
+| `--dry-run` | Preview without making changes |
+
+**When to use each option:**
+- `--backfill`: After import, to copy dates from portal to shots
+- `--scrape`: For sessions missing dates (extracts from report page headers)
+- `--manual`: When you know the correct date and want to fix it quickly
+
 ---
 
 ## Rate Limiting Explained
@@ -420,13 +458,26 @@ CREATE TABLE sessions_discovered (
     report_id TEXT PRIMARY KEY,
     api_key TEXT,
     portal_name TEXT,
-    session_date TIMESTAMP,
-    import_status TEXT,  -- pending, imported, skipped, failed
+    session_date TIMESTAMP,      -- Actual session date
+    date_source TEXT,            -- Where date came from: 'portal', 'report_page', 'manual'
+    import_status TEXT,          -- pending, imported, skipped, failed, needs_review
     import_shots_actual INTEGER,
     session_name TEXT,
     session_type TEXT,
-    tags_json TEXT
+    tags_json TEXT,
+    attempt_count INTEGER,       -- Number of import attempts
+    last_attempt_at TIMESTAMP
 );
+```
+
+### `shots` (session_date column)
+
+The shots table now includes session_date for accurate trend analysis:
+
+```sql
+-- Key date fields in shots table
+session_date TIMESTAMP,   -- When the session actually occurred
+date_added TIMESTAMP      -- When the data was imported (auto-set)
 ```
 
 ### `automation_runs`
@@ -500,6 +551,32 @@ python automation_runner.py backfill --status
 # Resume from checkpoint
 python automation_runner.py backfill --resume
 ```
+
+### Workflow 4: Fix Missing Session Dates
+
+After importing data, some sessions may be missing accurate dates. This workflow fixes them:
+
+```bash
+# 1. Check current date status
+python automation_runner.py reclassify-dates --status
+
+# 2. First, copy any dates already in sessions_discovered to shots
+python automation_runner.py reclassify-dates --backfill
+
+# 3. For remaining sessions, scrape dates from report pages
+python automation_runner.py reclassify-dates --scrape --max 10 --delay 300
+
+# 4. For known dates, set manually (faster than scraping)
+python automation_runner.py reclassify-dates --manual 43285 2026-01-15
+
+# 5. Verify results
+python automation_runner.py reclassify-dates --status
+```
+
+**Why session dates matter:**
+- Trend charts need accurate dates to show improvement over time
+- Session filtering by date requires actual session dates
+- Analytics rely on session_date, not import timestamp (date_added)
 
 ---
 
@@ -605,13 +682,28 @@ python automation_runner.py status
 # Resume backfill
 python automation_runner.py backfill --resume
 
+# Retry failed imports
+python automation_runner.py backfill --retry-failed
+
+# Preview backfill without importing
+python automation_runner.py backfill --start 2025-01-01 --dry-run
+
+# Filter by clubs
+python automation_runner.py backfill --start 2025-01-01 --clubs "Driver,7 Iron"
+
 # Test notification
 python automation_runner.py notify "Test"
 
 # Test club normalization
 python automation_runner.py normalize --test "7i,DR,pw"
+
+# Date reclassification
+python automation_runner.py reclassify-dates --status
+python automation_runner.py reclassify-dates --backfill
+python automation_runner.py reclassify-dates --scrape --max 10
+python automation_runner.py reclassify-dates --manual 43285 2026-01-15
 ```
 
 ---
 
-**Last Updated**: 2026-01-25
+**Last Updated**: 2026-01-26

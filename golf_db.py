@@ -49,13 +49,18 @@ def init_db():
     """Initialize the local SQLite database and handle migrations."""
     conn = sqlite3.connect(SQLITE_DB_PATH)
     cursor = conn.cursor()
-    
+
+    # Enable WAL mode for better concurrent access
+    # WAL (Write-Ahead Logging) allows readers and writers to operate simultaneously
+    cursor.execute("PRAGMA journal_mode=WAL")
+
     # Create table if not exists
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS shots (
             shot_id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL,
             date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            session_date TIMESTAMP,
             session_type TEXT,
             club TEXT,
             carry REAL,
@@ -97,7 +102,8 @@ def init_db():
         'club_lie': 'REAL',
         'lie_angle': 'TEXT',
         'shot_tag': 'TEXT',
-        'session_type': 'TEXT'
+        'session_type': 'TEXT',
+        'session_date': 'TIMESTAMP'
     }
     
     for col, col_type in required_columns.items():
@@ -106,6 +112,7 @@ def init_db():
             cursor.execute(f"ALTER TABLE shots ADD COLUMN {col} {col_type}")
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_shots_session_id ON shots(session_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_shots_session_date ON shots(session_date)')
 
     # Shared tag catalog
     cursor.execute('''
@@ -383,6 +390,7 @@ def save_shot(data):
     payload = {
         'shot_id': data.get('id', data.get('shot_id')),
         'session_id': data.get('session', data.get('session_id')),
+        'session_date': data.get('session_date'),
         'session_type': data.get('session_type'),
         'club': data.get('club'),
         'carry': clean_value(data.get('carry', data.get('carry_distance'))),
@@ -882,24 +890,46 @@ def update_session_type(session_id, session_type):
 # BULK EDITING FUNCTIONS (Phase 2)
 # ============================================================================
 
+# Allowlist of fields that can be updated via update_shot_metadata
+# This prevents SQL injection by validating the field name
+ALLOWED_UPDATE_FIELDS = frozenset({
+    'shot_tag',      # For tagging shots
+    'session_type',  # For categorizing sessions
+    'club',          # For correcting club assignments
+    'session_id',    # For moving shots between sessions
+    'shot_type',     # For shot classification
+    'session_date',  # For correcting session dates
+})
+
+
 def update_shot_metadata(shot_ids, field, value):
     """
     Bulk update a specific field for multiple shots.
 
     Args:
         shot_ids: List of shot IDs to update
-        field: Column name to update
+        field: Column name to update (must be in ALLOWED_UPDATE_FIELDS)
         value: New value for the field
 
     Returns:
         Number of shots updated
+
+    Raises:
+        ValueError: If field is not in the allowlist
     """
+    # SECURITY: Validate field name against allowlist to prevent SQL injection
+    if field not in ALLOWED_UPDATE_FIELDS:
+        raise ValueError(
+            f"Invalid field '{field}'. Allowed fields: {', '.join(sorted(ALLOWED_UPDATE_FIELDS))}"
+        )
+
     # Local
     try:
         conn = sqlite3.connect(SQLITE_DB_PATH)
         cursor = conn.cursor()
 
         placeholders = ','.join(['?'] * len(shot_ids))
+        # Field is now validated, safe to interpolate
         cursor.execute(
             f"UPDATE shots SET {field} = ? WHERE shot_id IN ({placeholders})",
             [value] + shot_ids
@@ -1345,3 +1375,157 @@ def get_archived_shots(session_id=None):
     except Exception as e:
         print(f"Archive Retrieval Error: {e}")
         return pd.DataFrame()
+
+
+# ============================================================================
+# SESSION DATE MANAGEMENT
+# ============================================================================
+
+def backfill_session_dates():
+    """
+    Update shots.session_date from sessions_discovered table.
+
+    This function copies session_date values from the sessions_discovered
+    tracking table to the shots table, enabling accurate date-based analytics.
+
+    Returns:
+        Dict with counts: {'updated': int, 'skipped': int, 'errors': int}
+    """
+    result = {'updated': 0, 'skipped': 0, 'errors': 0}
+
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        # Get sessions with known dates from sessions_discovered
+        cursor.execute('''
+            SELECT report_id, session_date
+            FROM sessions_discovered
+            WHERE session_date IS NOT NULL
+        ''')
+        sessions_with_dates = cursor.fetchall()
+
+        for report_id, session_date in sessions_with_dates:
+            try:
+                # Update all shots for this session
+                cursor.execute('''
+                    UPDATE shots
+                    SET session_date = ?
+                    WHERE session_id = ?
+                    AND (session_date IS NULL OR session_date = '')
+                ''', (session_date, report_id))
+
+                if cursor.rowcount > 0:
+                    result['updated'] += cursor.rowcount
+                else:
+                    result['skipped'] += 1
+
+            except Exception as e:
+                print(f"Error updating session {report_id}: {e}")
+                result['errors'] += 1
+
+        conn.commit()
+
+        # Log the backfill
+        cursor.execute(
+            "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
+            ("BACKFILL_DATES", "shots", "multiple",
+             f"Updated {result['updated']} shots with session dates")
+        )
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        print(f"Backfill Session Dates Error: {e}")
+        result['errors'] += 1
+
+    return result
+
+
+def get_sessions_missing_dates(limit: int = 100):
+    """
+    Get sessions that are missing session_date values.
+
+    Args:
+        limit: Maximum number of sessions to return
+
+    Returns:
+        List of dicts with session_id and shot_count
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT
+                session_id,
+                COUNT(*) as shot_count,
+                MIN(date_added) as first_import
+            FROM shots
+            WHERE session_date IS NULL
+            GROUP BY session_id
+            ORDER BY first_import DESC
+            LIMIT ?
+        ''', (limit,))
+
+        results = []
+        for row in cursor.fetchall():
+            results.append({
+                'session_id': row[0],
+                'shot_count': row[1],
+                'first_import': row[2]
+            })
+
+        conn.close()
+        return results
+
+    except Exception as e:
+        print(f"Get Sessions Missing Dates Error: {e}")
+        return []
+
+
+def update_session_date_for_shots(session_id: str, session_date: str):
+    """
+    Update session_date for all shots in a session.
+
+    Args:
+        session_id: The session ID (report_id)
+        session_date: ISO format date string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+
+    Returns:
+        Number of shots updated
+    """
+    updated = 0
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "UPDATE shots SET session_date = ? WHERE session_id = ?",
+            (session_date, session_id)
+        )
+        updated = cursor.rowcount
+        conn.commit()
+
+        # Log the update
+        cursor.execute(
+            "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
+            ("SET_SESSION_DATE", "session", session_id,
+             f"Set session_date to {session_date} for {updated} shots")
+        )
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        print(f"Update Session Date Error: {e}")
+
+    # Also update in Supabase if available
+    if supabase:
+        try:
+            supabase.table('shots').update(
+                {'session_date': session_date}
+            ).eq('session_id', session_id).execute()
+        except Exception as e:
+            print(f"Supabase Update Session Date Error: {e}")
+
+    return updated

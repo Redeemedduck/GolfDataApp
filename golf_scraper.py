@@ -52,9 +52,15 @@ def calculate_smash(ball_speed, club_speed):
         return round(ball_speed / club_speed, 2)
     return 0.0
 
-def run_scraper(url, progress_callback):
+def run_scraper(url, progress_callback, session_date=None):
     """
     Main scraper function using Uneekor API
+
+    Args:
+        url: Uneekor report URL
+        progress_callback: Function to call with progress messages
+        session_date: Optional datetime for when the session occurred
+                      (if not provided, only date_added is recorded)
     """
     start_time = time.time()
     error_count = 0
@@ -82,7 +88,11 @@ def run_scraper(url, progress_callback):
     if not report_id or not key:
         total_shots_imported = 0
         log_run("failed", "Invalid report URL")
-        return "Error: Could not extract report ID and key from URL. Please use a valid Uneekor report URL."
+        return {
+            'status': 'error',
+            'message': "Could not extract report ID and key from URL. Please use a valid Uneekor report URL.",
+            'total_shots_imported': 0
+        }
 
     # 2. Fetch shot data from API
     progress_callback(f"Fetching data for report {report_id}...")
@@ -95,16 +105,28 @@ def run_scraper(url, progress_callback):
     except requests.exceptions.RequestException as e:
         total_shots_imported = 0
         log_run("failed", f"Uneekor API request failed: {str(e)}")
-        return f"Error: Failed to fetch data from Uneekor API: {str(e)}"
+        return {
+            'status': 'error',
+            'message': f"Failed to fetch data from Uneekor API: {str(e)}",
+            'total_shots_imported': 0
+        }
     except ValueError as e:
         total_shots_imported = 0
         log_run("failed", f"Invalid JSON response: {str(e)}")
-        return f"Error: Invalid JSON response from API: {str(e)}"
+        return {
+            'status': 'error',
+            'message': f"Invalid JSON response from API: {str(e)}",
+            'total_shots_imported': 0
+        }
 
     if not sessions_data or not isinstance(sessions_data, list):
         total_shots_imported = 0
         log_run("failed", "No session data in API response")
-        return "Error: No session data found in API response"
+        return {
+            'status': 'error',
+            'message': "No session data found in API response",
+            'total_shots_imported': 0
+        }
 
     sessions_found = len(sessions_data)
     progress_callback(f"Found {sessions_found} club sessions")
@@ -154,6 +176,7 @@ def run_scraper(url, progress_callback):
                 shot_data = {
                     'id': f"{report_id}_{session_id}_{shot.get('id')}",
                     'session': report_id,
+                    'session_date': session_date.isoformat() if session_date else None,
                     'club': club_name,
                     'carry_distance': carry_yards,
                     'total_distance': total_yards,
@@ -195,7 +218,14 @@ def run_scraper(url, progress_callback):
 
     progress_callback(f"Import complete!")
     log_run("success", "Import complete")
-    return f"Success! Imported {total_shots_imported} shots (with images) from {len(sessions_data)} club sessions."
+    return {
+        'status': 'success',
+        'message': f"Imported {total_shots_imported} shots (with images) from {len(sessions_data)} club sessions.",
+        'total_shots_imported': total_shots_imported,
+        'club_sessions': len(sessions_data),
+        'session_date': session_date.isoformat() if session_date else None,
+        'report_id': report_id
+    }
 
 def upload_shot_images(report_id, key, session_id, shot_id):
     """

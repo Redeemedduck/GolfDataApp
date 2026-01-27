@@ -375,6 +375,14 @@ class UneekorPortalNavigator:
         """
         Attempt to parse a date from text.
 
+        Supports multiple date formats found in Uneekor portal:
+        - YYYY.MM.DD (report page header format - most reliable)
+        - YYYY-MM-DD (ISO format)
+        - MM/DD/YYYY or DD/MM/YYYY
+        - DD.MM.YYYY (European format)
+        - Month DD, YYYY / DD Month YYYY (spelled out)
+        - Jan 25, 2026 (abbreviated month)
+
         Args:
             text: Text that may contain a date
 
@@ -384,27 +392,33 @@ class UneekorPortalNavigator:
         if not text:
             return None
 
-        # Common date patterns
-        patterns = [
-            r'(\d{1,2})/(\d{1,2})/(\d{4})',  # MM/DD/YYYY or DD/MM/YYYY
-            r'(\d{4})-(\d{1,2})-(\d{1,2})',  # YYYY-MM-DD
-            r'(\w+)\s+(\d{1,2}),?\s+(\d{4})',  # Month DD, YYYY
-            r'(\d{1,2})\s+(\w+)\s+(\d{4})',  # DD Month YYYY
+        # Common date patterns - order matters, more specific first
+        patterns_and_formats = [
+            # YYYY.MM.DD (Uneekor report page header - most reliable)
+            (r'(\d{4})\.(\d{1,2})\.(\d{1,2})', ['%Y.%m.%d']),
+            # YYYY-MM-DD (ISO format)
+            (r'(\d{4})-(\d{1,2})-(\d{1,2})', ['%Y-%m-%d']),
+            # DD.MM.YYYY (European format with dots)
+            (r'(\d{1,2})\.(\d{1,2})\.(\d{4})', ['%d.%m.%Y']),
+            # MM/DD/YYYY or DD/MM/YYYY
+            (r'(\d{1,2})/(\d{1,2})/(\d{4})', ['%m/%d/%Y', '%d/%m/%Y']),
+            # Abbreviated month: Jan 25, 2026 or Jan 25 2026
+            (r'([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{4})', ['%b %d, %Y', '%b %d %Y']),
+            # Full month: January 25, 2026
+            (r'([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})', ['%B %d, %Y', '%B %d %Y']),
+            # DD Month YYYY: 25 January 2026
+            (r'(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})', ['%d %B %Y', '%d %b %Y']),
         ]
 
-        for pattern in patterns:
+        for pattern, formats in patterns_and_formats:
             match = re.search(pattern, text)
             if match:
-                try:
-                    # Try common formats
-                    date_str = match.group(0)
-                    for fmt in ['%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d', '%B %d, %Y', '%b %d, %Y', '%d %B %Y', '%d %b %Y']:
-                        try:
-                            return datetime.strptime(date_str, fmt)
-                        except ValueError:
-                            continue
-                except Exception:
-                    continue
+                date_str = match.group(0)
+                for fmt in formats:
+                    try:
+                        return datetime.strptime(date_str, fmt)
+                    except ValueError:
+                        continue
 
         return None
 
@@ -504,6 +518,78 @@ class UneekorPortalNavigator:
                 pass
 
         return new_sessions
+
+    async def extract_date_from_report_page(self, report_url: str) -> Optional[datetime]:
+        """
+        Navigate to a report page and extract the session date from the header.
+
+        The Uneekor report page displays the date in YYYY.MM.DD format in the
+        page header, which is more reliable than parsing portal listing text.
+
+        Args:
+            report_url: Full report URL (https://my.uneekor.com/report?id=...&key=...)
+
+        Returns:
+            datetime if found, None otherwise
+        """
+        if not self.client.is_logged_in:
+            raise RuntimeError("Must be logged in to extract report page date")
+
+        page = self.client.page
+
+        try:
+            # Rate limit navigation
+            await self._rate_limiter.wait_async('navigate_report')
+
+            # Navigate to the report page
+            await page.goto(report_url)
+            await page.wait_for_load_state('networkidle')
+
+            # Brief pause for React rendering
+            await asyncio.sleep(0.5)
+
+            # Try multiple selectors for the date header
+            # Uneekor uses various header elements depending on the page version
+            date_selectors = [
+                'h1',  # Main heading often contains the date
+                'h2',
+                '.report-header',
+                '.session-header',
+                '[class*="header"]',
+                '.date-display',
+                '[class*="date"]',
+            ]
+
+            for selector in date_selectors:
+                try:
+                    elements = await page.query_selector_all(selector)
+                    for element in elements:
+                        text = await element.inner_text()
+                        if text:
+                            # Try to parse date from this text
+                            parsed_date = self._parse_date_from_text(text)
+                            if parsed_date:
+                                return parsed_date
+                except Exception:
+                    continue
+
+            # Fallback: try to find date anywhere on the page
+            try:
+                body_text = await page.inner_text('body')
+                # Look for YYYY.MM.DD pattern specifically
+                import re
+                match = re.search(r'(\d{4})\.(\d{1,2})\.(\d{1,2})', body_text)
+                if match:
+                    date_str = match.group(0)
+                    return datetime.strptime(date_str, '%Y.%m.%d')
+            except Exception:
+                pass
+
+            return None
+
+        except Exception as e:
+            print(f"Error extracting date from report page: {e}")
+            return None
 
 
 async def discover_sessions(

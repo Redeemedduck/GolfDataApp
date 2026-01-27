@@ -122,7 +122,17 @@ with st.sidebar:
     sessions = get_sessions_cached(read_mode=st.session_state.read_mode)
     session_options = [("All Sessions", None)]
     for session in sessions:
-        label = f"{session.get('session_id')} ({session.get('date_added', 'Unknown')})"
+        # Prefer session_date (actual session date) over date_added (import timestamp)
+        display_date = session.get('session_date') or session.get('date_added', 'Unknown')
+        if display_date and display_date != 'Unknown':
+            try:
+                if hasattr(display_date, 'strftime'):
+                    display_date = display_date.strftime('%Y-%m-%d')
+                elif isinstance(display_date, str) and len(display_date) > 10:
+                    display_date = display_date[:10]  # Truncate timestamp to date
+            except:
+                pass
+        label = f"{session.get('session_id')} ({display_date})"
         if session.get('session_type'):
             label = f"{label} [{session.get('session_type')}]"
         session_options.append((label, session.get('session_id')))
@@ -187,6 +197,9 @@ if 'messages' not in st.session_state:
 if 'coach_key' not in st.session_state:
     st.session_state.coach_key = None
 
+if 'coach' not in st.session_state:
+    st.session_state.coach = None
+
 model_type = model_options[selected_model]
 coach_key = f"{selected_provider_id}:{model_type}:{thinking_level}"
 
@@ -237,6 +250,50 @@ for message in st.session_state.messages:
                     except:
                         pass
 
+
+def build_context_prompt(user_prompt: str) -> str:
+    """Build prompt with current focus context."""
+    context_lines = []
+    if focus_session_id:
+        context_lines.append(f"Focus session_id: {focus_session_id}")
+    if focus_session_type != "All Types":
+        context_lines.append(f"Focus session_type: {focus_session_type}")
+    if focus_club != "All Clubs":
+        context_lines.append(f"Focus club: {focus_club}")
+    if focus_tag != "All Tags":
+        context_lines.append(f"Focus shot_tag: {focus_tag}")
+    if not context_lines:
+        return user_prompt
+    context = "Context:\n" + "\n".join([f"- {line}" for line in context_lines])
+    return f"{context}\n\n{user_prompt}"
+
+
+# Check if we need to generate a response (e.g., after button click rerun)
+if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+    # Last message is from user with no response - generate one now
+    last_user_msg = st.session_state.messages[-1]["content"]
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            coach_prompt = build_context_prompt(last_user_msg)
+            response_data = st.session_state.coach.chat(coach_prompt)
+
+            # Display response
+            st.markdown(response_data['response'])
+
+            # Show function calls if any
+            if response_data.get('function_calls'):
+                with st.expander("🔧 Function Calls Made", expanded=False):
+                    for i, fn_call in enumerate(response_data['function_calls'], 1):
+                        st.markdown(f"**{i}. {fn_call['function']}**")
+                        st.json(fn_call['arguments'])
+
+            # Add assistant message to history
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": response_data['response'],
+                "function_calls": response_data.get('function_calls', [])
+            })
+
 # Suggested questions (show when no messages)
 if len(st.session_state.messages) == 0:
     st.markdown("### 💡 Try asking:")
@@ -264,21 +321,6 @@ if len(st.session_state.messages) == 0:
                     "content": question
                 })
                 st.rerun()
-
-def build_context_prompt(user_prompt: str) -> str:
-    context_lines = []
-    if focus_session_id:
-        context_lines.append(f"Focus session_id: {focus_session_id}")
-    if focus_session_type != "All Types":
-        context_lines.append(f"Focus session_type: {focus_session_type}")
-    if focus_club != "All Clubs":
-        context_lines.append(f"Focus club: {focus_club}")
-    if focus_tag != "All Tags":
-        context_lines.append(f"Focus shot_tag: {focus_tag}")
-    if not context_lines:
-        return user_prompt
-    context = "Context:\n" + "\n".join([f"- {line}" for line in context_lines])
-    return f"{context}\n\n{user_prompt}"
 
 
 # Chat input
