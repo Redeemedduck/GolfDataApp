@@ -447,7 +447,7 @@ NOTIFICATION_LOG=true
 
 ## Database Tables
 
-The automation system creates additional tables:
+The automation system creates additional tables. All tables exist in both SQLite (local) and Supabase (cloud) — see `supabase_schema.sql` for the canonical Postgres schema.
 
 ### `sessions_discovered`
 

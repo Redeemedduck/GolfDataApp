@@ -4,6 +4,42 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-01-27: Supabase Schema Alignment
+
+### Problem Solved
+The Supabase cloud database schema was out of sync with the local SQLite schema. The `supabase_schema.sql` file only documented `shots` and `tag_catalog`, while the live database had evolved to include 7 tables. The `session_summary` view was missing, and the schema file didn't reflect the actual RLS policy pattern (service role, not authenticated).
+
+### Changes Made
+
+**Live Supabase Migration**
+- Added `idx_shots_date_added` and `idx_shots_club` indexes to `shots` table
+- Created `session_summary` view with `session_date` column included
+
+**supabase_schema.sql — Complete Rewrite**
+- Documented all 7 tables: `shots`, `tag_catalog`, `shots_archive`, `change_log`, `sessions_discovered`, `automation_runs`, `backfill_runs`
+- All RLS policies: service role full access + anon read on `shots`/`tag_catalog`
+- All 11 indexes across all tables
+- `session_summary` view with `session_date`
+- Migration guide section for existing deployments
+
+**golf_db.py — Archive Sync**
+- `delete_session()` now archives shots to Supabase `shots_archive` before cloud deletion
+- Follows existing SQLite-first, Supabase-optional pattern
+
+**Documentation Updates**
+- Updated `CLAUDE.md` database schema table with all 7 tables and sync status
+- Updated `DEPLOYMENT_SUMMARY.md` Supabase section with current state
+- Updated `PHASE2_SUMMARY.md` to reflect archive now syncs to Supabase
+- Updated `SETUP_GUIDE.md` schema creation section with full table list
+- Updated `AUTOMATION_GUIDE.md` with Supabase sync details
+
+### Files Modified
+- `supabase_schema.sql` — Rewritten as canonical reference
+- `golf_db.py` — Added Supabase archive sync in `delete_session()`
+- `CLAUDE.md`, `changelog.md`, `DEPLOYMENT_SUMMARY.md`, `PHASE2_SUMMARY.md`, `SETUP_GUIDE.md`, `AUTOMATION_GUIDE.md`
+
+---
+
 ## 2026-01-26: Session Date Reclassification
 
 ### Problem Solved

@@ -2,29 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Branch Context
-
-This branch includes both **cloud AI (Gemini)** and **local ML models** for hybrid coaching. Local ML provides offline-first predictions while Gemini offers advanced conversational coaching.
-
 ## Common Commands
 
 ```bash
 # Run the Streamlit app
 streamlit run app.py
 
-# Run tests
+# Run all tests (unittest runner; pytest also works)
 python -m unittest discover -s tests
 
 # Run a single test file
-python -m unittest tests/test_golf_db.py
+python -m unittest tests.test_golf_db
 python -m unittest tests.unit.test_ml_models
 python -m unittest tests.unit.test_local_coach
 python -m unittest tests.unit.test_date_parsing
+python -m unittest tests.integration.test_automation_flow
 python -m unittest tests.integration.test_date_reclassification
 
-# Syntax check all Python files
+# Syntax check all Python files (this is what CI runs as "lint")
 python -m py_compile app.py golf_db.py local_coach.py exceptions.py
 python -m py_compile automation/*.py ml/*.py utils/*.py
+python -m py_compile services/ai/*.py services/ai/providers/*.py
 
 # Train ML models (requires shot data in database)
 python -m ml.train_models
@@ -32,21 +30,22 @@ python -m ml.train_models
 # Docker local testing
 docker build -t golf-data-app .
 docker run -p 8080:8080 -e GEMINI_API_KEY="key" golf-data-app
+# Or: docker compose up -d --build  (then http://localhost:8501)
 
-# Automation CLI (scraper)
+# Automation CLI (Playwright scraper for Uneekor portal)
 playwright install chromium              # First-time only
 python automation_runner.py login        # Interactive login, saves cookies
 python automation_runner.py discover --headless
 python automation_runner.py backfill --start 2025-01-01
-python automation_runner.py backfill --start 2025-01-01 --clubs "Driver,7 Iron"  # Filter by clubs
-python automation_runner.py backfill --start 2025-01-01 --dry-run  # Preview without importing
-python automation_runner.py backfill --retry-failed  # Retry failed imports
+python automation_runner.py backfill --start 2025-01-01 --clubs "Driver,7 Iron"
+python automation_runner.py backfill --start 2025-01-01 --dry-run
+python automation_runner.py backfill --retry-failed
 
 # Session date reclassification
-python automation_runner.py reclassify-dates --status                   # Show date status
-python automation_runner.py reclassify-dates --backfill                 # Copy dates to shots
-python automation_runner.py reclassify-dates --scrape --max 10          # Extract from portal (slow)
-python automation_runner.py reclassify-dates --manual 43285 2026-01-15  # Set date manually
+python automation_runner.py reclassify-dates --status
+python automation_runner.py reclassify-dates --backfill
+python automation_runner.py reclassify-dates --scrape --max 10
+python automation_runner.py reclassify-dates --manual 43285 2026-01-15
 
 # Cloud sync
 python scripts/supabase_to_bigquery.py incremental
@@ -57,180 +56,132 @@ python scripts/supabase_to_bigquery.py incremental
 ### Data Flow
 
 ```
-Uneekor API/Portal --> automation/ --> golf_db.py --> SQLite + Supabase
-                                              |
-                                              v
-                                      Streamlit Pages
-                                              |
-                                    ┌─────────┴─────────┐
-                                    v                   v
-                            local_coach.py      gemini_coach.py
-                            (Offline ML)        (Cloud AI)
+Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
+                                       |
+                                       v
+                               Streamlit Pages
+                                       |
+                             ┌─────────┴─────────┐
+                             v                   v
+                     local_coach.py      gemini_coach.py
+                     (Offline ML)        (Cloud AI)
 ```
 
 ### Core Modules
 
 | Module | Purpose |
 |--------|---------|
-| `golf_db.py` | Database layer with hybrid sync (SQLite local-first + Supabase cloud backup) |
-| `local_coach.py` | **NEW**: Local AI coach with template-based insights and ML predictions |
-| `gemini_coach.py` | Gemini 3.0 AI Coach with function calling |
-| `automation/` | Playwright-based scraper automation with rate limiting |
-| `ml/` | **NEW**: Machine learning models for predictions and analysis |
-| `utils/` | **NEW**: Logging configuration and utilities |
-| `exceptions.py` | **NEW**: Custom exception hierarchy |
-
-### ML Module (`ml/`)
-
-The ML package provides local machine learning capabilities:
-
-| File | Purpose |
-|------|---------|
-| `train_models.py` | XGBoost distance prediction model |
-| `classifiers.py` | Shot shape classification (draw, fade, hook, slice, etc.) |
-| `anomaly_detection.py` | Swing flaw detection using Isolation Forest |
-
-**Key Classes:**
-- `DistancePredictor`: Predicts carry distance from launch conditions
-- `ShotShapeClassifier`: Classifies shot shape using D-plane theory
-- `SwingFlawDetector`: Detects swing issues (over-the-top, early release, etc.)
-
-ML models work without dependencies via rule-based fallbacks.
-
-### Local Coach (`local_coach.py`)
-
-The LocalCoach provides AI coaching without cloud APIs:
-- Intent detection routes queries to appropriate handlers
-- Template-based responses with data injection
-- ML predictions when models are trained
-- Registered as AI provider via `services/ai/providers/local_provider.py`
-
-### AI Provider System
-
-Providers are registered via decorator pattern in `services/ai/`:
-```python
-from services.ai import list_providers, get_provider
-
-providers = list_providers()  # Returns [GeminiProvider, LocalProvider]
-spec = get_provider('local')  # Get specific provider
-```
+| `golf_db.py` | Database layer: SQLite local-first + optional Supabase cloud sync |
+| `local_coach.py` | Local AI coach: intent detection, template responses, ML predictions |
+| `gemini_coach.py` | Gemini AI Coach with function calling |
+| `automation/` | Playwright-based scraper: rate limiting, checkpointing, cookie persistence |
+| `ml/` | ML models: XGBoost distance prediction, shot shape classification, anomaly detection |
+| `services/ai/` | AI provider registry (decorator pattern for pluggable backends) |
+| `components/` | Reusable Streamlit UI components (all follow `render_*()` pattern) |
+| `exceptions.py` | Exception hierarchy rooted at `GolfDataAppError` with context dicts |
+| `golf_scraper.py` | Legacy scraper (pre-Playwright, still functional) |
 
 ### Hybrid Database Pattern
 
-All write operations in `golf_db.py` follow this pattern:
+All write operations in `golf_db.py` follow:
 1. Write to local SQLite (always)
-2. Sync to Supabase (if configured)
+2. Sync to Supabase (if configured, soft dependency)
+3. For deletions: archive to `shots_archive` in both SQLite and Supabase before removing
 
-SQLite uses **WAL mode** for better concurrent access.
+Read modes (`get_read_mode()`/`set_read_mode()`): `"auto"` (SQLite first, Supabase fallback), `"sqlite"` (local only), `"supabase"` (cloud only, for containers).
 
-### Streamlit Multi-Page Structure
+SQLite uses **WAL mode** for concurrent reads/writes. Schema migrations in `init_db()` use `PRAGMA table_info` to detect and add missing columns dynamically.
 
-- `app.py` - Landing page and navigation
-- `pages/1_Data_Import.py` - Import from Uneekor URLs
-- `pages/2_Dashboard.py` - Analytics with 5 tabs (Overview, Impact, Trends, Shots, Export)
-- `pages/3_Database_Manager.py` - CRUD operations with 6 tabs
-- `pages/4_AI_Coach.py` - Chat interface with **provider selection** (Local or Gemini)
+### AI Provider System
 
-### Component Pattern
+Providers self-register via `@register_provider` decorator in `services/ai/registry.py`. Each provider defines `PROVIDER_ID` and `DISPLAY_NAME` class attributes. Providers are auto-imported when `services/ai/providers/` is loaded.
 
-All UI components in `components/` follow this pattern:
 ```python
-def render_component_name(data: pd.DataFrame, **kwargs) -> None:
-    st.subheader("Title")
-    # implementation
+from services.ai import list_providers, get_provider
+providers = list_providers()        # All registered ProviderSpec objects
+spec = get_provider('local')        # Get by ID, returns ProviderSpec
+instance = spec.provider_cls()      # Instantiate the provider
 ```
+
+### ML Module
+
+ML dependencies are **lazy-loaded** via `__getattr__` in `ml/__init__.py`. Code that uses ML gracefully degrades if XGBoost/sklearn aren't installed — rule-based fallbacks handle all cases. Key classes: `DistancePredictor`, `ShotShapeClassifier` (D-plane theory), `SwingFlawDetector` (Isolation Forest).
+
+### Streamlit Pages
+
+- `app.py` — Landing page and navigation
+- `pages/1_Data_Import.py` — Import from Uneekor URLs
+- `pages/2_Dashboard.py` — Analytics (5 tabs: Overview, Impact, Trends, Shots, Export)
+- `pages/3_Database_Manager.py` — CRUD, tagging, session splitting (6 tabs)
+- `pages/4_AI_Coach.py` — Chat interface with provider selection dropdown
+
+Components in `components/` are stateless: `render_*(data: pd.DataFrame, **kwargs) -> None`.
 
 ### Automation Module
 
-The `automation/` package provides Playwright-based scraping:
+Layered architecture: `automation_runner.py` CLI → `BackfillRunner` (orchestration + checkpointing) → `SessionDiscovery` (dedup + state tracking) → `PlaywrightClient` (browser lifecycle + cookies) → `UneekorPortal` (navigation).
 
-| File | Purpose |
-|------|---------|
-| `credential_manager.py` | Encrypted cookie persistence |
-| `rate_limiter.py` | Token bucket throttling (6 req/min default) |
-| `session_discovery.py` | Find and deduplicate sessions, **club filtering**, **retry tracking** |
-| `naming_conventions.py` | Normalize club names (e.g., "7i" -> "7 Iron") |
-| `backfill_runner.py` | Historical import with checkpointing, **dry-run mode**, **retry logic** |
-| `notifications.py` | Slack alerts |
-
-**New Features:**
-- `--clubs "Driver,7 Iron"`: Filter sessions by clubs used
-- `--dry-run`: Preview imports without database changes
-- `--retry-failed`: Retry failed imports with exponential backoff (10s → 30s → 90s)
+Key behaviors:
+- Token bucket rate limiting (6 req/min default via `rate_limiter.py`)
+- Encrypted cookie persistence (`credential_manager.py`)
+- Resumable backfill with `sessions_discovered` and `backfill_runs` tables
+- Club name normalization via `naming_conventions.py` (e.g., "7i" → "7 Iron")
+- Exponential backoff on retries (10s → 30s → 90s)
 
 ## Environment Variables
 
-```bash
-# Required for Gemini AI Coach
-GEMINI_API_KEY=your_key
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `GEMINI_API_KEY` | For AI Coach | Gemini API access |
+| `SUPABASE_URL` | No | Cloud sync URL |
+| `SUPABASE_KEY` | No | Cloud sync key |
+| `SLACK_WEBHOOK_URL` | No | Automation alerts |
+| `USE_SUPABASE_READS` | No | Set `1` to force cloud reads (containers) |
+| `GOLFDATA_LOGGING` | No | Set `1` for structured logging |
+| `K_SERVICE` | Auto (Cloud Run) | Detected to enable cloud-first behavior |
 
-# Optional for cloud sync
-SUPABASE_URL=your_url
-SUPABASE_KEY=your_key
+## Database Schema
 
-# Optional for automation
-SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+| Table | Purpose | Supabase Sync |
+|-------|---------|---------------|
+| `shots` | Main data (30+ fields per shot) | Yes — full upsert |
+| `shots_archive` | Soft-deleted shots (recovery) | Yes — archived on session delete |
+| `change_log` | Audit trail for modifications | No — local only |
+| `tag_catalog` | Shot tag definitions | Yes — upsert/delete |
+| `sessions_discovered` | Automation: discovered sessions + import status + `date_source` | Yes — service role |
+| `automation_runs` | Automation: high-level run tracking | Yes — service role |
+| `backfill_runs` | Automation: backfill progress checkpoints | Yes — service role |
 
-# Force cloud reads in containers
-USE_SUPABASE_READS=1
+Canonical Supabase schema: `supabase_schema.sql` (all tables, indexes, RLS policies, views).
 
-# Enable structured logging
-GOLFDATA_LOGGING=1
-```
-
-## Database Tables
-
-| Table | Purpose |
-|-------|---------|
-| `shots` | Main data (30+ fields per shot, including `session_date`) |
-| `shots_archive` | Soft-deleted shots for recovery |
-| `change_log` | Audit trail for all modifications |
-| `sessions_discovered` | Automation: discovered sessions, import status, `date_source` |
-| `backfill_runs` | Automation: backfill progress and checkpointing |
-| `tag_catalog` | Shot tag definitions |
-
-### Key Date Fields
-
-| Field | Table | Purpose |
-|-------|-------|---------|
-| `session_date` | shots | When the practice session actually occurred |
-| `date_added` | shots | When the data was imported (auto-set) |
-| `session_date` | sessions_discovered | Discovered session date from portal |
-| `date_source` | sessions_discovered | Where date came from: `portal`, `report_page`, `manual` |
-
-## Security
-
-- **SQL Injection Protection**: `update_shot_metadata()` uses field allowlist (`ALLOWED_UPDATE_FIELDS`)
-- **Parameterized Queries**: All database operations use parameterized SQL
-- **Soft Deletes**: Deletions are archived for recovery
+Key date distinction: `session_date` = when the practice occurred, `date_added` = when data was imported.
 
 ## Key Conventions
 
-- Database operations always use parameterized SQL
-- Deletions are archived for recovery (soft delete)
-- Club names are normalized via `automation/naming_conventions.py`
-- Sessions auto-tagged based on characteristics (Driver Focus, Short Game, etc.)
-- The `99999` value is a Uneekor sentinel meaning "no data" - cleaned via `clean_value()`
-- ML imports are lazy to avoid requiring dependencies for all uses
+- All database operations use **parameterized SQL**; `update_shot_metadata()` enforces a field allowlist (`ALLOWED_UPDATE_FIELDS`)
+- Deletions are **soft deletes** — records go to `shots_archive` for recovery
+- The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py`
+- Club names are normalized through `automation/naming_conventions.py`
+- Sessions are auto-tagged based on characteristics (Driver Focus, Short Game, etc.)
 
 ## Testing
 
-```bash
-# All tests
-python -m unittest discover -s tests
+Tests use `unittest` (and are also compatible with `pytest`). Shared fixtures in `tests/conftest.py` provide:
 
-# By category
-python -m unittest tests.test_golf_db                           # Database tests
-python -m unittest tests.unit.test_ml_models                    # ML model tests
-python -m unittest tests.unit.test_local_coach                  # Local coach tests
-python -m unittest tests.unit.test_date_parsing                 # Date format parsing
-python -m unittest tests.integration.test_automation_flow       # Automation tests
-python -m unittest tests.integration.test_date_reclassification # Date management
-```
+| Fixture | Purpose |
+|---------|---------|
+| `temp_db_path` | Temporary SQLite path (auto-cleaned) |
+| `golf_db_instance` | Initialized `golf_db` module pointed at temp DB with Supabase disabled |
+| `populated_golf_db` | `golf_db_instance` pre-loaded with 10 sample shots |
+| `sample_shot_data` | Single shot dict with realistic Driver metrics |
+| `sample_shots_batch` | 10 shots with varying carry distances |
+| `ml_test_dataframe` | 100-row DataFrame with synthetic launch data (seeded) |
+| `mock_rate_limiter` | Permissive rate limiter (1000 req/min) for automation tests |
+| `local_coach` | Stateless `LocalCoach` instance |
+| `discovery_db` | Initialized `SessionDiscovery` with temp DB |
 
 ## CI/CD
 
-GitHub Actions workflow (`.github/workflows/ci.yml`) runs:
-- Tests on Python 3.10, 3.11, 3.12
-- Syntax validation on all Python files
-- ML module load validation
+GitHub Actions (`.github/workflows/ci.yml`):
+- **test** job: Python 3.10, 3.11, 3.12 — `py_compile` lint + `unittest discover`
+- **validate-ml** job: Verifies all ML classes import and `LocalCoach` instantiates

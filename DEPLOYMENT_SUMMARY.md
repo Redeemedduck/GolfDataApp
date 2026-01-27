@@ -120,9 +120,11 @@ gcloud services list --enabled
 
 ### Supabase
 - **URL**: `https://lhccrzxgnmynxmvoydkm.supabase.co`
-- **Table**: `shots` (201 rows)
-- **Indexes**: session_id, date_added, club
-- **RLS Policies**: Enabled for security
+- **Tables**: `shots`, `tag_catalog`, `shots_archive`, `change_log`, `sessions_discovered`, `automation_runs`, `backfill_runs` (7 total)
+- **Views**: `session_summary` (aggregated by session + club, includes `session_date`)
+- **Indexes**: `session_id`, `session_date`, `date_added`, `club` on shots; `session_date`, `import_status` on sessions_discovered
+- **RLS Policies**: Service role full access on all tables; anon read on `shots` and `tag_catalog`
+- **Canonical schema**: `supabase_schema.sql` (updated 2026-01-27)
 
 ### API Keys Configured
 - ✅ Supabase API Key
@@ -153,16 +155,18 @@ Python Scripts (You control) → Gemini API (Google AI) → AI Insights
 - BigQuery ML (can be added for predictions)
 - AutoML (available for future custom models)
 
-### Data Schema (26 Fields)
+### Data Schema (32+ Fields)
 
 All platforms share identical schema:
-- **Identifiers**: shot_id, session_id, date_added
+- **Identifiers**: shot_id, session_id, date_added, session_date
+- **Session Metadata**: session_type, shot_tag
 - **Club**: club
 - **Distance**: carry, total, side_distance
 - **Speed**: ball_speed, club_speed, smash
 - **Spin**: back_spin, side_spin
 - **Angles**: launch_angle, side_angle, club_path, face_angle, dynamic_loft, attack_angle, descent_angle
-- **Impact**: impact_x, impact_y
+- **Impact**: impact_x, impact_y, optix_x, optix_y
+- **Club Data**: club_lie, lie_angle
 - **Flight**: apex, flight_time
 - **Type**: shot_type
 - **Media**: impact_img, swing_img

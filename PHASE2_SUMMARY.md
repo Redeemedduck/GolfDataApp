@@ -212,10 +212,11 @@ All tables auto-created on app startup with proper migrations.
 ```python
 # Example: delete_session() with archiving
 1. Fetch all shots for session
-2. Serialize to JSON and insert into shots_archive
-3. Delete from shots table
-4. Log operation in change_log
-5. Sync to Supabase (delete only, not archive)
+2. Serialize to JSON and insert into shots_archive (SQLite)
+3. Delete from shots table (SQLite)
+4. Log operation in change_log (SQLite)
+5. Upsert archive records to Supabase shots_archive
+6. Delete from Supabase shots table
 ```
 
 ### Hybrid Sync Pattern
@@ -360,8 +361,8 @@ Result: All 150 driver shots across all sessions renamed
 - ❌ Scheduled archival cleanup (manual only)
 
 ### Design Decisions
-- **Archive is local only**: Deleted shots are NOT synced to Supabase (privacy + cost)
-- **Change log is local only**: Audit trail stays in SQLite
+- **Archive syncs to Supabase**: `delete_session()` upserts archive records to Supabase `shots_archive` before cloud deletion (added 2026-01-27)
+- **Change log is local only**: Audit trail stays in SQLite (low-priority for cloud sync)
 - **Soft delete by default**: Session deletions archive first (safety)
 - **No rollback**: Individual function errors don't rollback previous operations
 

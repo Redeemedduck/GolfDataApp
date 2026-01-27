@@ -96,9 +96,13 @@ pip install supabase google-cloud-bigquery google-cloud-aiplatform pandas
 1. In Supabase dashboard, click **SQL Editor**
 2. Copy the entire contents of `supabase_schema.sql`
 3. Paste into SQL Editor and click **Run**
-4. Verify the `shots` and `tag_catalog` tables were created: **Database** → **Tables**
-   - `shots` now includes `session_type` and `shot_tag` for workflow metadata
-   - `tag_catalog` stores shared tags across sessions
+4. Verify tables were created: **Database** → **Tables**
+   - `shots` — 32+ fields including `session_date`, `session_type`, `shot_tag`, optix metrics
+   - `tag_catalog` — shared tags across sessions
+   - `shots_archive` — soft-deleted shots for recovery
+   - `change_log` — audit trail for data modifications
+   - `sessions_discovered`, `automation_runs`, `backfill_runs` — automation state
+   - `session_summary` view — aggregated stats by session + club
 
 ### 2.4 Set Environment Variables
 
@@ -525,9 +529,9 @@ To connect Supabase Postgres directly to MCP clients:
 ---
 
 ## 🔧 Maintenance: Schema Updates
-The architecture is designed to be **Self-Healing**. 
-- **SQLite**: The `golf_db.py` script automatically adds missing columns to your local database on startup.
-- **Cloud**: If you add new metrics, remember to update `supabase_schema.sql` and `bigquery_schema.json` accordingly.
+The architecture is designed to be **Self-Healing**.
+- **SQLite**: The `golf_db.py` script automatically adds missing columns to your local database on startup via `init_db()`.
+- **Cloud**: If you add new metrics, update `supabase_schema.sql` (canonical Supabase reference) and `bigquery_schema.json`. The schema file documents all 7 tables, RLS policies, indexes, and views. For existing deployments, see the migration section at the bottom of `supabase_schema.sql`.
 
 ---
 

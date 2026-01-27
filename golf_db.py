@@ -706,6 +706,20 @@ def delete_session(session_id, archive=True):
     except Exception as e:
         print(f"SQLite Delete Session Error: {e}")
 
+    # Archive to cloud before deleting
+    if supabase and archive and shot_count > 0:
+        try:
+            for _, shot in shots_to_delete.iterrows():
+                original_data = shot.to_dict()
+                supabase.table('shots_archive').upsert({
+                    'shot_id': shot['shot_id'],
+                    'session_id': session_id,
+                    'deleted_reason': f"Session deletion: {session_id}",
+                    'original_data': json.dumps(original_data, default=str)
+                }).execute()
+        except Exception as e:
+            print(f"Supabase Archive Error: {e}")
+
     # Delete from cloud
     if supabase:
         try:
