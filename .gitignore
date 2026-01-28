@@ -36,3 +36,13 @@ debug_page_source.html
 # Automation credentials
 .uneekor_cookies.enc
 .uneekor_key
+
+# SQLite WAL files
+*.db-shm
+*.db-wal
+
+# Trained ML models (too large for git)
+/models/trained_*.pkl
+
+# Firebase debug
+firebase-debug.log
