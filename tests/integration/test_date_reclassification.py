@@ -18,9 +18,14 @@ from pathlib import Path
 # Add parent directories to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import golf_db
+try:
+    import golf_db
+    HAS_DEPS = True
+except ImportError:
+    HAS_DEPS = False
 
 
+@unittest.skipUnless(HAS_DEPS, "pandas not installed")
 class TestDateReclassification(unittest.TestCase):
     """Test session date reclassification database operations."""
 
@@ -184,6 +189,7 @@ class TestDateReclassification(unittest.TestCase):
         conn.close()
 
 
+@unittest.skipUnless(HAS_DEPS, "pandas not installed")
 class TestSessionDateInSaveShot(unittest.TestCase):
     """Test that save_shot properly handles session_date."""
 

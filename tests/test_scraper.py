@@ -4,11 +4,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import requests
-
-import golf_db
-import golf_scraper
-import observability
+try:
+    import requests
+    import golf_db
+    import golf_scraper
+    import observability
+    HAS_DEPS = True
+except ImportError:
+    HAS_DEPS = False
 
 
 class FakeResponse:
@@ -21,9 +24,10 @@ class FakeResponse:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise requests.exceptions.HTTPError(f"HTTP {self.status_code}")
+            raise Exception(f"HTTP {self.status_code}")
 
 
+@unittest.skipUnless(HAS_DEPS, "requests/pandas not installed")
 class TestScraper(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
