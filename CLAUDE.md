@@ -27,11 +27,6 @@ python -m py_compile services/ai/*.py services/ai/providers/*.py
 # Train ML models (requires shot data in database)
 python -m ml.train_models
 
-# Docker local testing
-docker build -t golf-data-app .
-docker run -p 8080:8080 -e GEMINI_API_KEY="key" golf-data-app
-# Or: docker compose up -d --build  (then http://localhost:8501)
-
 # Automation CLI (Playwright scraper for Uneekor portal)
 playwright install chromium              # First-time only
 python automation_runner.py login        # Interactive login, saves cookies
@@ -46,9 +41,6 @@ python automation_runner.py reclassify-dates --status
 python automation_runner.py reclassify-dates --backfill
 python automation_runner.py reclassify-dates --scrape --max 10
 python automation_runner.py reclassify-dates --manual 43285 2026-01-15
-
-# Cloud sync
-python scripts/supabase_to_bigquery.py incremental
 ```
 
 ## Architecture Overview
@@ -138,7 +130,6 @@ Key behaviors:
 | `SLACK_WEBHOOK_URL` | No | Automation alerts |
 | `USE_SUPABASE_READS` | No | Set `1` to force cloud reads (containers) |
 | `GOLFDATA_LOGGING` | No | Set `1` for structured logging |
-| `K_SERVICE` | Auto (Cloud Run) | Detected to enable cloud-first behavior |
 
 ## Database Schema
 
@@ -163,6 +154,14 @@ Key date distinction: `session_date` = when the practice occurred, `date_added` 
 - The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py`
 - Club names are normalized through `automation/naming_conventions.py`
 - Sessions are auto-tagged based on characteristics (Driver Focus, Short Game, etc.)
+
+### Coding Style
+
+- Python code uses **4-space indentation**, `snake_case` for functions/variables, `PascalCase` for classes
+- Keep modules small and focused; UI-only logic goes in `pages/` or `components/`
+- No formatter/linter is configured; keep diffs clean and avoid mixed line endings
+- Follow **conventional commit** style: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, etc.
+- PRs should include a short summary, manual test steps, and screenshots for UI changes
 
 ## Testing
 
