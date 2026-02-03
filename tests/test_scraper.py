@@ -66,7 +66,7 @@ class TestScraper(unittest.TestCase):
             "https://myuneekor.com/report?id=123&key=abc",
             lambda _: None,
         )
-        self.assertIn("Success", result)
+        self.assertEqual(result.get('status'), 'success')
 
         df = golf_db.get_session_data("123")
         self.assertEqual(len(df), 1)

@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 # ML imports - these are optional and may not be installed
+# Note: XGBoost may raise XGBoostError (not ImportError) if libomp is missing
 try:
     import joblib
     from sklearn.model_selection import train_test_split, cross_val_score
@@ -33,9 +34,11 @@ try:
     from sklearn.preprocessing import LabelEncoder
     import xgboost as xgb
     HAS_ML_DEPS = True
-except ImportError:
+except (ImportError, Exception) as e:
+    # Catch both ImportError and XGBoostError (missing libomp.dylib)
     HAS_ML_DEPS = False
     joblib = None  # Will error if used without deps
+    xgb = None
 
 # Import golf_db for data access
 import sys
