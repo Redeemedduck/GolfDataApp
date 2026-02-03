@@ -6,8 +6,10 @@ from automation.naming_conventions import (
     ClubNameNormalizer,
     SessionNamer,
     AutoTagger,
+    SessionContextParser,
     normalize_club,
     normalize_clubs,
+    parse_listing_date,
 )
 
 
@@ -214,6 +216,77 @@ class TestAutoTagger(unittest.TestCase):
         )
         tags = self.tagger.auto_tag(["Driver"], 250)
         self.assertIn("Marathon", tags)
+
+
+class TestSessionContextParser(unittest.TestCase):
+    """Tests for SessionContextParser, including listing date parsing."""
+
+    def setUp(self):
+        self.parser = SessionContextParser()
+
+    def test_parse_listing_date_full_month(self):
+        """Test parsing 'January 15, 2026' format."""
+        result = self.parser.parse_listing_date("January 15, 2026")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.year, 2026)
+        self.assertEqual(result.month, 1)
+        self.assertEqual(result.day, 15)
+
+    def test_parse_listing_date_short_month(self):
+        """Test parsing 'Jan 15, 2026' format."""
+        result = self.parser.parse_listing_date("Jan 15, 2026")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.year, 2026)
+        self.assertEqual(result.month, 1)
+        self.assertEqual(result.day, 15)
+
+    def test_parse_listing_date_iso_format(self):
+        """Test parsing '2026-01-15' format."""
+        result = self.parser.parse_listing_date("2026-01-15")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.year, 2026)
+        self.assertEqual(result.month, 1)
+        self.assertEqual(result.day, 15)
+
+    def test_parse_listing_date_us_format(self):
+        """Test parsing '01/15/2026' format."""
+        result = self.parser.parse_listing_date("01/15/2026")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.year, 2026)
+        self.assertEqual(result.month, 1)
+        self.assertEqual(result.day, 15)
+
+    def test_parse_listing_date_no_comma(self):
+        """Test parsing 'January 15 2026' format (no comma)."""
+        result = self.parser.parse_listing_date("January 15 2026")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.year, 2026)
+        self.assertEqual(result.month, 1)
+        self.assertEqual(result.day, 15)
+
+    def test_parse_listing_date_with_whitespace(self):
+        """Test that whitespace is trimmed."""
+        result = self.parser.parse_listing_date("  February 20, 2026  ")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.month, 2)
+        self.assertEqual(result.day, 20)
+
+    def test_parse_listing_date_invalid(self):
+        """Test that invalid dates return None."""
+        result = self.parser.parse_listing_date("Not a date")
+        self.assertIsNone(result)
+
+    def test_parse_listing_date_empty(self):
+        """Test that empty string returns None."""
+        result = self.parser.parse_listing_date("")
+        self.assertIsNone(result)
+
+    def test_parse_listing_date_convenience_function(self):
+        """Test the convenience function."""
+        result = parse_listing_date("March 5, 2026")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.month, 3)
+        self.assertEqual(result.day, 5)
 
 
 if __name__ == "__main__":

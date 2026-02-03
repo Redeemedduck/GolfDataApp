@@ -655,6 +655,43 @@ class SessionContextParser:
         """
         return self.parse(context_string).get('session_type')
 
+    def parse_listing_date(self, date_str: str) -> Optional[datetime]:
+        """
+        Parse dates from listing page (e.g., 'January 15, 2026').
+
+        The Uneekor portal listing page displays session dates in various formats.
+        This method handles common date formats found in the DOM.
+
+        Args:
+            date_str: Date string from listing page
+
+        Returns:
+            datetime object or None if parsing failed
+        """
+        if not date_str:
+            return None
+
+        date_str = date_str.strip()
+
+        # Common date formats from Uneekor listing page
+        formats = [
+            '%B %d, %Y',      # January 15, 2026
+            '%b %d, %Y',      # Jan 15, 2026
+            '%m/%d/%Y',       # 01/15/2026
+            '%Y-%m-%d',       # 2026-01-15
+            '%d %B %Y',       # 15 January 2026
+            '%d %b %Y',       # 15 Jan 2026
+            '%B %d %Y',       # January 15 2026 (no comma)
+        ]
+
+        for fmt in formats:
+            try:
+                return datetime.strptime(date_str, fmt)
+            except ValueError:
+                continue
+
+        return None
+
 
 # Singleton instances for convenience
 _normalizer: Optional[ClubNameNormalizer] = None
@@ -713,3 +750,8 @@ def parse_session_context(context_string: str) -> Dict[str, Optional[str]]:
 def extract_club_from_context(context_string: str) -> Optional[str]:
     """Convenience function to extract club name from context string."""
     return get_context_parser().extract_club(context_string)
+
+
+def parse_listing_date(date_str: str) -> Optional[datetime]:
+    """Convenience function to parse a date from listing page."""
+    return get_context_parser().parse_listing_date(date_str)

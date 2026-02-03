@@ -274,20 +274,25 @@ class SessionDiscovery:
             exists = cursor.fetchone() is not None
 
             clubs_json = json.dumps(session.clubs_used) if session.clubs_used else None
+            # Extract date_source from raw_data (set by _parse_session_from_link)
+            date_source = session.raw_data.get('date_source') if session.raw_data else None
 
             if exists:
-                # Update existing
+                # Update existing - only update date if we have a better source
+                # Priority: listing_page > link_text > report_page
                 conn.execute('''
                     UPDATE sessions_discovered
                     SET last_checked_at = ?,
                         portal_name = COALESCE(?, portal_name),
                         session_date = COALESCE(?, session_date),
+                        date_source = COALESCE(?, date_source),
                         clubs_json = COALESCE(?, clubs_json)
                     WHERE report_id = ?
                 ''', (
                     datetime.utcnow().isoformat(),
                     session.portal_name,
                     session.session_date.isoformat() if session.session_date else None,
+                    date_source,
                     clubs_json,
                     session.report_id,
                 ))
@@ -295,13 +300,14 @@ class SessionDiscovery:
                 # Insert new
                 conn.execute('''
                     INSERT INTO sessions_discovered
-                    (report_id, api_key, portal_name, session_date, clubs_json, source_url, discovered_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (report_id, api_key, portal_name, session_date, date_source, clubs_json, source_url, discovered_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     session.report_id,
                     session.api_key,
                     session.portal_name,
                     session.session_date.isoformat() if session.session_date else None,
+                    date_source,
                     clubs_json,
                     session.source_url,
                     datetime.utcnow().isoformat(),

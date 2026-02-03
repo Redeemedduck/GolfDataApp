@@ -274,15 +274,19 @@ class UneekorPortalNavigator:
 
     async def _find_session_links(self) -> List[Dict[str, Any]]:
         """
-        Find all session links on the current page.
+        Find all session links on the current page with date context.
+
+        The listing page organizes sessions by date. This method walks the DOM
+        to associate each session link with its date header, enabling accurate
+        session date extraction.
 
         Returns:
-            List of dicts with href and text for each link
+            List of dicts with href, text, and dateContext for each link
         """
         page = self.client.page
         links = []
 
-        # Try multiple selectors
+        # Try multiple selectors first (quick approach)
         for selector in ['a[href*="report?id="]', 'a[href*="power-u-report?id="]']:
             try:
                 elements = await page.query_selector_all(selector)
@@ -294,30 +298,94 @@ class UneekorPortalNavigator:
                             'href': href,
                             'text': text,
                             'element': element,
+                            'dateContext': None,  # Will be populated by DOM walker
                         })
             except Exception:
                 continue
 
-        # Also try to find links via JavaScript (for React-rendered content)
-        if not links:
-            try:
-                js_links = await page.evaluate('''
-                    () => {
-                        const links = [];
-                        document.querySelectorAll('a').forEach(a => {
-                            if (a.href && a.href.includes('report') && a.href.includes('id=')) {
-                                links.push({
-                                    href: a.href,
-                                    text: a.innerText || a.textContent || '',
+        # Use JavaScript DOM walker to find links with date context
+        # This handles React-rendered content and extracts date associations
+        try:
+            js_links = await page.evaluate('''
+                () => {
+                    const results = [];
+                    let currentDate = null;
+
+                    // Date pattern: "January 15, 2026" or similar
+                    const datePattern = /^(January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{1,2},?\\s+\\d{4}$/i;
+
+                    // Alternative patterns
+                    const altDatePatterns = [
+                        /^\\d{1,2}\\/\\d{1,2}\\/\\d{4}$/,  // MM/DD/YYYY
+                        /^\\d{4}-\\d{2}-\\d{2}$/,          // YYYY-MM-DD
+                        /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d{1,2},?\\s+\\d{4}$/i  // Short month
+                    ];
+
+                    // Walk through all elements in document order
+                    const walker = document.createTreeWalker(
+                        document.body,
+                        NodeFilter.SHOW_ELEMENT,
+                        null,
+                        false
+                    );
+
+                    while (walker.nextNode()) {
+                        const node = walker.currentNode;
+                        const text = (node.textContent || '').trim();
+
+                        // Skip if text is too long (not a date header)
+                        if (text.length > 50) continue;
+
+                        // Check for date headers
+                        if (datePattern.test(text)) {
+                            // Check if this is a heading or date-like container
+                            const tagName = node.tagName.toUpperCase();
+                            if (['H1','H2','H3','H4','H5','H6','DIV','SPAN','P','TD','TH'].includes(tagName)) {
+                                // Make sure it's not inside a link
+                                if (!node.closest('a')) {
+                                    currentDate = text;
+                                }
+                            }
+                        } else {
+                            // Check alternative date patterns
+                            for (const pattern of altDatePatterns) {
+                                if (pattern.test(text) && !node.closest('a')) {
+                                    currentDate = text;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Check for session links
+                        if (node.tagName === 'A') {
+                            const href = node.href || '';
+                            if (href.includes('report') && href.includes('id=')) {
+                                results.push({
+                                    href: href,
+                                    text: (node.innerText || node.textContent || '').trim(),
+                                    dateContext: currentDate,
+                                    parentClass: node.parentElement?.className || ''
                                 });
                             }
-                        });
-                        return links;
+                        }
                     }
-                ''')
-                links.extend(js_links)
-            except Exception:
-                pass
+                    return results;
+                }
+            ''')
+
+            # Merge with existing links or use JS results
+            if js_links:
+                if links:
+                    # Update existing links with date context from JS walker
+                    js_href_map = {link['href']: link for link in js_links}
+                    for link in links:
+                        if link['href'] in js_href_map:
+                            link['dateContext'] = js_href_map[link['href']].get('dateContext')
+                else:
+                    links = js_links
+
+        except Exception:
+            pass
 
         return links
 
@@ -355,13 +423,27 @@ class UneekorPortalNavigator:
         if not report_id or not api_key:
             return None
 
-        # Parse session date from text or nearby elements
-        session_date = self._parse_date_from_text(text)
+        # Parse session date - prefer dateContext from DOM walker (listing page)
+        # This is more reliable than parsing the link text
+        session_date = None
+        date_source = None
+
+        date_context = link_info.get('dateContext')
+        if date_context:
+            session_date = self._parse_date_from_text(date_context)
+            if session_date:
+                date_source = 'listing_page'
+
+        # Fallback: try to parse from link text
+        if not session_date:
+            session_date = self._parse_date_from_text(text)
+            if session_date:
+                date_source = 'link_text'
 
         # Parse club info if available
         clubs_used = self._parse_clubs_from_text(text)
 
-        return SessionInfo(
+        session = SessionInfo(
             report_id=report_id,
             api_key=api_key,
             portal_name=text.strip() if text else None,
@@ -370,6 +452,10 @@ class UneekorPortalNavigator:
             source_url=href,
             raw_data=link_info,
         )
+        # Store date source for tracking
+        session.raw_data['date_source'] = date_source
+
+        return session
 
     def _parse_date_from_text(self, text: str) -> Optional[datetime]:
         """

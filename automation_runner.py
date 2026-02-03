@@ -451,6 +451,85 @@ def cmd_reclassify_dates(args):
         print(f"Updated {updated} shots with session_date = {date_str}")
         return 0
 
+    # Handle --from-listing
+    if getattr(args, 'from_listing', False):
+        print("Extracting session dates from listing page...")
+        print()
+        print("This approach extracts dates from the session listing page DOM,")
+        print("which shows sessions organized by date headers (e.g., 'January 15, 2026').")
+        print()
+
+        async def do_listing_discovery():
+            config = BrowserConfig(headless=args.headless)
+            client = PlaywrightClient(config=config)
+
+            async with client:
+                login_success = await client.login()
+                if not login_success:
+                    print("Error: Failed to log in")
+                    return 1
+
+                navigator = UneekorPortalNavigator(browser_client=client)
+
+                if args.dry_run:
+                    print("[DRY RUN] Would navigate to listing page and extract dates")
+                    return 0
+
+                # Navigate to session listing
+                print("Navigating to session listing...")
+                sessions = await navigator.get_session_list()
+
+                if not sessions:
+                    print("No sessions found on listing page")
+                    return 1
+
+                print(f"Found {len(sessions)} sessions")
+                print()
+
+                # Count sessions with dates from listing
+                sessions_with_dates = [s for s in sessions if s.session_date]
+                sessions_without_dates = [s for s in sessions if not s.session_date]
+
+                print(f"Sessions with dates extracted: {len(sessions_with_dates)}")
+                print(f"Sessions without dates: {len(sessions_without_dates)}")
+                print()
+
+                # Save to discovery database
+                updated_count = 0
+                for session in sessions:
+                    if session.session_date:
+                        is_new = discovery._save_discovered_session(session)
+                        if is_new:
+                            updated_count += 1
+                        # Also update shots table
+                        golf_db.update_session_date_for_shots(
+                            session.report_id,
+                            session.session_date.isoformat()
+                        )
+
+                print()
+                print("="*60)
+                print("LISTING PAGE EXTRACTION RESULTS")
+                print("="*60)
+                print(f"Sessions processed:     {len(sessions)}")
+                print(f"Sessions with dates:    {len(sessions_with_dates)}")
+                print(f"New sessions added:     {updated_count}")
+
+                # Show sample of extracted dates
+                if sessions_with_dates:
+                    print()
+                    print("Sample extracted dates:")
+                    for s in sessions_with_dates[:5]:
+                        date_str = s.session_date.strftime('%Y-%m-%d') if s.session_date else 'None'
+                        source = s.raw_data.get('date_source', 'unknown')
+                        print(f"  - {s.report_id}: {date_str} (source: {source})")
+                    if len(sessions_with_dates) > 5:
+                        print(f"  ... and {len(sessions_with_dates) - 5} more")
+
+                return 0
+
+        return asyncio.run(do_listing_discovery())
+
     # Handle --backfill
     if args.backfill:
         print("Backfilling session dates from sessions_discovered to shots...")
@@ -736,6 +815,8 @@ def main():
                                                help='Manage session date reclassification')
     reclassify_parser.add_argument('--scrape', action='store_true',
                                     help='Scrape dates from report pages (rate-limited)')
+    reclassify_parser.add_argument('--from-listing', action='store_true',
+                                    help='Re-discover sessions from listing page to extract dates')
     reclassify_parser.add_argument('--manual', nargs=2, metavar=('REPORT_ID', 'DATE'),
                                     help='Set date manually (YYYY-MM-DD format)')
     reclassify_parser.add_argument('--backfill', action='store_true',
