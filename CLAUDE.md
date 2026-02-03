@@ -16,6 +16,9 @@ python -m unittest tests.test_golf_db
 python -m unittest tests.unit.test_ml_models
 python -m unittest tests.unit.test_local_coach
 python -m unittest tests.unit.test_date_parsing
+python -m unittest tests.unit.test_exceptions
+python -m unittest tests.unit.test_credential_manager
+python -m unittest tests.unit.test_naming_conventions
 python -m unittest tests.integration.test_automation_flow
 python -m unittest tests.integration.test_date_reclassification
 
@@ -70,7 +73,7 @@ Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
 | `ml/` | ML models: XGBoost distance prediction, shot shape classification, anomaly detection |
 | `services/ai/` | AI provider registry (decorator pattern for pluggable backends) |
 | `components/` | Reusable Streamlit UI components (all follow `render_*()` pattern) |
-| `exceptions.py` | Exception hierarchy rooted at `GolfDataAppError` with context dicts |
+| `exceptions.py` | Exception hierarchy: `GolfDataAppError` base with `DatabaseError`, `ValidationError`, `RateLimitError`, `AuthenticationError`, etc. — all carry context dicts |
 | `golf_scraper.py` | Legacy scraper (pre-Playwright, still functional) |
 
 ### Hybrid Database Pattern
@@ -184,3 +187,29 @@ Tests use `unittest` (and are also compatible with `pytest`). Shared fixtures in
 GitHub Actions (`.github/workflows/ci.yml`):
 - **test** job: Python 3.10, 3.11, 3.12 — `py_compile` lint + `unittest discover`
 - **validate-ml** job: Verifies all ML classes import and `LocalCoach` instantiates
+
+## Known Limitations
+
+### Session Date Accuracy (Uneekor Portal Limitation)
+
+**Problem:** The Uneekor portal does not expose the original session date (when golf was actually played). The dates shown on report pages are the "view date" (current date), not the historical session date. The API also lacks timestamp fields in the shot data.
+
+**Impact:** The `session_date` field in the database reflects either:
+- The date the session was discovered/scraped (approximate)
+- A manually-entered date (if corrected)
+- The current date (if scraped from report page)
+
+**Current state (as of 2026-02-02):**
+- 115 of 118 sessions have `session_date` values that are scrape/discovery dates, not actual session dates
+- The `reclassify-dates --scrape` command visits report pages but finds today's date, not historical dates
+- Session IDs are sequential (lower = older) but the exact date mapping is unknown
+
+**Workaround:** Use `--manual` to set dates for sessions you remember:
+```bash
+python automation_runner.py reclassify-dates --manual <report_id> <YYYY-MM-DD>
+```
+
+**Future options:**
+1. Manual date entry for important sessions
+2. Cross-reference with external records (calendar, scorecard apps)
+3. Accept that historical dates are approximate
