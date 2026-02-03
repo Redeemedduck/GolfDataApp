@@ -520,7 +520,8 @@ def cmd_reclassify_dates(args):
                     print(f"[{i+1}/{len(missing)}] Scraping {session['report_id']}...")
 
                     try:
-                        extracted_date = await navigator.extract_date_from_report_page(report_url)
+                        debug_mode = getattr(args, 'debug', False)
+                        extracted_date = await navigator.extract_date_from_report_page(report_url, debug=debug_mode)
 
                         if extracted_date:
                             # Update sessions_discovered
@@ -671,6 +672,8 @@ def main():
                                     help='Run browser in headless mode')
     reclassify_parser.add_argument('--dry-run', action='store_true',
                                     help='Preview without making changes')
+    reclassify_parser.add_argument('--debug', action='store_true',
+                                    help='Show detailed extraction attempts')
 
     args = parser.parse_args()
 

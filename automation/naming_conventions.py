@@ -492,10 +492,175 @@ class AutoTagger:
         self._rules.append((rule_name, condition_fn, tag))
 
 
+class SessionContextParser:
+    """
+    Parses session context strings to extract club names and session types.
+
+    Many Uneekor session names contain embedded club information:
+    - "Warmup PW" -> session_type='warmup', club='PW'
+    - "Wedge 50" -> session_type=None, club='GW' (50 degree)
+    - "8 Iron Dst Trainer" -> session_type='drill', club='8 Iron'
+    - "Sgt Rd1" -> session_type='sim_round', club=None
+
+    Usage:
+        parser = SessionContextParser()
+        result = parser.parse("Warmup PW")
+        print(result)  # {'session_type': 'warmup', 'club': 'PW', 'context': 'warmup'}
+    """
+
+    # Session type patterns (order matters - more specific first)
+    SESSION_TYPE_PATTERNS = [
+        # Simulated Golf Tour patterns
+        (r'\bSgt\b.*\bRd\s*(\d)', 'sim_round', 'Sim Golf Tour Round'),
+        (r'\bSgt\b', 'sim_round', 'Sim Golf Tour'),
+        # Practice modes
+        (r'\bWarmup\b|\bWmup\b', 'warmup', 'Warmup'),
+        (r'\bBag\s*Mapping\b', 'bag_mapping', 'Bag Mapping'),
+        (r'\bDst\b.*\b(Trainer|Compressor)\b', 'drill', 'Distance Trainer'),
+        (r'\bDst\b', 'drill', 'Distance Work'),
+        (r'\bDrill\b', 'drill', 'Drill'),
+        (r'\bPar\s*3\b', 'practice', 'Par 3 Practice'),
+        # Course play
+        (r'\bSilvertip\b|\bShadow\s*Ridge\b|\bKapalua\b|\bWailaie\b|\bPlantation\b|\bSony\s*Open\b|\bNewport\b', 'sim_round', 'Course Play'),
+    ]
+
+    # Club extraction patterns (look for club names embedded in context)
+    CLUB_EXTRACTION_PATTERNS = [
+        # "Warmup PW", "Warmup 50 Degree"
+        (r'\b(PW|GW|AW|SW|LW)\b', None),  # Wedge abbreviations
+        (r'\b(\d{1,2})\s*(?:Iron|i)\b', '{0} Iron'),  # "8 Iron", "8i"
+        (r'\b(\d{1,2})\s*(?:deg(?:ree)?|\u00b0)', 'degree'),  # "50 degree", "50°"
+        (r'\bWedge\s*(\d{2})\b', 'degree'),  # "Wedge 50"
+        (r'\bWedge\s*(Pitching|Sand|Lob|Gap|Approach)\b', 'wedge_type'),  # "Wedge Pitching"
+        (r'\b(Driver|Putter)\b', None),
+        (r'\b(\d)\s*(?:Wood|W)\b', '{0} Wood'),  # "3 Wood", "3W"
+        (r'\b(\d)\s*(?:Hybrid|H)\b', '{0} Hybrid'),  # "4 Hybrid", "4H"
+        # "Dst Compressor 8" or "Compressor 8" -> 8 Iron
+        (r'(?:Dst\s*)?Compressor\s*(\d)\b', '{0} Iron'),
+    ]
+
+    # Wedge type to abbreviation
+    WEDGE_TYPE_MAP = {
+        'pitching': 'PW',
+        'sand': 'SW',
+        'lob': 'LW',
+        'gap': 'GW',
+        'approach': 'AW',
+    }
+
+    # Degree to wedge mapping
+    DEGREE_TO_WEDGE = {
+        44: 'PW', 45: 'PW', 46: 'PW', 47: 'PW', 48: 'PW',
+        49: 'GW', 50: 'GW', 51: 'GW', 52: 'GW',
+        53: 'SW', 54: 'SW', 55: 'SW', 56: 'SW',
+        57: 'LW', 58: 'LW', 59: 'LW', 60: 'LW', 61: 'LW', 62: 'LW',
+    }
+
+    def __init__(self):
+        """Initialize the parser."""
+        self._type_patterns = [
+            (re.compile(pattern, re.IGNORECASE), stype, label)
+            for pattern, stype, label in self.SESSION_TYPE_PATTERNS
+        ]
+        self._club_patterns = [
+            (re.compile(pattern, re.IGNORECASE), fmt)
+            for pattern, fmt in self.CLUB_EXTRACTION_PATTERNS
+        ]
+        self._normalizer = ClubNameNormalizer()
+
+    def parse(self, context_string: str) -> Dict[str, Optional[str]]:
+        """
+        Parse a session context string.
+
+        Args:
+            context_string: Raw context/club string from Uneekor
+
+        Returns:
+            Dict with 'session_type', 'club', 'context_label' keys
+        """
+        if not context_string:
+            return {'session_type': None, 'club': None, 'context_label': None}
+
+        result = {
+            'session_type': None,
+            'club': None,
+            'context_label': None,
+            'original': context_string,
+        }
+
+        # Try to detect session type
+        for pattern, stype, label in self._type_patterns:
+            if pattern.search(context_string):
+                result['session_type'] = stype
+                result['context_label'] = label
+                break
+
+        # Try to extract club name
+        for pattern, fmt in self._club_patterns:
+            match = pattern.search(context_string)
+            if match:
+                if fmt == 'degree':
+                    # Handle degree-based wedge
+                    try:
+                        degree = int(match.group(1))
+                        result['club'] = self.DEGREE_TO_WEDGE.get(degree, f'{degree} Wedge')
+                    except (ValueError, IndexError):
+                        continue
+                elif fmt == 'wedge_type':
+                    # Handle "Wedge Pitching" -> "PW"
+                    wedge_type = match.group(1).lower()
+                    result['club'] = self.WEDGE_TYPE_MAP.get(wedge_type, 'PW')
+                elif fmt:
+                    # Format with captured group
+                    result['club'] = fmt.format(match.group(1))
+                else:
+                    # Direct match
+                    result['club'] = match.group(1).upper() if len(match.group(1)) <= 2 else match.group(1)
+
+                # Normalize the extracted club
+                if result['club']:
+                    result['club'] = self._normalizer.normalize(result['club']).normalized
+                break
+
+        # If no session type detected but no club found, it might be a standard club
+        if not result['session_type'] and not result['club']:
+            # Try normalizing the whole string as a club name
+            norm_result = self._normalizer.normalize(context_string)
+            if norm_result.confidence >= 0.9:
+                result['club'] = norm_result.normalized
+
+        return result
+
+    def extract_club(self, context_string: str) -> Optional[str]:
+        """
+        Convenience method to extract just the club name.
+
+        Args:
+            context_string: Raw context/club string
+
+        Returns:
+            Normalized club name or None
+        """
+        return self.parse(context_string).get('club')
+
+    def extract_session_type(self, context_string: str) -> Optional[str]:
+        """
+        Convenience method to extract just the session type.
+
+        Args:
+            context_string: Raw context/club string
+
+        Returns:
+            Session type or None
+        """
+        return self.parse(context_string).get('session_type')
+
+
 # Singleton instances for convenience
 _normalizer: Optional[ClubNameNormalizer] = None
 _session_namer: Optional[SessionNamer] = None
 _auto_tagger: Optional[AutoTagger] = None
+_context_parser: Optional[SessionContextParser] = None
 
 
 def get_normalizer() -> ClubNameNormalizer:
@@ -530,3 +695,21 @@ def normalize_club(club_name: str) -> str:
 def normalize_clubs(club_names: List[str]) -> List[str]:
     """Convenience function to normalize multiple club names."""
     return get_normalizer().normalize_all(club_names)
+
+
+def get_context_parser() -> SessionContextParser:
+    """Get the singleton SessionContextParser instance."""
+    global _context_parser
+    if _context_parser is None:
+        _context_parser = SessionContextParser()
+    return _context_parser
+
+
+def parse_session_context(context_string: str) -> Dict[str, Optional[str]]:
+    """Convenience function to parse a session context string."""
+    return get_context_parser().parse(context_string)
+
+
+def extract_club_from_context(context_string: str) -> Optional[str]:
+    """Convenience function to extract club name from context string."""
+    return get_context_parser().extract_club(context_string)

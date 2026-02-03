@@ -519,7 +519,7 @@ class UneekorPortalNavigator:
 
         return new_sessions
 
-    async def extract_date_from_report_page(self, report_url: str) -> Optional[datetime]:
+    async def extract_date_from_report_page(self, report_url: str, debug: bool = False) -> Optional[datetime]:
         """
         Navigate to a report page and extract the session date from the header.
 
@@ -528,6 +528,7 @@ class UneekorPortalNavigator:
 
         Args:
             report_url: Full report URL (https://my.uneekor.com/report?id=...&key=...)
+            debug: If True, print detailed extraction attempts
 
         Returns:
             datetime if found, None otherwise
@@ -542,53 +543,124 @@ class UneekorPortalNavigator:
             await self._rate_limiter.wait_async('navigate_report')
 
             # Navigate to the report page
-            await page.goto(report_url)
+            response = await page.goto(report_url)
+            if response and response.status != 200:
+                print(f"  Warning: Page returned status {response.status}")
+
             await page.wait_for_load_state('networkidle')
 
-            # Brief pause for React rendering
-            await asyncio.sleep(0.5)
+            # Wait longer for React rendering to complete
+            await asyncio.sleep(2.0)
 
-            # Try multiple selectors for the date header
-            # Uneekor uses various header elements depending on the page version
+            # Method 1: Use JavaScript to find date patterns in DOM text nodes
+            # This is more reliable than CSS selectors for React apps
+            date_from_js = await page.evaluate(r'''
+                () => {
+                    // Try multiple date patterns
+                    const patterns = [
+                        /(\d{4})\.(\d{1,2})\.(\d{1,2})/,        // YYYY.MM.DD
+                        /(\d{4})-(\d{1,2})-(\d{1,2})/,          // YYYY-MM-DD
+                        /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})/i,  // Mon DD, YYYY
+                    ];
+                    const walker = document.createTreeWalker(
+                        document.body,
+                        NodeFilter.SHOW_TEXT,
+                        null,
+                        false
+                    );
+                    while (walker.nextNode()) {
+                        const text = walker.currentNode.textContent.trim();
+                        for (const regex of patterns) {
+                            const match = text.match(regex);
+                            if (match) return match[0];
+                        }
+                    }
+                    return null;
+                }
+            ''')
+
+            if date_from_js:
+                if debug:
+                    print(f"    Found date via JS walker: {date_from_js}")
+                # Try parsing with _parse_date_from_text which handles multiple formats
+                parsed = self._parse_date_from_text(date_from_js)
+                if parsed:
+                    return parsed
+
+            # Method 2: Try CSS selectors as fallback
             date_selectors = [
-                'h1',  # Main heading often contains the date
+                'h1',
                 'h2',
                 '.report-header',
                 '.session-header',
                 '[class*="header"]',
                 '.date-display',
                 '[class*="date"]',
+                '.MuiTypography-root',  # Material-UI typography
+                '[class*="title"]',
             ]
 
             for selector in date_selectors:
                 try:
                     elements = await page.query_selector_all(selector)
+                    if debug and elements:
+                        print(f"    Selector '{selector}': {len(elements)} elements")
                     for element in elements:
                         text = await element.inner_text()
                         if text:
-                            # Try to parse date from this text
                             parsed_date = self._parse_date_from_text(text)
                             if parsed_date:
+                                if debug:
+                                    print(f"    Found date in '{selector}': {text[:50]}")
                                 return parsed_date
-                except Exception:
+                except Exception as e:
+                    if debug:
+                        print(f"    Selector '{selector}' error: {e}")
                     continue
 
-            # Fallback: try to find date anywhere on the page
+            # Method 3: Regex search on full page text
             try:
                 body_text = await page.inner_text('body')
-                # Look for YYYY.MM.DD pattern specifically
                 import re
+                # Try YYYY.MM.DD format first
                 match = re.search(r'(\d{4})\.(\d{1,2})\.(\d{1,2})', body_text)
                 if match:
                     date_str = match.group(0)
+                    if debug:
+                        print(f"    Found date in body text: {date_str}")
                     return datetime.strptime(date_str, '%Y.%m.%d')
-            except Exception:
-                pass
+
+                # Try other common formats
+                patterns = [
+                    (r'(\d{1,2})/(\d{1,2})/(\d{4})', '%m/%d/%Y'),  # MM/DD/YYYY
+                    (r'(\d{4})-(\d{2})-(\d{2})', '%Y-%m-%d'),      # ISO format
+                ]
+                for pattern, fmt in patterns:
+                    match = re.search(pattern, body_text)
+                    if match:
+                        date_str = match.group(0)
+                        if debug:
+                            print(f"    Found date pattern {fmt}: {date_str}")
+                        try:
+                            return datetime.strptime(date_str, fmt)
+                        except ValueError:
+                            continue
+            except Exception as e:
+                if debug:
+                    print(f"    Body text extraction error: {e}")
+
+            if debug:
+                # Print first 500 chars of page for debugging
+                try:
+                    snippet = await page.inner_text('body')
+                    print(f"    Page text snippet: {snippet[:500]}")
+                except Exception:
+                    pass
 
             return None
 
         except Exception as e:
-            print(f"Error extracting date from report page: {e}")
+            print(f"  Error extracting date from report page: {e}")
             return None
 
 
