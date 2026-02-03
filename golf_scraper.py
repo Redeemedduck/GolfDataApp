@@ -16,6 +16,10 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and
 
 API_BASE_URL = "https://api-v2.golfsvc.com/v2/oldmyuneekor/report"
 
+# Image download limits (security: prevent resource exhaustion)
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_MIME_TYPES = {'image/jpeg', 'image/png', 'image/gif'}
+
 def request_with_retries(url, timeout=30, max_retries=3, backoff=1.5):
     """Fetch a URL with basic retry/backoff for transient failures."""
     last_err = None
@@ -253,9 +257,28 @@ def upload_shot_images(report_id, key, session_id, shot_id):
             if img_path:
                 full_url = f"https://api-v2.golfsvc.com/v2{img_path}"
 
+                # Security: Check image size and type before downloading
+                try:
+                    head_response = requests.head(full_url, timeout=10)
+                    content_length = int(head_response.headers.get('content-length', 0))
+                    content_type = head_response.headers.get('content-type', '').split(';')[0].strip()
+
+                    if content_length > MAX_IMAGE_SIZE:
+                        print(f"Skipping image - too large: {content_length} bytes (max: {MAX_IMAGE_SIZE})")
+                        continue
+                    if content_type and content_type not in ALLOWED_MIME_TYPES:
+                        print(f"Skipping image - invalid type: {content_type}")
+                        continue
+                except requests.exceptions.RequestException:
+                    pass  # HEAD failed, proceed with GET
+
                 # Download image into memory
                 img_response = request_with_retries(full_url, timeout=30)
                 if img_response.status_code == 200:
+                    # Double-check size after download
+                    if len(img_response.content) > MAX_IMAGE_SIZE:
+                        print(f"Skipping image - downloaded size exceeds limit")
+                        continue
                     image_bytes = img_response.content
                     
                     # Define path in Supabase bucket

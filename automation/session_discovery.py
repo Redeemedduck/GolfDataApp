@@ -377,6 +377,13 @@ class SessionDiscovery:
                     if not filter_set.intersection(session_clubs):
                         continue
 
+                # Safely get attempt_count which may not exist in older databases
+                attempt_count = 0
+                try:
+                    attempt_count = row['attempt_count'] or 0
+                except (KeyError, IndexError):
+                    pass
+
                 items.append(ImportQueueItem(
                     report_id=row['report_id'],
                     api_key=row['api_key'],
@@ -384,7 +391,7 @@ class SessionDiscovery:
                     session_date=datetime.fromisoformat(row['session_date']) if row['session_date'] else None,
                     priority=row['priority'] or 0,
                     status=ImportStatus(row['import_status']),
-                    attempts=0,  # Not tracked in current schema
+                    attempts=attempt_count,  # Use attempt_count from schema
                     last_attempt=None,
                     error_message=row['import_error'],
                     clubs_used=clubs_used,

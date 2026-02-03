@@ -177,7 +177,13 @@ class LocalCoach:
             )
 
         if club:
-            club_df = df[df['club'].str.lower() == club.lower()] if club else df
+            # Validate club column exists and is string type before using .str accessor
+            if 'club' not in df.columns:
+                return CoachResponse(
+                    message="No club data found in shots. Check your data import.",
+                    confidence=0.8
+                )
+            club_df = df[df['club'].astype(str).str.lower() == club.lower()]
             if club_df.empty:
                 available = df['club'].unique().tolist()
                 return CoachResponse(
@@ -298,6 +304,15 @@ class LocalCoach:
                 confidence=0.9
             )
 
+        # Validate required columns exist
+        required_cols = ['club', 'carry', 'total', 'shot_id']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            return CoachResponse(
+                message=f"Missing required columns for comparison: {', '.join(missing_cols)}",
+                confidence=0.7
+            )
+
         # Get club averages
         club_stats = df.groupby('club').agg({
             'carry': lambda x: x.replace([0, 99999], np.nan).mean(),
@@ -337,9 +352,22 @@ class LocalCoach:
                 confidence=0.9
             )
 
-        # Get most recent session
-        df['date_added'] = pd.to_datetime(df['date_added'])
-        latest_session = df.loc[df['date_added'].idxmax(), 'session_id']
+        # Validate date_added column exists and has valid values
+        if 'date_added' not in df.columns:
+            return CoachResponse(
+                message="No session date data available. Import some sessions first!",
+                confidence=0.8
+            )
+
+        df['date_added'] = pd.to_datetime(df['date_added'], errors='coerce')
+
+        # Filter to rows with valid dates
+        valid_dates = df[df['date_added'].notna()]
+        if valid_dates.empty:
+            # Fallback: use first session_id if no valid dates
+            latest_session = df['session_id'].iloc[0]
+        else:
+            latest_session = valid_dates.loc[valid_dates['date_added'].idxmax(), 'session_id']
 
         return self.get_session_insights(latest_session)
 

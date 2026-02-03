@@ -262,11 +262,11 @@ class ShotShapeClassifier:
         self._use_ml = True
         self._feature_names = available_features
 
-        # Calculate accuracy
-        accuracy = self.model.score(X_scaled, y)
+        # Calculate training accuracy (not test accuracy - would need train/test split)
+        training_accuracy = self.model.score(X_scaled, y)
 
         return {
-            'accuracy': accuracy,
+            'training_accuracy': training_accuracy,  # Labeled clearly as training accuracy
             'samples': len(df_train),
             'features': available_features,
         }
@@ -318,9 +318,10 @@ class ShotShapeClassifier:
         probabilities = self.model.predict_proba(X_scaled)[0]
         confidence = float(max(probabilities))
 
-        # Map to ShotShape enum
+        # Map to ShotShape enum (safely cast prediction to string first)
         try:
-            shape = ShotShape(prediction.lower())
+            prediction_str = str(prediction).lower() if prediction is not None else 'unknown'
+            shape = ShotShape(prediction_str)
         except ValueError:
             shape = ShotShape.UNKNOWN
 

@@ -190,7 +190,15 @@ class BackfillRunner:
         """
         self.config = config or BackfillConfig()
         self.discovery = discovery or SessionDiscovery()
-        self.rate_limiter = rate_limiter or get_backfill_limiter()
+        # Apply max_sessions_per_hour config to rate limiter if not explicitly provided
+        if rate_limiter:
+            self.rate_limiter = rate_limiter
+        else:
+            from .rate_limiter import RateLimiter, RateLimiterConfig
+            # Use configured sessions per hour (default 6) instead of ignoring it
+            self.rate_limiter = RateLimiter(RateLimiterConfig(
+                requests_per_minute=self.config.max_sessions_per_hour,
+            ))
         self.notifier = notifier or get_notifier()
 
         # Naming tools
@@ -539,6 +547,8 @@ class BackfillRunner:
             clubs_str = ', '.join(item.clubs_used) if item.clubs_used else 'unknown clubs'
             date_str = item.session_date.strftime('%Y-%m-%d') if item.session_date else 'unknown date'
             print(f"  [DRY RUN] Would import {item.report_id}: {item.portal_name or 'Unnamed'} ({date_str}) - {clubs_str}")
+            # Increment sessions_imported for progress tracking (even though not actually imported)
+            # This is intentional: dry-run simulates what would happen
             self.sessions_imported += 1
             return True
 

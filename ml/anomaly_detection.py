@@ -387,12 +387,19 @@ class SwingFlawDetector:
         X = np.array([features])
         X_scaled = self.scaler.transform(X)
 
-        # Get anomaly score
-        ml_score = -self.model.score_samples(X_scaled)[0]  # Negate to get positive score
+        # Get anomaly score from Isolation Forest
+        # score_samples returns negative values where more negative = more anomalous
+        # Typical range is roughly -0.5 (normal) to -1.0 (anomaly)
+        raw_ml_score = self.model.score_samples(X_scaled)[0]
+
+        # Normalize to 0-1 range: -0.5 -> 0, -1.0 -> 1.0
+        # Formula: 1 - (raw_score - (-1)) / ((-0.5) - (-1)) = 1 - (raw_score + 1) / 0.5
+        ml_score = max(0.0, min(1.0, 1 - (raw_ml_score + 1) / 0.5))
+
         ml_prediction = self.model.predict(X_scaled)[0]
         is_ml_outlier = ml_prediction == -1
 
-        # Combine rule-based and ML results
+        # Combine rule-based and ML results (both now 0-1 normalized)
         combined_score = (rule_result.anomaly_score + ml_score) / 2
         is_outlier = rule_result.is_outlier or is_ml_outlier
 

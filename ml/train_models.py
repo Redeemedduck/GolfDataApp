@@ -52,6 +52,9 @@ MODELS_DIR = Path(__file__).parent.parent / 'models'
 DISTANCE_MODEL_PATH = MODELS_DIR / 'distance_model.joblib'
 MODEL_METADATA_PATH = MODELS_DIR / 'model_metadata.json'
 
+# Trusted directory for model loading (security: prevent path traversal)
+TRUSTED_MODEL_DIR = MODELS_DIR
+
 
 @dataclass
 class ModelMetadata:
@@ -114,11 +117,24 @@ def load_model(path: Path) -> Tuple[Any, Optional[ModelMetadata]]:
 
     Returns:
         Tuple of (model, metadata)
+
+    Raises:
+        ValueError: If path is outside trusted model directory (security)
+        FileNotFoundError: If model file doesn't exist
     """
-    if not path.exists():
+    # Security: Validate path is within trusted directory to prevent RCE via path traversal
+    resolved_path = Path(path).resolve()
+    trusted_resolved = TRUSTED_MODEL_DIR.resolve()
+    if not str(resolved_path).startswith(str(trusted_resolved)):
+        raise ValueError(
+            f"Security: Model path must be within {TRUSTED_MODEL_DIR}. "
+            f"Got: {path}"
+        )
+
+    if not resolved_path.exists():
         raise FileNotFoundError(f"Model not found: {path}")
 
-    model = joblib.load(path)
+    model = joblib.load(resolved_path)
 
     # Try to load metadata
     metadata = None
@@ -311,11 +327,25 @@ class DistancePredictor:
         """Check if model is loaded."""
         return self.model is not None
 
+    # Default feature names in case model was saved without metadata
+    DEFAULT_FEATURE_NAMES = [
+        'ball_speed',
+        'launch_angle',
+        'back_spin',
+        'club_speed',
+        'attack_angle',
+        'dynamic_loft',
+    ]
+
     def load(self) -> None:
         """Load the model from disk."""
         self.model, self.metadata = load_model(self.model_path)
-        if self.metadata:
+        if self.metadata and self.metadata.features:
             self._feature_names = self.metadata.features
+        else:
+            # Fallback to defaults if metadata is missing
+            self._feature_names = self.DEFAULT_FEATURE_NAMES
+            print("Warning: Model loaded without feature names, using defaults")
         print(f"Loaded distance model: {self.model_path}")
 
     def train(self, df: Optional[pd.DataFrame] = None, save: bool = True) -> ModelMetadata:

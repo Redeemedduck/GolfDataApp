@@ -57,8 +57,11 @@ class ModelNotTrainedError(GolfDataAppError):
         super().__init__(msg, {'model': model_name})
 
 
-class ImportError(GolfDataAppError):
-    """Exception for session/shot import failures."""
+class DataImportError(GolfDataAppError):
+    """Exception for session/shot import failures.
+
+    Note: Named DataImportError to avoid shadowing Python's built-in ImportError.
+    """
 
     def __init__(self, message: str, session_id: str = None, source: str = None):
         details = {}
@@ -67,6 +70,10 @@ class ImportError(GolfDataAppError):
         if source:
             details['source'] = source
         super().__init__(message, details)
+
+
+# Backwards compatibility alias (deprecated - use DataImportError)
+ImportError = DataImportError
 
 
 class ValidationError(GolfDataAppError):

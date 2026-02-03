@@ -5,6 +5,8 @@ import numpy as np
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
+from exceptions import ValidationError, DatabaseError
+
 load_dotenv()
 
 # --- Configuration ---
@@ -171,8 +173,9 @@ def _ensure_default_tags():
             )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except sqlite3.Error as e:
+        # Log database errors but don't fail initialization
+        print(f"Warning: Could not ensure default tags: {e}")
 
 # --- Data Source Info ---
 def get_read_source():
@@ -384,12 +387,35 @@ def _fetch_supabase_sessions(page_size=1000):
 
 # --- Hybrid Save (Local + Cloud) ---
 def save_shot(data):
-    """Save shot data to local SQLite and Supabase (hybrid)."""
-    
+    """Save shot data to local SQLite and Supabase (hybrid).
+
+    Args:
+        data: Dict containing shot data. Must include 'id'/'shot_id' and 'session'/'session_id'.
+
+    Raises:
+        ValidationError: If shot_id or session_id is missing/null
+    """
+    # Validate required fields before any database operation
+    shot_id = data.get('id', data.get('shot_id'))
+    session_id = data.get('session', data.get('session_id'))
+
+    if not shot_id:
+        raise ValidationError(
+            "shot_id is required",
+            field='shot_id',
+            value=shot_id
+        )
+    if not session_id:
+        raise ValidationError(
+            "session_id is required",
+            field='session_id',
+            value=session_id
+        )
+
     # Prepare unified payload
     payload = {
-        'shot_id': data.get('id', data.get('shot_id')),
-        'session_id': data.get('session', data.get('session_id')),
+        'shot_id': shot_id,
+        'session_id': session_id,
         'session_date': data.get('session_date'),
         'session_type': data.get('session_type'),
         'club': data.get('club'),
@@ -787,6 +813,10 @@ def split_session(session_id, shot_ids, new_session_id):
     Returns:
         Number of shots moved
     """
+    # Guard against empty shot_ids (would cause SQL syntax error)
+    if not shot_ids:
+        return 0
+
     # Local
     try:
         conn = sqlite3.connect(SQLITE_DB_PATH)
@@ -1281,6 +1311,18 @@ def deduplicate_shots():
 # AUDIT TRAIL FUNCTIONS (Phase 2)
 # ============================================================================
 
+# Allowlist of valid columns for restore operation (security: prevent SQL injection)
+ALLOWED_RESTORE_COLUMNS = frozenset({
+    'shot_id', 'session_id', 'date_added', 'session_date', 'session_type',
+    'club', 'carry', 'total', 'smash', 'club_path', 'face_angle',
+    'ball_speed', 'club_speed', 'side_spin', 'back_spin', 'launch_angle',
+    'side_angle', 'dynamic_loft', 'attack_angle', 'impact_x', 'impact_y',
+    'side_distance', 'descent_angle', 'apex', 'flight_time', 'shot_type',
+    'impact_img', 'swing_img', 'optix_x', 'optix_y', 'club_lie', 'lie_angle',
+    'shot_tag',
+})
+
+
 def restore_deleted_shots(shot_ids):
     """
     Restore previously deleted shots from archive.
@@ -1290,6 +1332,9 @@ def restore_deleted_shots(shot_ids):
 
     Returns:
         Number of shots restored
+
+    Raises:
+        ValidationError: If archived data contains invalid column names
     """
     import json
 
@@ -1306,7 +1351,16 @@ def restore_deleted_shots(shot_ids):
             if row:
                 original_data = json.loads(row[0])
 
-                # Restore to shots table
+                # Security: Validate column names against allowlist
+                invalid_keys = set(original_data.keys()) - ALLOWED_RESTORE_COLUMNS
+                if invalid_keys:
+                    raise ValidationError(
+                        f"Invalid columns in archived data: {invalid_keys}",
+                        field='columns',
+                        value=list(invalid_keys)
+                    )
+
+                # Restore to shots table (columns now validated)
                 columns = ', '.join(original_data.keys())
                 placeholders = ', '.join(['?'] * len(original_data))
                 cursor.execute(
@@ -1543,3 +1597,205 @@ def update_session_date_for_shots(session_id: str, session_date: str):
             print(f"Supabase Update Session Date Error: {e}")
 
     return updated
+
+
+# ============================================================================
+# SUPABASE SYNC FUNCTIONS
+# ============================================================================
+
+def get_detailed_sync_status() -> dict:
+    """
+    Compare SQLite and Supabase in detail for reconciliation.
+
+    Returns:
+        Dict with counts and lists of missing records in each direction
+    """
+    status = {
+        'shots': {
+            'sqlite': 0,
+            'supabase': 0,
+            'missing_in_supabase': [],
+            'missing_in_sqlite': [],
+        },
+        'connected': supabase is not None,
+        'error': None,
+    }
+
+    if not supabase:
+        status['error'] = "Supabase not configured"
+        return status
+
+    try:
+        # Get local shot IDs
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT shot_id FROM shots")
+        local_ids = {row[0] for row in cursor.fetchall()}
+        status['shots']['sqlite'] = len(local_ids)
+        conn.close()
+
+        # Get remote shot IDs (paginated)
+        remote_ids = set()
+        offset = 0
+        page_size = 1000
+        while True:
+            response = supabase.table('shots').select('shot_id').range(offset, offset + page_size - 1).execute()
+            data = response.data or []
+            if not data:
+                break
+            remote_ids.update(row['shot_id'] for row in data)
+            if len(data) < page_size:
+                break
+            offset += page_size
+
+        status['shots']['supabase'] = len(remote_ids)
+
+        # Find differences
+        status['shots']['missing_in_supabase'] = list(local_ids - remote_ids)[:100]  # Cap at 100
+        status['shots']['missing_in_sqlite'] = list(remote_ids - local_ids)[:100]
+
+    except Exception as e:
+        status['error'] = str(e)
+
+    return status
+
+
+def sync_to_supabase(dry_run: bool = False, batch_size: int = 100) -> dict:
+    """
+    Push all local SQLite data to Supabase (local is source of truth).
+
+    Args:
+        dry_run: If True, report what would be synced without making changes
+        batch_size: Number of records per batch upsert
+
+    Returns:
+        Dict with sync results: {'shots_synced': int, 'errors': list}
+    """
+    results = {
+        'shots_synced': 0,
+        'shots_total': 0,
+        'batches': 0,
+        'errors': [],
+        'dry_run': dry_run,
+    }
+
+    if not supabase:
+        results['errors'].append("Supabase not configured. Set SUPABASE_URL and SUPABASE_KEY.")
+        return results
+
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Get all local shots
+        cursor.execute("SELECT * FROM shots")
+        rows = cursor.fetchall()
+        results['shots_total'] = len(rows)
+
+        if dry_run:
+            results['message'] = f"Would sync {len(rows)} shots to Supabase"
+            conn.close()
+            return results
+
+        # Convert rows to dicts and batch upsert
+        shots = [dict(row) for row in rows]
+
+        for i in range(0, len(shots), batch_size):
+            batch = shots[i:i + batch_size]
+            try:
+                # Clean datetime fields for JSON serialization
+                for shot in batch:
+                    for key, value in shot.items():
+                        if hasattr(value, 'isoformat'):
+                            shot[key] = value.isoformat()
+
+                supabase.table('shots').upsert(batch).execute()
+                results['shots_synced'] += len(batch)
+                results['batches'] += 1
+            except Exception as e:
+                results['errors'].append(f"Batch {results['batches'] + 1} error: {str(e)[:100]}")
+
+        conn.close()
+
+    except Exception as e:
+        results['errors'].append(f"Sync error: {str(e)}")
+
+    return results
+
+
+def sync_from_supabase(dry_run: bool = False) -> dict:
+    """
+    Pull missing records from Supabase to local SQLite.
+
+    Only syncs records that exist in Supabase but not locally.
+    Does NOT overwrite existing local records.
+
+    Args:
+        dry_run: If True, report what would be synced without making changes
+
+    Returns:
+        Dict with sync results
+    """
+    results = {
+        'shots_synced': 0,
+        'errors': [],
+        'dry_run': dry_run,
+    }
+
+    if not supabase:
+        results['errors'].append("Supabase not configured")
+        return results
+
+    try:
+        # Get local shot IDs
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT shot_id FROM shots")
+        local_ids = {row[0] for row in cursor.fetchall()}
+
+        # Fetch from Supabase in batches
+        offset = 0
+        page_size = 1000
+        new_shots = []
+
+        while True:
+            response = supabase.table('shots').select('*').range(offset, offset + page_size - 1).execute()
+            data = response.data or []
+            if not data:
+                break
+
+            for shot in data:
+                if shot['shot_id'] not in local_ids:
+                    new_shots.append(shot)
+
+            if len(data) < page_size:
+                break
+            offset += page_size
+
+        if dry_run:
+            results['message'] = f"Would sync {len(new_shots)} shots from Supabase"
+            results['shots_to_sync'] = len(new_shots)
+            conn.close()
+            return results
+
+        # Insert new shots
+        for shot in new_shots:
+            try:
+                columns = ', '.join(shot.keys())
+                placeholders = ', '.join(['?'] * len(shot))
+                cursor.execute(
+                    f"INSERT OR IGNORE INTO shots ({columns}) VALUES ({placeholders})",
+                    list(shot.values())
+                )
+                results['shots_synced'] += 1
+            except Exception as e:
+                results['errors'].append(f"Insert error: {str(e)[:50]}")
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        results['errors'].append(f"Sync error: {str(e)}")
+
+    return results

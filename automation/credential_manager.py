@@ -19,8 +19,6 @@ Security:
 
 import os
 import json
-import base64
-import hashlib
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
@@ -95,8 +93,13 @@ class CredentialManager:
             self._init_encryption()
 
     def _init_encryption(self) -> None:
-        """Initialize Fernet encryption with key from env or file."""
-        # Try environment variable first
+        """Initialize Fernet encryption with key from env or file.
+
+        Security Note: The encryption key is stored locally in plain text.
+        For production use, consider using a secrets manager or key vault.
+        The key file is protected with 0o600 permissions (owner read/write only).
+        """
+        # Try environment variable first (preferred for production)
         key = os.getenv('UNEEKOR_COOKIE_KEY')
 
         if not key:
@@ -104,12 +107,15 @@ class CredentialManager:
             if self.key_file.exists():
                 key = self.key_file.read_text().strip()
             else:
-                # Generate new key
+                # Generate new key and save locally
+                # Warning: Key stored in plain text - suitable for development only
                 key = Fernet.generate_key().decode()
                 if not self.is_cloud_run:
                     # Save for future use (not on Cloud Run)
                     self.key_file.write_text(key)
                     self.key_file.chmod(0o600)  # Restrict permissions
+                    print(f"Note: Encryption key saved to {self.key_file}")
+                    print("For production, set UNEEKOR_COOKIE_KEY environment variable instead.")
 
         self._fernet = Fernet(key.encode() if isinstance(key, str) else key)
 
@@ -298,8 +304,15 @@ class CredentialManager:
         return 'interactive'
 
 
-def ensure_gitignore_entries() -> None:
-    """Ensure credential files are in .gitignore."""
+def ensure_gitignore_entries(force: bool = False) -> bool:
+    """Ensure credential files are in .gitignore.
+
+    Args:
+        force: If True, add entries even if file doesn't exist (creates new .gitignore)
+
+    Returns:
+        True if entries were added, False if already present or skipped
+    """
     gitignore_path = Path(__file__).parent.parent / '.gitignore'
     entries_to_add = [
         '.uneekor_cookies.enc',
@@ -309,6 +322,9 @@ def ensure_gitignore_entries() -> None:
     existing_content = ''
     if gitignore_path.exists():
         existing_content = gitignore_path.read_text()
+    elif not force:
+        # Don't create .gitignore on import - let user do it explicitly
+        return False
 
     entries_needed = [e for e in entries_to_add if e not in existing_content]
 
@@ -318,10 +334,14 @@ def ensure_gitignore_entries() -> None:
             for entry in entries_needed:
                 f.write(f'{entry}\n')
         print(f"Added {len(entries_needed)} entries to .gitignore")
+        return True
+    return False
 
 
-# Ensure gitignore entries on module import
-try:
-    ensure_gitignore_entries()
-except Exception:
-    pass  # Ignore errors during import
+def setup_credentials_gitignore() -> None:
+    """Explicitly set up .gitignore entries. Call from CLI, not import."""
+    ensure_gitignore_entries(force=True)
+
+
+# Note: Removed auto-run on import to avoid unexpected file mutations
+# Call setup_credentials_gitignore() explicitly from CLI if needed

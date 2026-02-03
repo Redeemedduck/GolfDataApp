@@ -21,7 +21,7 @@ https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
 import os
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from pathlib import Path
@@ -137,7 +137,8 @@ class NotificationManager:
     def _is_rate_limited(self) -> bool:
         """Check if we've hit the rate limit."""
         now = datetime.utcnow()
-        hour_ago = now.replace(hour=now.hour - 1 if now.hour > 0 else 23)
+        # Use timedelta instead of replace() to handle day boundary correctly
+        hour_ago = now - timedelta(hours=1)
 
         # Clean old timestamps
         self._notification_times = [

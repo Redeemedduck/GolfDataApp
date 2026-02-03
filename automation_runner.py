@@ -572,6 +572,76 @@ def cmd_reclassify_dates(args):
     return 1
 
 
+def cmd_sync_database(args):
+    """Sync SQLite and Supabase databases."""
+    print("="*60)
+    print("DATABASE SYNC")
+    print("="*60)
+    print()
+
+    # Show current status first
+    status = golf_db.get_detailed_sync_status()
+
+    if status.get('error'):
+        print(f"Error: {status['error']}")
+        return 1
+
+    print("Current Status:")
+    print(f"  SQLite shots:   {status['shots']['sqlite']}")
+    print(f"  Supabase shots: {status['shots']['supabase']}")
+
+    missing_in_supabase = len(status['shots']['missing_in_supabase'])
+    missing_in_sqlite = len(status['shots']['missing_in_sqlite'])
+
+    print(f"  Missing in Supabase: {missing_in_supabase}")
+    print(f"  Missing in SQLite:   {missing_in_sqlite}")
+    print()
+
+    if args.direction == "to-supabase":
+        if missing_in_supabase == 0:
+            print("Supabase is already up to date with SQLite.")
+            return 0
+
+        print(f"Syncing {missing_in_supabase} records to Supabase...")
+        result = golf_db.sync_to_supabase(dry_run=args.dry_run)
+
+        print()
+        if args.dry_run:
+            print(f"[DRY RUN] {result.get('message', 'Would sync data')}")
+        else:
+            print(f"Synced {result['shots_synced']} shots in {result['batches']} batches")
+
+        if result['errors']:
+            print(f"Errors: {len(result['errors'])}")
+            for error in result['errors'][:3]:
+                print(f"  - {error}")
+
+    elif args.direction == "from-supabase":
+        if missing_in_sqlite == 0:
+            print("SQLite is already up to date with Supabase.")
+            return 0
+
+        print(f"Syncing {missing_in_sqlite} records from Supabase...")
+        result = golf_db.sync_from_supabase(dry_run=args.dry_run)
+
+        print()
+        if args.dry_run:
+            print(f"[DRY RUN] {result.get('message', 'Would sync data')}")
+        else:
+            print(f"Synced {result['shots_synced']} shots from Supabase")
+
+        if result['errors']:
+            print(f"Errors: {len(result['errors'])}")
+            for error in result['errors'][:3]:
+                print(f"  - {error}")
+
+    else:
+        print(f"Unknown direction: {args.direction}")
+        return 1
+
+    return 0 if not result.get('errors') else 1
+
+
 def cmd_normalize(args):
     """Normalize club names in database."""
     normalizer = get_normalizer()
@@ -653,6 +723,14 @@ def main():
     normalize_parser.add_argument('--test', type=str,
                                    help='Test normalization on comma-separated club names')
 
+    # Sync-database command
+    sync_parser = subparsers.add_parser('sync-database', help='Sync SQLite and Supabase')
+    sync_parser.add_argument('--direction', choices=['to-supabase', 'from-supabase'],
+                              default='to-supabase',
+                              help='Sync direction (default: to-supabase)')
+    sync_parser.add_argument('--dry-run', action='store_true',
+                              help='Show what would be synced without making changes')
+
     # Reclassify-dates command
     reclassify_parser = subparsers.add_parser('reclassify-dates',
                                                help='Manage session date reclassification')
@@ -690,6 +768,7 @@ def main():
         'notify': cmd_notify,
         'normalize': cmd_normalize,
         'reclassify-dates': cmd_reclassify_dates,
+        'sync-database': cmd_sync_database,
     }
 
     handler = handlers.get(args.command)
