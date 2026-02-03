@@ -41,9 +41,15 @@ python automation_runner.py backfill --retry-failed
 
 # Session date reclassification
 python automation_runner.py reclassify-dates --status
+python automation_runner.py reclassify-dates --from-listing   # Extract from listing page DOM
 python automation_runner.py reclassify-dates --backfill
 python automation_runner.py reclassify-dates --scrape --max 10
 python automation_runner.py reclassify-dates --manual 43285 2026-01-15
+
+# Database sync (SQLite <-> Supabase)
+python automation_runner.py sync-database --dry-run
+python automation_runner.py sync-database
+python automation_runner.py sync-database --direction from-supabase
 ```
 
 ## Architecture Overview
@@ -192,24 +198,25 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ### Session Date Accuracy (Uneekor Portal Limitation)
 
-**Problem:** The Uneekor portal does not expose the original session date (when golf was actually played). The dates shown on report pages are the "view date" (current date), not the historical session date. The API also lacks timestamp fields in the shot data.
+**Problem:** The Uneekor portal does not reliably expose session dates. Report pages show today's "view date", not the original session date.
 
-**Impact:** The `session_date` field in the database reflects either:
-- The date the session was discovered/scraped (approximate)
-- A manually-entered date (if corrected)
-- The current date (if scraped from report page)
+**Solution (as of 2026-02-03):** The listing page (`/portal/reports`) shows sessions grouped by date headers (e.g., "January 15, 2026"). The `--from-listing` command extracts dates from the DOM by walking the page structure and associating each session link with its preceding date header.
 
-**Current state (as of 2026-02-02):**
-- 115 of 118 sessions have `session_date` values that are scrape/discovery dates, not actual session dates
-- The `reclassify-dates --scrape` command visits report pages but finds today's date, not historical dates
-- Session IDs are sequential (lower = older) but the exact date mapping is unknown
-
-**Workaround:** Use `--manual` to set dates for sessions you remember:
+**Recommended approach:**
 ```bash
-python automation_runner.py reclassify-dates --manual <report_id> <YYYY-MM-DD>
+# Extract dates from listing page (most reliable)
+python automation_runner.py reclassify-dates --from-listing
+
+# Then propagate to shots table
+python automation_runner.py reclassify-dates --backfill
 ```
 
-**Future options:**
-1. Manual date entry for important sessions
-2. Cross-reference with external records (calendar, scorecard apps)
-3. Accept that historical dates are approximate
+**Alternative methods:**
+- `--manual <report_id> <YYYY-MM-DD>`: Set dates for sessions you remember
+- `--scrape`: Visit report pages (less reliable, shows current date)
+
+**Date source tracking:** The `date_source` column in `sessions_discovered` tracks where dates came from:
+- `listing_page`: Extracted from listing page DOM (most reliable)
+- `link_text`: Parsed from session link text
+- `report_page`: Scraped from report page header
+- `manual`: Manually entered

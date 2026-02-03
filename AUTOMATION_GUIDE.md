@@ -209,23 +209,27 @@ Manage and fix session dates in your database. Session dates are the actual date
 # Check date status
 python automation_runner.py reclassify-dates --status
 
+# Extract dates from listing page DOM (recommended)
+python automation_runner.py reclassify-dates --from-listing
+
 # Backfill dates from sessions_discovered to shots table
 python automation_runner.py reclassify-dates --backfill
 
-# Scrape dates from Uneekor report pages (slow, rate-limited)
+# Scrape dates from Uneekor report pages (slow, less reliable)
 python automation_runner.py reclassify-dates --scrape --max 10 --delay 300
 
 # Set date manually for a specific session
 python automation_runner.py reclassify-dates --manual 43285 2026-01-15
 
 # Preview what would change (dry run)
-python automation_runner.py reclassify-dates --scrape --dry-run
+python automation_runner.py reclassify-dates --from-listing --dry-run
 ```
 
 **Options:**
 | Option | Description |
 |--------|-------------|
 | `--status` | Show summary of sessions with/without dates |
+| `--from-listing` | Extract dates from listing page DOM (recommended) |
 | `--backfill` | Copy dates from sessions_discovered to shots table |
 | `--scrape` | Navigate to report pages and extract dates (slow) |
 | `--manual REPORT_ID DATE` | Set date for a specific session |
@@ -235,9 +239,43 @@ python automation_runner.py reclassify-dates --scrape --dry-run
 | `--dry-run` | Preview without making changes |
 
 **When to use each option:**
-- `--backfill`: After import, to copy dates from portal to shots
-- `--scrape`: For sessions missing dates (extracts from report page headers)
+- `--from-listing`: Best option - extracts dates from listing page headers (e.g., "January 15, 2026")
+- `--backfill`: After import or --from-listing, to propagate dates to shots table
+- `--scrape`: Fallback for missing dates (visits individual report pages)
 - `--manual`: When you know the correct date and want to fix it quickly
+
+**Date source tracking:** The `date_source` column tracks where dates came from:
+- `listing_page`: Extracted from listing page DOM (most reliable)
+- `link_text`: Parsed from session link text
+- `report_page`: Scraped from report page header
+- `manual`: Manually entered
+
+### `sync-database` - Database Synchronization
+
+Sync local SQLite database with Supabase cloud database.
+
+```bash
+# Show what would be synced (dry run)
+python automation_runner.py sync-database --dry-run
+
+# Sync local data to Supabase (local is source of truth)
+python automation_runner.py sync-database
+
+# Pull from Supabase to local (cloud is source of truth)
+python automation_runner.py sync-database --direction from-supabase
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--direction` | `to-supabase` (default) or `from-supabase` |
+| `--dry-run` | Show what would be synced without making changes |
+
+**Sync details:**
+- Syncs `shots`, `sessions_discovered`, and `tag_catalog` tables
+- Uses upsert (insert or update) to avoid duplicates
+- Batches operations for efficiency (100 records at a time)
+- Reports count of records synced and any errors
 
 ---
 

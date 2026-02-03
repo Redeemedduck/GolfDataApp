@@ -40,6 +40,12 @@ python automation_runner.py discover --headless
 
 # Historical backfill
 python automation_runner.py backfill --start 2025-01-01
+
+# Extract session dates from listing page
+python automation_runner.py reclassify-dates --from-listing
+
+# Sync to Supabase cloud
+python automation_runner.py sync-database
 ```
 
 *Full details in [AUTOMATION_GUIDE.md](AUTOMATION_GUIDE.md).*

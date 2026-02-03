@@ -4,6 +4,57 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-03: Code Quality Fixes, Date Extraction, and Supabase Sync
+
+### Security Fix (P1)
+- **ml/train_models.py**: Fixed RCE vulnerability in `joblib.load()` by adding path validation to ensure models only load from trusted directory
+
+### Data Integrity Fixes (P2)
+- **golf_db.py**: Fixed empty `IN()` clause in `split_session()` when shot_ids is empty
+- **golf_db.py**: Added `ValidationError` for null `shot_id`/`session_id` in `save_shot()`
+- **golf_db.py**: Added `ALLOWED_RESTORE_COLUMNS` allowlist to prevent SQL injection in `restore_deleted_shots()`
+- **golf_scraper.py**: Added size/MIME validation for image downloads
+- **local_coach.py**: Fixed `idxmax()` on empty/NaT column in session analysis
+- **automation/notifications.py**: Fixed rate-limit window bug using `timedelta` instead of `replace()`
+- **automation/backfill_runner.py**: Applied `max_sessions_per_hour` config to RateLimiter
+- **ml/train_models.py**: Added `DEFAULT_FEATURE_NAMES` fallback for models without metadata
+- **ml/classifiers.py**: Fixed label casting with `str(prediction).lower()`
+
+### Code Quality Fixes (P3)
+- **exceptions.py**: Renamed `ImportError` to `DataImportError` (avoid shadowing builtin)
+- **local_coach.py**: Added column validation before `.str` accessor usage
+- **automation/session_discovery.py**: Populated `attempts` from `attempt_count` column
+- **automation/credential_manager.py**: Removed unused imports, added encryption key docs
+- **ml/anomaly_detection.py**: Normalized isolation forest scores to 0-1 range
+- **services/ai/registry.py**: Added `Optional` return type, duplicate provider warning
+
+### New Feature: Date Extraction from Listing Page
+- **automation/naming_conventions.py**: Added `parse_listing_date()` method
+- **automation/uneekor_portal.py**: Enhanced `_find_session_links()` with DOM walker to extract date context from listing page headers
+- **automation/session_discovery.py**: Store `date_source` to track date provenance
+- **automation_runner.py**: Added `--from-listing` option to `reclassify-dates` command
+
+### New Feature: Supabase Sync
+- **golf_db.py**: Added `get_detailed_sync_status()`, `sync_to_supabase()`, `sync_from_supabase()`
+- **automation_runner.py**: Added `sync-database` CLI command
+
+### Test Fixes
+- **tests/test_scraper.py**: Fixed assertion to check `result['status'] == 'success'`
+- **ml/train_models.py**: Catch `XGBoostError` (missing libomp) in addition to `ImportError`
+- All 166 tests now pass
+
+### Usage
+```bash
+# Extract dates from listing page DOM
+python automation_runner.py reclassify-dates --from-listing
+
+# Sync databases
+python automation_runner.py sync-database --dry-run
+python automation_runner.py sync-database
+```
+
+---
+
 ## 2026-01-27: Supabase Schema Alignment
 
 ### Problem Solved
