@@ -13,79 +13,55 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 import golf_db
+from services.data_access import get_unique_sessions, get_session_data
+from utils.session_state import get_read_mode
+from utils.responsive import add_responsive_css
 from components import (
     render_session_selector,
     render_metrics_row,
     render_impact_heatmap,
     render_trend_chart,
     render_radar_chart,
-    render_summary_export
+    render_summary_export,
+    render_shared_sidebar,
+    render_no_data_state,
+    render_section_empty_state,
 )
 
 st.set_page_config(layout="wide", page_title="Dashboard - My Golf Lab")
 
+# Add responsive CSS
+add_responsive_css()
+
 # Initialize DB
 golf_db.init_db()
 
-# Cached data access
-@st.cache_data(show_spinner=False)
-def get_unique_sessions_cached(read_mode="auto"):
-    return golf_db.get_unique_sessions(read_mode=read_mode)
+# Get current read mode
+read_mode = get_read_mode()
 
-@st.cache_data(show_spinner=False)
-def get_session_data_cached(session_id=None, read_mode="auto"):
-    return golf_db.get_session_data(session_id, read_mode=read_mode)
+# Shared sidebar (navigation + data source)
+render_shared_sidebar(
+    show_navigation=True,
+    show_data_source=True,
+    show_sync_status=True,
+    current_page="dashboard"
+)
 
-# Sidebar: Session selector
+# Session selector in sidebar
 with st.sidebar:
-    st.header("🔗 Navigation")
-    st.page_link("pages/1_📥_Data_Import.py", label="📥 Import Data", icon="📥")
-    st.page_link("pages/3_🗄️_Database_Manager.py", label="🗄️ Manage Data", icon="🗄️")
-
     st.divider()
-    st.header("🧭 Data Source")
-    if "read_mode" not in st.session_state:
-        st.session_state.read_mode = "auto"
-    read_mode_options = {
-        "Auto (SQLite first)": "auto",
-        "SQLite": "sqlite",
-        "Supabase": "supabase"
-    }
-    selected_label = st.selectbox(
-        "Read Mode",
-        list(read_mode_options.keys()),
-        index=list(read_mode_options.values()).index(st.session_state.read_mode),
-        help="Auto uses SQLite when available and falls back to Supabase if empty."
-    )
-    selected_mode = read_mode_options[selected_label]
-    if selected_mode != st.session_state.read_mode:
-        st.session_state.read_mode = selected_mode
-        golf_db.set_read_mode(selected_mode)
-        st.cache_data.clear()
-
-    st.info(f"📌 Data Source: {golf_db.get_read_source()}")
-    sync_status = golf_db.get_sync_status()
-    counts = sync_status["counts"]
-    st.caption(f"SQLite shots: {counts['sqlite']}")
-    if golf_db.supabase:
-        st.caption(f"Supabase shots: {counts['supabase']}")
-        if sync_status["drift_exceeds"]:
-            st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
-
-    read_mode = st.session_state.get("read_mode", "auto")
     selected_session_id, df, selected_clubs = render_session_selector(
-        lambda: get_unique_sessions_cached(read_mode=read_mode),
-        lambda session_id: get_session_data_cached(session_id, read_mode=read_mode)
+        lambda: get_unique_sessions(read_mode=read_mode),
+        lambda session_id: get_session_data(session_id, read_mode=read_mode)
     )
 
 # Stop if no data
 if df.empty:
-    st.info("No data to display. Please import a session first.")
-    st.page_link("pages/1_📥_Data_Import.py", label="Go to Data Import", icon="📥")
+    render_no_data_state()
     st.stop()
 
 # Main content
-st.title("⛳ My Golf Data Lab - Advanced Analytics")
+st.title("My Golf Data Lab - Advanced Analytics")
 st.subheader(f"Session: {selected_session_id}")
 
 st.markdown("""
@@ -97,11 +73,11 @@ st.divider()
 
 # Create tabs for different views
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📈 Performance Overview",
-    "🎯 Impact Analysis",
-    "📊 Trends Over Time",
-    "🔍 Shot Viewer",
-    "💾 Export Data"
+    "Performance Overview",
+    "Impact Analysis",
+    "Trends Over Time",
+    "Shot Viewer",
+    "Export Data"
 ])
 
 # ============================================================================
@@ -184,7 +160,7 @@ with tab1:
 
 
 # ============================================================================
-# TAB 2: IMPACT ANALYSIS (NEW)
+# TAB 2: IMPACT ANALYSIS
 # ============================================================================
 with tab2:
     st.header("Impact Location Analysis")
@@ -231,11 +207,11 @@ with tab2:
         impact_df = pd.DataFrame(impact_stats)
         st.dataframe(impact_df, use_container_width=True, hide_index=True)
     else:
-        st.info("No impact location data available for analysis")
+        render_section_empty_state("Impact Analysis", "No impact location data available")
 
 
 # ============================================================================
-# TAB 3: TRENDS OVER TIME (NEW)
+# TAB 3: TRENDS OVER TIME
 # ============================================================================
 with tab3:
     st.header("Performance Trends Across Sessions")
@@ -246,7 +222,7 @@ with tab3:
     """)
 
     # Get all sessions
-    all_sessions = get_unique_sessions_cached(read_mode=read_mode)
+    all_sessions = get_unique_sessions(read_mode=read_mode)
 
     if len(all_sessions) < 2:
         st.info("You need at least 2 sessions to view trends. Import more data to see progress over time.")
@@ -271,7 +247,7 @@ with tab3:
         # Prepare session data for trend analysis
         session_trends = []
         for session in all_sessions:
-            session_data = get_session_data_cached(session['session_id'], read_mode=read_mode)
+            session_data = get_session_data(session['session_id'], read_mode=read_mode)
 
             if not session_data.empty and selected_metric in session_data.columns:
                 avg_value = session_data[selected_metric].mean()
@@ -294,7 +270,7 @@ with tab3:
         st.subheader("Club-Specific Trends")
 
         # Get all unique clubs across all sessions
-        all_shots = get_session_data_cached(read_mode=read_mode)
+        all_shots = get_session_data(read_mode=read_mode)
         if 'club' in all_shots.columns:
             all_clubs = all_shots['club'].unique().tolist()
 
@@ -307,7 +283,7 @@ with tab3:
             # Get trends for selected club only
             club_trends = []
             for session in all_sessions:
-                session_data = get_session_data_cached(session['session_id'], read_mode=read_mode)
+                session_data = get_session_data(session['session_id'], read_mode=read_mode)
                 club_data = session_data[session_data['club'] == selected_club]
 
                 if not club_data.empty and selected_metric in club_data.columns:
@@ -326,7 +302,7 @@ with tab3:
 
 
 # ============================================================================
-# TAB 4: SHOT VIEWER (EXISTING)
+# TAB 4: SHOT VIEWER
 # ============================================================================
 with tab4:
     st.header("Detailed Shot Analysis")
@@ -384,22 +360,22 @@ with tab4:
                 img_col1, img_col2 = st.columns(2)
 
                 if shot.get('impact_img'):
-                    img_col1.image(shot['impact_img'], caption="Impact", use_column_width=True)
+                    img_col1.image(shot['impact_img'], caption="Impact", use_container_width=True)
                 else:
                     img_col1.info("No Impact Image")
 
                 if shot.get('swing_img'):
-                    img_col2.image(shot['swing_img'], caption="Swing View", use_column_width=True)
+                    img_col2.image(shot['swing_img'], caption="Swing View", use_container_width=True)
                 else:
                     img_col2.info("No Swing Image")
             else:
                 st.info("No images available for this shot.")
         else:
-            st.info("👈 Select a shot from the table to view details")
+            st.info("Select a shot from the table to view details")
 
 
 # ============================================================================
-# TAB 5: EXPORT DATA (NEW)
+# TAB 5: EXPORT DATA
 # ============================================================================
 with tab5:
     st.header("Export & Reports")
@@ -414,7 +390,7 @@ with tab5:
     st.divider()
 
     # Advanced Export Options
-    st.subheader("📦 Export Presets")
+    st.subheader("Export Presets")
 
     col1, col2 = st.columns(2)
 
@@ -430,7 +406,7 @@ with tab5:
             from components.export_tools import export_to_csv
             coach_csv = export_to_csv(df[coach_cols], f"coach_review_{selected_session_id}")
             st.download_button(
-                label="📥 Download Coach Review CSV",
+                label="Download Coach Review CSV",
                 data=coach_csv,
                 file_name=f"coach_review_{selected_session_id}.csv",
                 mime='text/csv',
@@ -451,7 +427,7 @@ with tab5:
             from components.export_tools import export_to_csv
             fit_csv = export_to_csv(df[fit_cols], f"equipment_fitting_{selected_session_id}")
             st.download_button(
-                label="📥 Download Equipment Fitting CSV",
+                label="Download Equipment Fitting CSV",
                 data=fit_csv,
                 file_name=f"equipment_fitting_{selected_session_id}.csv",
                 mime='text/csv',
@@ -462,7 +438,7 @@ with tab5:
 
     st.divider()
 
-    st.subheader("📊 Advanced Export Options")
+    st.subheader("Advanced Export Options")
 
     col1, col2 = st.columns(2)
 
@@ -477,7 +453,7 @@ with tab5:
             csv_all = export_to_csv(all_shots, "all_sessions")
 
             st.download_button(
-                label="📥 Download All Data (CSV)",
+                label="Download All Data (CSV)",
                 data=csv_all,
                 file_name="all_golf_sessions.csv",
                 mime='text/csv',
@@ -505,7 +481,7 @@ with tab5:
             csv_club = export_to_csv(club_data, f"club_{export_club}")
 
             st.download_button(
-                label=f"📥 Download {export_club} Data",
+                label=f"Download {export_club} Data",
                 data=csv_club,
                 file_name=f"club_{export_club.replace(' ', '_')}.csv",
                 mime='text/csv',
@@ -519,6 +495,6 @@ with tab5:
     st.divider()
 
     # Data Preview
-    with st.expander("📋 Preview Export Data"):
+    with st.expander("Preview Export Data"):
         st.dataframe(df.head(20), use_container_width=True)
         st.caption(f"Showing first 20 of {len(df)} shots in this session")

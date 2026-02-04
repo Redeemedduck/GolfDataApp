@@ -6,6 +6,14 @@ A comprehensive golf analytics platform with local-first hybrid architecture.
 import streamlit as st
 import golf_db
 import observability
+from services.data_access import get_unique_sessions, get_session_data, clear_all_caches
+from utils.session_state import get_read_mode
+from components import (
+    render_shared_sidebar,
+    render_documentation_links,
+    render_no_data_state,
+)
+from utils.responsive import add_responsive_css
 
 st.set_page_config(
     layout="wide",
@@ -14,20 +22,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Add responsive CSS
+add_responsive_css()
+
 # Initialize DB
 golf_db.init_db()
 
-# Cached data access
-@st.cache_data(show_spinner=False)
-def get_unique_sessions_cached(read_mode="auto"):
-    return golf_db.get_unique_sessions(read_mode=read_mode)
-
-@st.cache_data(show_spinner=False)
-def get_session_data_cached(session_id=None, read_mode="auto"):
-    return golf_db.get_session_data(session_id, read_mode=read_mode)
+# Get data using centralized access layer
+read_mode = get_read_mode()
+all_shots = get_session_data(read_mode=read_mode)
+all_sessions = get_unique_sessions(read_mode=read_mode)
 
 # Main landing page
-st.title("⛳ My Golf Data Lab")
+st.title("My Golf Data Lab")
 st.subheader("High-Altitude Golf Analysis Platform")
 
 st.markdown("""
@@ -39,10 +46,6 @@ st.divider()
 
 # Quick stats overview
 col1, col2, col3 = st.columns(3)
-
-read_mode = st.session_state.get("read_mode", "auto")
-all_shots = get_session_data_cached(read_mode=read_mode)
-all_sessions = get_unique_sessions_cached(read_mode=read_mode)
 
 with col1:
     st.metric("Total Sessions", len(all_sessions) if all_sessions else 0)
@@ -60,12 +63,12 @@ with col3:
 st.divider()
 
 # Navigation cards
-st.header("🚀 Quick Start")
+st.header("Quick Start")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.subheader("📥 Import Data")
+    st.subheader("Import Data")
     st.markdown("""
     Import your golf shot data from Uneekor reports.
 
@@ -78,7 +81,7 @@ with col1:
     st.page_link("pages/1_📥_Data_Import.py", label="Go to Import", icon="📥", use_container_width=True)
 
 with col2:
-    st.subheader("📊 Dashboard")
+    st.subheader("Dashboard")
     st.markdown("""
     View performance analytics and visualizations.
 
@@ -91,7 +94,7 @@ with col2:
     st.page_link("pages/2_📊_Dashboard.py", label="Go to Dashboard", icon="📊", use_container_width=True)
 
 with col3:
-    st.subheader("🗄️ Database Manager")
+    st.subheader("Database Manager")
     st.markdown("""
     Manage your golf data with CRUD operations.
 
@@ -104,12 +107,12 @@ with col3:
     st.page_link("pages/3_🗄️_Database_Manager.py", label="Go to Manager", icon="🗄️", use_container_width=True)
 
 # Second row for AI Coach
-col4 = st.columns(3)[0]  # Only use first column for centered card
+col4 = st.columns(3)[0]
 
 with col4:
-    st.subheader("🤖 AI Coach")
+    st.subheader("AI Coach")
     st.markdown("""
-    Get personalized coaching with Gemini 3.0 AI.
+    Get personalized coaching with AI-powered analysis.
 
     **Features:**
     - Interactive chat coaching
@@ -122,7 +125,7 @@ with col4:
 st.divider()
 
 # Recent activity
-st.header("📅 Recent Activity")
+st.header("Recent Activity")
 
 if all_sessions:
     recent_sessions = all_sessions[:5]
@@ -132,10 +135,10 @@ if all_sessions:
         date_added = session.get('date_added', 'Unknown')
 
         # Get shot count for this session
-        session_data = get_session_data_cached(session_id)
+        session_data = get_session_data(session_id, read_mode=read_mode)
         shot_count = len(session_data)
 
-        with st.expander(f"📊 Session {session_id} - {date_added} ({shot_count} shots)"):
+        with st.expander(f"Session {session_id} - {date_added} ({shot_count} shots)"):
             if not session_data.empty and 'club' in session_data.columns:
                 clubs = session_data['club'].unique()
                 st.write(f"**Clubs**: {', '.join(clubs)}")
@@ -150,13 +153,12 @@ if all_sessions:
                     col2.metric("Avg Carry", f"{avg_carry:.1f} yds" if avg_carry > 0 else "N/A")
                     col3.metric("Avg Smash", f"{avg_smash:.2f}" if avg_smash > 0 else "N/A")
 else:
-    st.info("No sessions yet. Import your first session to get started!")
-    st.page_link("pages/1_📥_Data_Import.py", label="Import First Session", icon="📥")
+    render_no_data_state()
 
 st.divider()
 
-# Architecture info
-with st.expander("ℹ️ About This App"):
+# Architecture info - UPDATED to reflect actual architecture
+with st.expander("About This App"):
     st.markdown("""
     ## Architecture
 
@@ -164,84 +166,55 @@ with st.expander("ℹ️ About This App"):
 
     ### Data Flow
     ```
-    Uneekor API → SQLite (local) → Supabase (cloud backup) → BigQuery (warehouse) → Gemini AI
+    Uneekor Portal → Playwright Scraper → SQLite (local) → Supabase (cloud sync)
+                                              ↓
+                                        Streamlit Pages
+                                              ↓
+                                    Local Coach / Gemini AI
     ```
 
     ### Key Features
-    - **Local-First**: All data stored in SQLite for offline access
+    - **Local-First**: All data stored in SQLite for offline access and privacy
     - **Cloud Sync**: Optional Supabase backup for multi-device access
-    - **Advanced Analytics**: BigQuery data warehouse for complex queries
-    - **AI Insights**: Gemini API for personalized coaching
+    - **Automated Import**: Playwright-based scraper with rate limiting and checkpointing
+    - **AI Insights**: Local ML models for offline analysis + Gemini API for advanced coaching
 
     ### Tech Stack
-    - **UI**: Streamlit multi-page app
-    - **Database**: SQLite (local), Supabase (cloud), BigQuery (warehouse)
-    - **API**: Uneekor REST API for data fetching
-    - **AI**: Google Gemini API for analysis
+    - **UI**: Streamlit multi-page app with custom components
+    - **Database**: SQLite (local, WAL mode) + Supabase (cloud sync)
+    - **Automation**: Playwright browser automation with cookie persistence
+    - **AI**: Local XGBoost/sklearn models + Google Gemini API
 
     ### Database Schema
     30+ fields per shot including:
-    - Ball flight (speed, spin, angles)
-    - Club data (path, face angle, attack angle)
-    - Impact location (Optix precise data)
-    - Shot classification & images
+    - Ball flight (speed, spin, launch angle, side distance)
+    - Club data (path, face angle, attack angle, dynamic loft)
+    - Impact location (Optix precise coordinates)
+    - Shot classification, tags, and images
+
+    ### Privacy & Data Ownership
+    - All data stored locally by default
+    - Cloud sync is optional and configurable
+    - No data sent to third parties except when using Gemini AI
 
     For more details, see `CLAUDE.md` and `IMPROVEMENT_ROADMAP.md`.
     """)
 
-# Sidebar
+# Sidebar - using shared component
+render_shared_sidebar(
+    show_navigation=False,  # We're on the landing page
+    show_data_source=True,
+    show_sync_status=True,
+    current_page="home"
+)
+
 with st.sidebar:
-    st.header("📖 Documentation")
-    st.markdown("""
-    - [Main README](README.md)
-    - [Setup Guide](SETUP_GUIDE.md)
-    - [Pipeline Docs](PIPELINE_COMPLETE.md)
-    - [Roadmap](IMPROVEMENT_ROADMAP.md)
-    """)
+    st.divider()
+    render_documentation_links()
 
     st.divider()
 
-    st.header("🧭 Data Source")
-    if "read_mode" not in st.session_state:
-        st.session_state.read_mode = "auto"
-    read_mode_options = {
-        "Auto (SQLite first)": "auto",
-        "SQLite": "sqlite",
-        "Supabase": "supabase"
-    }
-    selected_label = st.selectbox(
-        "Read Mode",
-        list(read_mode_options.keys()),
-        index=list(read_mode_options.values()).index(st.session_state.read_mode),
-        help="Auto uses SQLite when available and falls back to Supabase if empty."
-    )
-    selected_mode = read_mode_options[selected_label]
-    if selected_mode != st.session_state.read_mode:
-        st.session_state.read_mode = selected_mode
-        golf_db.set_read_mode(selected_mode)
-        st.cache_data.clear()
-
-    st.header("⚙️ System Status")
-    st.success("✅ SQLite Database: Connected")
-    st.info(f"📌 Data Source: {golf_db.get_read_source()}")
-
-    # Check Supabase connection
-    if golf_db.supabase:
-        st.success("✅ Supabase: Connected")
-    else:
-        st.warning("⚠️ Supabase: Not configured")
-
-    sync_status = golf_db.get_sync_status()
-    counts = sync_status["counts"]
-    st.caption(f"SQLite shots: {counts['sqlite']}")
-    if golf_db.supabase:
-        st.caption(f"Supabase shots: {counts['supabase']}")
-        if sync_status["drift_exceeds"]:
-            st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
-
-    st.divider()
-
-    st.header("🩺 Health")
+    st.header("Health")
     latest_import = observability.read_latest_event("import_runs.jsonl")
     if latest_import:
         st.caption(f"Last Import: {latest_import.get('status', 'unknown')}")
@@ -261,4 +234,4 @@ with st.sidebar:
     st.divider()
 
     st.caption("Golf Data Lab v2.0 - Multi-Page Architecture")
-    st.caption("Built with ❤️ for high-altitude golf analysis")
+    st.caption("Built for high-altitude golf analysis")

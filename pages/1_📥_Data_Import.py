@@ -11,22 +11,23 @@ sys.path.append(str(Path(__file__).parent.parent))
 import golf_scraper
 import golf_db
 import observability
+from services.data_access import get_unique_sessions, get_session_data, clear_all_caches
+from utils.session_state import get_read_mode
+from utils.responsive import add_responsive_css
+from components import render_shared_sidebar
 
 st.set_page_config(layout="wide", page_title="Data Import - My Golf Lab")
+
+# Add responsive CSS
+add_responsive_css()
 
 # Initialize DB
 golf_db.init_db()
 
-# Cached data access
-@st.cache_data(show_spinner=False)
-def get_unique_sessions_cached(read_mode="auto"):
-    return golf_db.get_unique_sessions(read_mode=read_mode)
+# Get read mode
+read_mode = get_read_mode()
 
-@st.cache_data(show_spinner=False)
-def get_session_data_cached(session_id=None, read_mode="auto"):
-    return golf_db.get_session_data(session_id, read_mode=read_mode)
-
-st.title("📥 Import Golf Data")
+st.title("Import Golf Data")
 
 st.markdown("""
 Import your golf shot data from Uneekor reports. Simply paste the URL from your Uneekor session
@@ -47,7 +48,7 @@ with col1:
         help="Copy the full URL from your Uneekor report page"
     )
 
-    if st.button("🚀 Run Import", type="primary", use_container_width=True):
+    if st.button("Run Import", type="primary", use_container_width=True):
         if uneekor_url:
             st.info("Starting import...")
 
@@ -59,7 +60,7 @@ with col1:
 
             # Run scraper
             result = golf_scraper.run_scraper(uneekor_url, update_progress)
-            st.cache_data.clear()
+            clear_all_caches()
 
             progress_bar.empty()
             status_text.empty()
@@ -85,8 +86,7 @@ with col2:
     st.subheader("Import History")
 
     # Show recent sessions
-    read_mode = st.session_state.get("read_mode", "auto")
-    unique_sessions = get_unique_sessions_cached(read_mode=read_mode)
+    unique_sessions = get_unique_sessions(read_mode=read_mode)
 
     if unique_sessions:
         st.write(f"**{len(unique_sessions)} sessions** in database")
@@ -124,7 +124,7 @@ with col2:
 st.divider()
 
 # Instructions section
-with st.expander("📖 How to Import Data"):
+with st.expander("How to Import Data"):
     st.markdown("""
     ### Step-by-Step Instructions
 
@@ -156,34 +156,21 @@ with st.expander("📖 How to Import Data"):
     - **Images missing**: Some sessions may not have images available from Uneekor
     """)
 
-# Database stats in sidebar
-with st.sidebar:
-    st.header("🧭 Data Source")
-    if "read_mode" not in st.session_state:
-        st.session_state.read_mode = "auto"
-    read_mode_options = {
-        "Auto (SQLite first)": "auto",
-        "SQLite": "sqlite",
-        "Supabase": "supabase"
-    }
-    selected_label = st.selectbox(
-        "Read Mode",
-        list(read_mode_options.keys()),
-        index=list(read_mode_options.values()).index(st.session_state.read_mode),
-        help="Auto uses SQLite when available and falls back to Supabase if empty."
-    )
-    selected_mode = read_mode_options[selected_label]
-    if selected_mode != st.session_state.read_mode:
-        st.session_state.read_mode = selected_mode
-        golf_db.set_read_mode(selected_mode)
-        st.cache_data.clear()
+# Sidebar - using shared component
+render_shared_sidebar(
+    show_navigation=True,
+    show_data_source=True,
+    show_sync_status=True,
+    current_page="import"
+)
 
-    st.header("📊 Database Stats")
-    st.info(f"📌 Data Source: {golf_db.get_read_source()}")
-    sync_status = golf_db.get_sync_status()
+# Additional sidebar content
+with st.sidebar:
+    st.divider()
+    st.header("Stats")
 
     # Get total shot count
-    all_shots = get_session_data_cached(read_mode=st.session_state.read_mode)
+    all_shots = get_session_data(read_mode=read_mode)
     total_shots = len(all_shots)
 
     st.metric("Total Shots", total_shots)
@@ -195,11 +182,8 @@ with st.sidebar:
             unique_clubs = all_shots['club'].nunique()
             st.metric("Unique Clubs", unique_clubs)
 
-    if golf_db.supabase and sync_status["drift_exceeds"]:
-        st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
-
     st.divider()
-    st.header("🩺 Health")
+    st.header("Health")
     latest_import = observability.read_latest_event("import_runs.jsonl")
     if latest_import:
         st.caption(f"Last Import: {latest_import.get('status', 'unknown')}")

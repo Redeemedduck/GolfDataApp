@@ -1,5 +1,5 @@
 """
-🤖 AI Coach - Cloud-Native Golf Coaching with Modular Providers
+AI Coach - Cloud-Native Golf Coaching with Modular Providers
 
 This page provides an interactive AI coaching experience with modular AI providers.
 The AI coach can query your golf data using function calling and provide personalized insights.
@@ -17,6 +17,14 @@ from datetime import datetime
 import json
 import golf_db
 from services.ai import list_providers, get_provider
+from services.data_access import get_unique_sessions, get_session_data, get_all_shots
+from utils.session_state import get_read_mode
+from utils.responsive import add_responsive_css
+from components import (
+    render_shared_sidebar,
+    render_ai_unavailable_state,
+    render_no_data_state,
+)
 
 
 # Page config
@@ -26,58 +34,32 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🤖 AI Golf Coach")
+# Add responsive CSS
+add_responsive_css()
+
+st.title("AI Golf Coach")
 st.markdown("*Powered by modular AI providers with function calling*")
 
 # Initialize database
 golf_db.init_db()
 
-# Cached data access
-@st.cache_data(show_spinner=False)
-def get_all_shots_cached(read_mode="auto"):
-    return golf_db.get_all_shots(read_mode=read_mode)
+# Get read mode
+read_mode = get_read_mode()
 
-@st.cache_data(show_spinner=False)
-def get_sessions_cached(read_mode="auto"):
-    return golf_db.get_unique_sessions(read_mode=read_mode)
-
-@st.cache_data(show_spinner=False)
-def get_session_data_cached(session_id=None, read_mode="auto"):
-    return golf_db.get_session_data(session_id, read_mode=read_mode)
+# Shared sidebar (data source only, navigation below)
+render_shared_sidebar(
+    show_navigation=True,
+    show_data_source=True,
+    show_sync_status=True,
+    current_page="ai_coach"
+)
 
 # Sidebar configuration
 with st.sidebar:
-    st.header("⚙️ Coach Settings")
-    st.header("🧭 Data Source")
-    if "read_mode" not in st.session_state:
-        st.session_state.read_mode = "auto"
-    read_mode_options = {
-        "Auto (SQLite first)": "auto",
-        "SQLite": "sqlite",
-        "Supabase": "supabase"
-    }
-    selected_label = st.selectbox(
-        "Read Mode",
-        list(read_mode_options.keys()),
-        index=list(read_mode_options.values()).index(st.session_state.read_mode),
-        help="Auto uses SQLite when available and falls back to Supabase if empty."
-    )
-    selected_mode = read_mode_options[selected_label]
-    if selected_mode != st.session_state.read_mode:
-        st.session_state.read_mode = selected_mode
-        golf_db.set_read_mode(selected_mode)
-        st.cache_data.clear()
+    st.divider()
+    st.header("Coach Settings")
 
-    st.info(f"📌 Data Source: {golf_db.get_read_source()}")
-    sync_status = golf_db.get_sync_status()
-    counts = sync_status["counts"]
-    st.caption(f"SQLite shots: {counts['sqlite']}")
-    if golf_db.supabase:
-        st.caption(f"Supabase shots: {counts['supabase']}")
-        if sync_status["drift_exceeds"]:
-            st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
-
-    st.header("🧠 AI Provider")
+    st.subheader("AI Provider")
     providers = list_providers()
     if not providers:
         st.error("No AI providers registered.")
@@ -105,7 +87,7 @@ with st.sidebar:
         "Choose Model",
         options=list(model_options.keys()),
         index=0,
-        help="Flash: Faster, cost-effective ($0.50/1M in)\nPro: Complex reasoning, agentic workflows"
+        help="Flash: Faster, cost-effective\nPro: Complex reasoning, agentic workflows"
     )
 
     # Thinking level
@@ -118,8 +100,8 @@ with st.sidebar:
     )
 
     st.divider()
-    st.subheader("🎯 Analysis Focus")
-    sessions = get_sessions_cached(read_mode=st.session_state.read_mode)
+    st.subheader("Analysis Focus")
+    sessions = get_unique_sessions(read_mode=read_mode)
     session_options = [("All Sessions", None)]
     for session in sessions:
         # Prefer session_date (actual session date) over date_added (import timestamp)
@@ -154,9 +136,9 @@ with st.sidebar:
     )
 
     focus_df = (
-        get_session_data_cached(focus_session_id, read_mode=st.session_state.read_mode)
+        get_session_data(focus_session_id, read_mode=read_mode)
         if focus_session_id
-        else get_all_shots_cached(read_mode=st.session_state.read_mode)
+        else get_all_shots(read_mode=read_mode)
     )
     club_options = sorted(focus_df['club'].dropna().unique().tolist()) if not focus_df.empty else []
     focus_club = st.selectbox(
@@ -165,7 +147,7 @@ with st.sidebar:
         index=0
     )
 
-    tag_catalog = golf_db.get_tag_catalog(read_mode=st.session_state.read_mode)
+    tag_catalog = golf_db.get_tag_catalog(read_mode=read_mode)
     focus_tag = st.selectbox(
         "Focus Tag",
         ["All Tags"] + tag_catalog,
@@ -174,15 +156,15 @@ with st.sidebar:
 
     # Reset conversation
     st.divider()
-    if st.button("🔄 Reset Conversation", use_container_width=True):
+    if st.button("Reset Conversation", use_container_width=True):
         st.session_state.messages = []
         st.session_state.coach = None
         st.rerun()
 
     # Show data stats
     st.divider()
-    st.subheader("📊 Your Data")
-    df = get_all_shots_cached(read_mode=st.session_state.read_mode)
+    st.subheader("Your Data")
+    df = get_all_shots(read_mode=read_mode)
     if not df.empty:
         st.metric("Total Shots", len(df))
         st.metric("Sessions", df['session_id'].nunique())
@@ -219,11 +201,16 @@ else:
             st.stop()
 
 if not provider_ready:
-    st.info("AI coach is disabled until the provider is configured.")
+    render_ai_unavailable_state()
+    st.stop()
+
+# Check for data
+if df.empty:
+    render_no_data_state()
     st.stop()
 
 # Main chat interface
-st.subheader("💬 Chat with Your Coach")
+st.subheader("Chat with Your Coach")
 
 # Display conversation history
 for message in st.session_state.messages:
@@ -232,7 +219,7 @@ for message in st.session_state.messages:
 
         # Show function calls if present
         if message.get("function_calls"):
-            with st.expander("🔧 Function Calls Made"):
+            with st.expander("Function Calls Made"):
                 for i, fn_call in enumerate(message["function_calls"], 1):
                     st.markdown(f"**{i}. {fn_call['function']}**")
                     st.json(fn_call['arguments'])
@@ -282,7 +269,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
 
             # Show function calls if any
             if response_data.get('function_calls'):
-                with st.expander("🔧 Function Calls Made", expanded=False):
+                with st.expander("Function Calls Made", expanded=False):
                     for i, fn_call in enumerate(response_data['function_calls'], 1):
                         st.markdown(f"**{i}. {fn_call['function']}**")
                         st.json(fn_call['arguments'])
@@ -296,7 +283,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
 
 # Suggested questions (show when no messages)
 if len(st.session_state.messages) == 0:
-    st.markdown("### 💡 Try asking:")
+    st.markdown("### Try asking:")
     suggested_questions = [
         "What's my average carry distance with Driver?",
         "How consistent is my ball striking?",
@@ -346,7 +333,7 @@ if prompt := st.chat_input("Ask me anything about your golf game..."):
 
             # Show function calls if any were made
             if response_data.get('function_calls'):
-                with st.expander("🔧 Function Calls Made", expanded=False):
+                with st.expander("Function Calls Made", expanded=False):
                     for i, fn_call in enumerate(response_data['function_calls'], 1):
                         st.markdown(f"**{i}. {fn_call['function']}**")
                         st.json(fn_call['arguments'])
@@ -381,7 +368,7 @@ if prompt := st.chat_input("Ask me anything about your golf game..."):
             })
 
 # Help section at the bottom
-with st.expander("ℹ️ How to Use the AI Coach"):
+with st.expander("How to Use the AI Coach"):
     st.markdown("""
     ### Getting Started
 
@@ -421,7 +408,7 @@ with st.expander("ℹ️ How to Use the AI Coach"):
     - Generate your performance profile
     - Identify outliers
 
-    You can see which functions were called by expanding the "🔧 Function Calls Made" section.
+    You can see which functions were called by expanding the "Function Calls Made" section.
 
     ### Model Selection
 
@@ -446,4 +433,4 @@ with st.expander("ℹ️ How to Use the AI Coach"):
 
 # Footer
 st.divider()
-st.caption(f"🤖 Model: {selected_model} | 🧠 Thinking: {thinking_level} | 💬 Messages: {len(st.session_state.messages)}")
+st.caption(f"Model: {selected_model} | Thinking: {thinking_level} | Messages: {len(st.session_state.messages)}")

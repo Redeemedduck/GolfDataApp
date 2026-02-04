@@ -15,10 +15,11 @@ serverAddress = "0.0.0.0"
 serverPort = 8080
 
 [theme]
-primaryColor = "#1f77b4"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f0f2f6"
-textColor = "#262730"
+# Fairway Green - Golf-themed color palette
+primaryColor = "#2D7F3E"
+backgroundColor = "#FAFAFA"
+secondaryBackgroundColor = "#E8F5E9"
+textColor = "#212121"
 font = "sans serif"
 
 [client]
