@@ -477,7 +477,7 @@ def cmd_reclassify_dates(args):
 
                 # Navigate to session listing
                 print("Navigating to session listing...")
-                sessions = await navigator.get_session_list()
+                sessions = await navigator.get_all_sessions()
 
                 if not sessions:
                     print("No sessions found on listing page")
@@ -498,13 +498,13 @@ def cmd_reclassify_dates(args):
                 updated_count = 0
                 for session in sessions:
                     if session.session_date:
-                        is_new = discovery._save_discovered_session(session)
+                        is_new = discovery.save_discovered_session(session)
                         if is_new:
                             updated_count += 1
                         # Also update shots table
                         golf_db.update_session_date_for_shots(
                             session.report_id,
-                            session.session_date.isoformat()
+                            session.session_date.strftime("%Y-%m-%d")
                         )
 
                 print()

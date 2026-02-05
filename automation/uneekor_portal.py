@@ -377,10 +377,21 @@ class UneekorPortalNavigator:
             if js_links:
                 if links:
                     # Update existing links with date context from JS walker
-                    js_href_map = {link['href']: link for link in js_links}
+                    # Use report ID for matching since CSS selectors return relative URLs
+                    # while JavaScript node.href returns absolute URLs
+                    def extract_report_id(href):
+                        """Extract report ID from URL for reliable matching."""
+                        if not href:
+                            return None
+                        # Match ?id=XXX or &id=XXX pattern
+                        match = re.search(r'[?&]id=(\d+)', href)
+                        return match.group(1) if match else None
+
+                    js_id_map = {extract_report_id(link['href']): link for link in js_links}
                     for link in links:
-                        if link['href'] in js_href_map:
-                            link['dateContext'] = js_href_map[link['href']].get('dateContext')
+                        report_id = extract_report_id(link['href'])
+                        if report_id and report_id in js_id_map:
+                            link['dateContext'] = js_id_map[report_id].get('dateContext')
                 else:
                     links = js_links
 
