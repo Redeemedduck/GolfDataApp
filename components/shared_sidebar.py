@@ -40,6 +40,8 @@ def render_shared_sidebar(
         if show_sync_status:
             render_sync_status()
 
+        render_appearance_toggle()
+
 
 def render_navigation(current_page: str = None) -> None:
     """
@@ -144,6 +146,30 @@ def render_mode_toggle() -> None:
         st.caption("Showing key metrics only")
     else:
         st.caption("Showing all metrics and options")
+
+
+def render_appearance_toggle() -> None:
+    """Render appearance controls."""
+    if "dark_mode" not in st.session_state:
+        st.session_state["dark_mode"] = False
+
+    st.divider()
+    st.subheader("Appearance")
+
+    current_mode = st.session_state.get("dark_mode", False)
+    dark_mode = st.toggle(
+        "Dark Mode",
+        value=current_mode,
+        key="dark_mode_toggle"
+    )
+
+    if dark_mode != current_mode:
+        st.session_state["dark_mode"] = dark_mode
+        st.rerun()
+
+    mode_label = "Dark" if st.session_state.get("dark_mode", False) else "Light"
+    st.caption(f"Current mode: {mode_label}")
+    st.caption("Toggle between light and dark themes")
 
 
 def render_session_stats(sessions: list, shots_df) -> None:

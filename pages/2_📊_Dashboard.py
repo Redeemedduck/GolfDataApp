@@ -72,16 +72,15 @@ multi-metric radar charts, and comprehensive export options.
 st.divider()
 
 # Create tabs for different views
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Performance Overview",
-    "Impact Analysis",
-    "Trends Over Time",
-    "Shot Viewer",
-    "Export Data"
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Overview",
+    "Analysis",
+    "Shots",
+    "Export"
 ])
 
 # ============================================================================
-# TAB 1: PERFORMANCE OVERVIEW
+# TAB 1: OVERVIEW
 # ============================================================================
 with tab1:
     st.header("Performance Metrics")
@@ -160,7 +159,7 @@ with tab1:
 
 
 # ============================================================================
-# TAB 2: IMPACT ANALYSIS
+# TAB 2: ANALYSIS
 # ============================================================================
 with tab2:
     st.header("Impact Location Analysis")
@@ -209,11 +208,8 @@ with tab2:
     else:
         render_section_empty_state("Impact Analysis", "No impact location data available")
 
+    st.divider()
 
-# ============================================================================
-# TAB 3: TRENDS OVER TIME
-# ============================================================================
-with tab3:
     st.header("Performance Trends Across Sessions")
 
     st.markdown("""
@@ -302,9 +298,9 @@ with tab3:
 
 
 # ============================================================================
-# TAB 4: SHOT VIEWER
+# TAB 3: SHOTS
 # ============================================================================
-with tab4:
+with tab3:
     st.header("Detailed Shot Analysis")
 
     # Grid View
@@ -375,9 +371,9 @@ with tab4:
 
 
 # ============================================================================
-# TAB 5: EXPORT DATA
+# TAB 4: EXPORT
 # ============================================================================
-with tab5:
+with tab4:
     st.header("Export & Reports")
 
     st.markdown("""

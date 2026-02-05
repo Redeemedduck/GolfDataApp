@@ -24,6 +24,7 @@ from components import (
     render_shared_sidebar,
     render_ai_unavailable_state,
     render_no_data_state,
+    render_insights_card,
 )
 
 
@@ -208,6 +209,10 @@ if not provider_ready:
 if df.empty:
     render_no_data_state()
     st.stop()
+
+# Auto-generated insights (top of main content)
+with st.expander("Auto-Generated Insights", expanded=True):
+    render_insights_card(focus_df, title="Session Insights")
 
 # Main chat interface
 st.subheader("Chat with Your Coach")
