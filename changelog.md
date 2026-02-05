@@ -6,8 +6,11 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ## 2026-02-05: Data Integrity Fixes
 
-### Critical Bug Fix
+### Critical Bug Fixes
 - **automation/backfill_runner.py**: Fixed rate limiter config passing `max_sessions_per_hour` directly to `requests_per_minute` — scraper was running **60x faster** than intended (360/hr vs 6/hr)
+- **automation/uneekor_portal.py**: Fixed URL mismatch in session link merging — CSS selectors return relative URLs while JavaScript `node.href` returns absolute; now matches on report_id instead
+- **automation_runner.py**: Fixed method name `_save_discovered_session` → `save_discovered_session`
+- **automation_runner.py**: Fixed date format — `isoformat()` includes time but function expects `YYYY-MM-DD`; changed to `strftime("%Y-%m-%d")`
 
 ### New Feature: Sync Audit Trail
 - **golf_db.py**: Added `sync_audit` table for tracking all sync operations
@@ -38,8 +41,8 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ### Usage
 ```bash
-# Extract dates with auto-backfill
-python automation_runner.py reclassify-dates --from-listing --auto-backfill
+# Extract dates with auto-backfill (run in headless mode)
+python automation_runner.py reclassify-dates --from-listing --auto-backfill --headless
 
 # Check sync drift
 python -c "import golf_db; golf_db.init_db(); print(golf_db.get_detailed_sync_status())"
@@ -47,6 +50,11 @@ python -c "import golf_db; golf_db.init_db(); print(golf_db.get_detailed_sync_st
 # View sync audit history
 sqlite3 golf_stats.db "SELECT * FROM sync_audit ORDER BY started_at DESC LIMIT 5"
 ```
+
+### Data Status After Fixes
+- SQLite: 1,341 shots | Supabase: 1,341 shots | No drift
+- 93/93 visible sessions have dates extracted from listing page
+- 1,341/1,341 shots have `session_date` populated (100%)
 
 ---
 
