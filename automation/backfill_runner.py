@@ -197,7 +197,7 @@ class BackfillRunner:
             from .rate_limiter import RateLimiter, RateLimiterConfig
             # Use configured sessions per hour (default 6) instead of ignoring it
             self.rate_limiter = RateLimiter(RateLimiterConfig(
-                requests_per_minute=self.config.max_sessions_per_hour,
+                requests_per_minute=self.config.max_sessions_per_hour / 60,
             ))
         self.notifier = notifier or get_notifier()
 
