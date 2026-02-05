@@ -4,6 +4,52 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-05: Data Integrity Fixes
+
+### Critical Bug Fix
+- **automation/backfill_runner.py**: Fixed rate limiter config passing `max_sessions_per_hour` directly to `requests_per_minute` — scraper was running **60x faster** than intended (360/hr vs 6/hr)
+
+### New Feature: Sync Audit Trail
+- **golf_db.py**: Added `sync_audit` table for tracking all sync operations
+- **golf_db.py**: `sync_to_supabase()` now logs timestamps, record counts, and errors to audit table
+- **supabase_schema.sql**: Added note that `sync_audit` is SQLite-only
+
+### New Feature: Drift Detection
+- **golf_db.py**: Enhanced `get_detailed_sync_status()` to return:
+  - `local_count`: SQLite shot count
+  - `supabase_count`: Supabase shot count
+  - `local_only_count`: Records missing from Supabase
+  - `last_sync`: Most recent sync metadata
+  - `drift_detected`: Boolean flag when counts differ
+
+### New Feature: Auto-Backfill for Date Reclassification
+- **automation_runner.py**: Added `--auto-backfill` flag to `reclassify-dates --from-listing`
+- Automatically propagates extracted dates to shots table after listing extraction
+
+### Data Validation
+- **golf_db.py**: `update_session_date_for_shots()` now validates dates:
+  - Rejects future dates
+  - Rejects dates before 2020 (Uneekor launch)
+
+### Tests
+- Added `tests/unit/test_rate_limiter_config.py` to prevent rate limiter regression
+- Added tests for sync audit, drift detection, and date validation
+- All 171 tests pass
+
+### Usage
+```bash
+# Extract dates with auto-backfill
+python automation_runner.py reclassify-dates --from-listing --auto-backfill
+
+# Check sync drift
+python -c "import golf_db; golf_db.init_db(); print(golf_db.get_detailed_sync_status())"
+
+# View sync audit history
+sqlite3 golf_stats.db "SELECT * FROM sync_audit ORDER BY started_at DESC LIMIT 5"
+```
+
+---
+
 ## 2026-02-03: Code Quality Fixes, Date Extraction, and Supabase Sync
 
 ### Security Fix (P1)

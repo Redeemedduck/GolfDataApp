@@ -19,6 +19,7 @@ python -m unittest tests.unit.test_date_parsing
 python -m unittest tests.unit.test_exceptions
 python -m unittest tests.unit.test_credential_manager
 python -m unittest tests.unit.test_naming_conventions
+python -m unittest tests.unit.test_rate_limiter_config
 python -m unittest tests.integration.test_automation_flow
 python -m unittest tests.integration.test_date_reclassification
 
@@ -42,6 +43,7 @@ python automation_runner.py backfill --retry-failed
 # Session date reclassification
 python automation_runner.py reclassify-dates --status
 python automation_runner.py reclassify-dates --from-listing   # Extract from listing page DOM
+python automation_runner.py reclassify-dates --from-listing --auto-backfill  # Extract + propagate
 python automation_runner.py reclassify-dates --backfill
 python automation_runner.py reclassify-dates --scrape --max 10
 python automation_runner.py reclassify-dates --manual 43285 2026-01-15
@@ -123,7 +125,7 @@ Components in `components/` are stateless: `render_*(data: pd.DataFrame, **kwarg
 Layered architecture: `automation_runner.py` CLI → `BackfillRunner` (orchestration + checkpointing) → `SessionDiscovery` (dedup + state tracking) → `PlaywrightClient` (browser lifecycle + cookies) → `UneekorPortal` (navigation).
 
 Key behaviors:
-- Token bucket rate limiting (6 req/min default via `rate_limiter.py`)
+- Token bucket rate limiting (6 req/hour default, configured via `max_sessions_per_hour`)
 - Encrypted cookie persistence (`credential_manager.py`)
 - Resumable backfill with `sessions_discovered` and `backfill_runs` tables
 - Club name normalization via `naming_conventions.py` (e.g., "7i" → "7 Iron")
@@ -151,6 +153,7 @@ Key behaviors:
 | `sessions_discovered` | Automation: discovered sessions + import status + `date_source` | Yes — service role |
 | `automation_runs` | Automation: high-level run tracking | Yes — service role |
 | `backfill_runs` | Automation: backfill progress checkpoints | Yes — service role |
+| `sync_audit` | Tracks sync operations with timestamps, counts, errors | No — local only |
 
 Canonical Supabase schema: `supabase_schema.sql` (all tables, indexes, RLS policies, views).
 
@@ -204,10 +207,11 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 **Recommended approach:**
 ```bash
-# Extract dates from listing page (most reliable)
-python automation_runner.py reclassify-dates --from-listing
+# Extract dates from listing page and propagate to shots (single command)
+python automation_runner.py reclassify-dates --from-listing --auto-backfill
 
-# Then propagate to shots table
+# Or as separate steps:
+python automation_runner.py reclassify-dates --from-listing
 python automation_runner.py reclassify-dates --backfill
 ```
 
