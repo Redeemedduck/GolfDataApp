@@ -526,6 +526,17 @@ def cmd_reclassify_dates(args):
                     if len(sessions_with_dates) > 5:
                         print(f"  ... and {len(sessions_with_dates) - 5} more")
 
+                if args.auto_backfill:
+                    print("\n--- Auto-backfilling dates to shots table ---")
+                    updated_shots = 0
+                    if hasattr(golf_db, 'backfill_session_dates'):
+                        result = golf_db.backfill_session_dates()
+                        if isinstance(result, dict):
+                            updated_shots = result.get('updated', 0)
+                        else:
+                            updated_shots = result
+                    print(f"Shots updated: {updated_shots}")
+
                 return 0
 
         return asyncio.run(do_listing_discovery())
@@ -817,6 +828,8 @@ def main():
                                     help='Scrape dates from report pages (rate-limited)')
     reclassify_parser.add_argument('--from-listing', action='store_true',
                                     help='Re-discover sessions from listing page to extract dates')
+    reclassify_parser.add_argument('--auto-backfill', action='store_true',
+                                    help='Automatically run backfill after extracting dates from listing')
     reclassify_parser.add_argument('--manual', nargs=2, metavar=('REPORT_ID', 'DATE'),
                                     help='Set date manually (YYYY-MM-DD format)')
     reclassify_parser.add_argument('--backfill', action='store_true',

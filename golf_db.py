@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from datetime import datetime
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
@@ -146,6 +147,19 @@ def init_db():
             operation TEXT NOT NULL,
             entity_type TEXT NOT NULL,
             entity_id TEXT,
+            details TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sync_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sync_type TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            records_synced INTEGER DEFAULT 0,
+            records_failed INTEGER DEFAULT 0,
+            error_message TEXT,
             details TEXT
         )
     ''')
@@ -1558,11 +1572,17 @@ def update_session_date_for_shots(session_id: str, session_date: str):
 
     Args:
         session_id: The session ID (report_id)
-        session_date: ISO format date string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+        session_date: ISO format date string (YYYY-MM-DD)
 
     Returns:
         Number of shots updated
     """
+    parsed_date = datetime.strptime(session_date, "%Y-%m-%d")
+    if parsed_date > datetime.now():
+        raise ValueError("Session date cannot be in the future.")
+    if parsed_date.year < 2020:
+        raise ValueError("Session date cannot be before 2020.")
+
     updated = 0
     try:
         conn = sqlite3.connect(SQLITE_DB_PATH)
@@ -1605,12 +1625,17 @@ def update_session_date_for_shots(session_id: str, session_date: str):
 
 def get_detailed_sync_status() -> dict:
     """
-    Compare SQLite and Supabase in detail for reconciliation.
+    Get comprehensive sync status including drift detection.
 
     Returns:
-        Dict with counts and lists of missing records in each direction
+        Dict with counts, drift detection, and last sync metadata.
     """
     status = {
+        'local_count': 0,
+        'supabase_count': 0,
+        'local_only_count': 0,
+        'last_sync': None,
+        'drift_detected': False,
         'shots': {
             'sqlite': 0,
             'supabase': 0,
@@ -1621,25 +1646,53 @@ def get_detailed_sync_status() -> dict:
         'error': None,
     }
 
-    if not supabase:
-        status['error'] = "Supabase not configured"
-        return status
-
+    local_ids = set()
+    conn = None
     try:
-        # Get local shot IDs
+        # Get local shot IDs and count
         conn = sqlite3.connect(SQLITE_DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT shot_id FROM shots")
         local_ids = {row[0] for row in cursor.fetchall()}
-        status['shots']['sqlite'] = len(local_ids)
-        conn.close()
+        status['local_count'] = len(local_ids)
+        status['shots']['sqlite'] = status['local_count']
 
+        # Get last successful sync metadata
+        cursor.execute("""
+            SELECT completed_at, records_synced, records_failed
+            FROM sync_audit
+            WHERE sync_type = 'to_supabase' AND completed_at IS NOT NULL
+            ORDER BY completed_at DESC
+            LIMIT 1
+        """)
+        last_sync_row = cursor.fetchone()
+        if last_sync_row:
+            status['last_sync'] = {
+                'timestamp': last_sync_row[0],
+                'records_synced': last_sync_row[1],
+                'records_failed': last_sync_row[2],
+            }
+    except Exception as e:
+        status['error'] = str(e)
+    finally:
+        if conn is not None:
+            conn.close()
+
+    if not supabase:
+        status['error'] = status['error'] or "Supabase not configured"
+        status['local_only_count'] = max(0, status['local_count'] - status['supabase_count'])
+        status['drift_detected'] = status['local_count'] != status['supabase_count']
+        return status
+
+    try:
         # Get remote shot IDs (paginated)
         remote_ids = set()
         offset = 0
         page_size = 1000
         while True:
-            response = supabase.table('shots').select('shot_id').range(offset, offset + page_size - 1).execute()
+            response = supabase.table('shots').select('shot_id').range(
+                offset, offset + page_size - 1
+            ).execute()
             data = response.data or []
             if not data:
                 break
@@ -1648,14 +1701,17 @@ def get_detailed_sync_status() -> dict:
                 break
             offset += page_size
 
-        status['shots']['supabase'] = len(remote_ids)
+        status['supabase_count'] = len(remote_ids)
+        status['shots']['supabase'] = status['supabase_count']
 
         # Find differences
         status['shots']['missing_in_supabase'] = list(local_ids - remote_ids)[:100]  # Cap at 100
         status['shots']['missing_in_sqlite'] = list(remote_ids - local_ids)[:100]
-
     except Exception as e:
-        status['error'] = str(e)
+        status['error'] = status['error'] or str(e)
+
+    status['local_only_count'] = max(0, status['local_count'] - status['supabase_count'])
+    status['drift_detected'] = status['local_count'] != status['supabase_count']
 
     return status
 
@@ -1671,19 +1727,29 @@ def sync_to_supabase(dry_run: bool = False, batch_size: int = 100) -> dict:
     Returns:
         Dict with sync results: {'shots_synced': int, 'errors': list}
     """
+    import json
+
+    started_at = datetime.now().isoformat()
+    records_synced = 0
+    records_failed = 0
+    errors = []
     results = {
         'shots_synced': 0,
         'shots_total': 0,
         'batches': 0,
-        'errors': [],
+        'errors': errors,
         'dry_run': dry_run,
     }
 
-    if not supabase:
-        results['errors'].append("Supabase not configured. Set SUPABASE_URL and SUPABASE_KEY.")
-        return results
+    conn = None
 
     try:
+        if not supabase:
+            error_msg = "Supabase not configured. Set SUPABASE_URL and SUPABASE_KEY."
+            errors.append(error_msg)
+            records_failed += 1
+            return results
+
         conn = sqlite3.connect(SQLITE_DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -1695,7 +1761,6 @@ def sync_to_supabase(dry_run: bool = False, batch_size: int = 100) -> dict:
 
         if dry_run:
             results['message'] = f"Would sync {len(rows)} shots to Supabase"
-            conn.close()
             return results
 
         # Convert rows to dicts and batch upsert
@@ -1712,14 +1777,47 @@ def sync_to_supabase(dry_run: bool = False, batch_size: int = 100) -> dict:
 
                 supabase.table('shots').upsert(batch).execute()
                 results['shots_synced'] += len(batch)
+                records_synced += len(batch)
                 results['batches'] += 1
             except Exception as e:
-                results['errors'].append(f"Batch {results['batches'] + 1} error: {str(e)[:100]}")
-
-        conn.close()
+                error_msg = f"Batch {results['batches'] + 1} error: {str(e)[:100]}"
+                errors.append(error_msg)
+                records_failed += len(batch)
 
     except Exception as e:
-        results['errors'].append(f"Sync error: {str(e)}")
+        error_msg = f"Sync error: {str(e)}"
+        errors.append(error_msg)
+        unsynced = results['shots_total'] - results['shots_synced']
+        records_failed += unsynced if unsynced > 0 else 1
+
+    finally:
+        if conn is not None:
+            conn.close()
+        try:
+            audit_conn = sqlite3.connect(SQLITE_DB_PATH)
+            audit_cursor = audit_conn.cursor()
+            audit_cursor.execute('''
+                INSERT INTO sync_audit
+                (sync_type, started_at, completed_at, records_synced, records_failed, error_message, details)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                'to_supabase',
+                started_at,
+                datetime.now().isoformat(),
+                records_synced,
+                records_failed,
+                "; ".join(errors[:5]) if errors else None,
+                json.dumps({
+                    'dry_run': dry_run,
+                    'shots_total': results['shots_total'],
+                    'batches': results['batches'],
+                    'errors': errors,
+                })
+            ))
+            audit_conn.commit()
+            audit_conn.close()
+        except Exception as audit_error:
+            errors.append(f"Audit log error: {str(audit_error)[:100]}")
 
     return results
 

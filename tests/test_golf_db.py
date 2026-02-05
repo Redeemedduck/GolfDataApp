@@ -1,6 +1,8 @@
 import os
+import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 
 try:
     import pandas as pd
@@ -142,6 +144,55 @@ class TestGolfDB(unittest.TestCase):
         # Verify the update
         df = golf_db.get_session_data("sess1")
         self.assertEqual(df.iloc[0]["shot_tag"], "Warmup")
+
+    def test_update_session_date_rejects_future_dates(self):
+        future_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        with self.assertRaisesRegex(ValueError, "future"):
+            golf_db.update_session_date_for_shots("sess1", future_date)
+
+    def test_get_sync_drift_returns_meaningful_data(self):
+        """Verify drift detection identifies local-only records."""
+        for i in range(5):
+            shot = {
+                "shot_id": f"drift_test_{i}",
+                "session_id": "sess1",
+                "club": "Driver",
+                "carry": 250,
+                "total": 270,
+                "ball_speed": 150,
+                "club_speed": 100,
+                "smash": 0,
+            }
+            golf_db.save_shot(shot)
+
+        status = golf_db.get_detailed_sync_status()
+
+        self.assertIn("local_only_count", status)
+        self.assertIn("last_sync", status)
+        self.assertGreaterEqual(status["local_only_count"], 5)
+
+    def test_sync_audit_table_exists(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sync_audit'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+
+    def test_sync_to_supabase_creates_audit_record(self):
+        golf_db.sync_to_supabase(dry_run=True)
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM sync_audit WHERE sync_type = 'to_supabase'"
+        )
+        count = cursor.fetchone()[0]
+        conn.close()
+
+        self.assertGreaterEqual(count, 1)
 
 
 if __name__ == "__main__":

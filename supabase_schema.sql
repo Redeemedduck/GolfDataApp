@@ -8,6 +8,8 @@
 -- Project: Uneekor (lhccrzxgnmynxmvoydkm)
 -- Last synced: 2026-01-27
 -- =============================================================================
+-- Note: The sync_audit table exists only in local SQLite and is not part of
+-- this Supabase schema.
 
 
 -- =============================================================================
