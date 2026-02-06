@@ -4,8 +4,45 @@ Calendar strip component — horizontal date strip with dots on practice days.
 Rendered as HTML/CSS via st.markdown for a lightweight, fast visual.
 """
 import streamlit as st
-from datetime import datetime, timedelta
-from typing import Set
+from datetime import date, datetime, timedelta
+from typing import Optional, Set
+
+
+def _parse_practice_date(value) -> Optional[date]:
+    """Parse a practice date from ISO datetime/date strings with fallbacks."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str):
+        return None
+
+    raw = value.strip()
+    if not raw:
+        return None
+
+    try:
+        return datetime.fromisoformat(raw).date()
+    except ValueError:
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                return datetime.fromisoformat(raw.split("T", 1)[0]).date()
+            except (ValueError, TypeError):
+                return None
+
+
+def _normalize_practice_dates(practice_dates: Set[str]) -> Set[str]:
+    """Normalize incoming dates to canonical YYYY-MM-DD strings."""
+    normalized_dates = set()
+    for value in practice_dates or set():
+        parsed = _parse_practice_date(value)
+        if parsed is not None:
+            normalized_dates.add(parsed.isoformat())
+    return normalized_dates
 
 
 def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
@@ -15,6 +52,7 @@ def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
         practice_dates: Set of date strings (YYYY-MM-DD) when user practiced.
         weeks: Number of weeks to display (default 4).
     """
+    normalized_practice_dates = _normalize_practice_dates(practice_dates)
     today = datetime.now().date()
     total_days = weeks * 7
     start_date = today - timedelta(days=total_days - 1)
@@ -24,7 +62,7 @@ def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
     for i in range(total_days):
         day = start_date + timedelta(days=i)
         date_str = day.strftime('%Y-%m-%d')
-        is_practice = date_str in practice_dates
+        is_practice = date_str in normalized_practice_dates
         is_today = day == today
 
         # Color coding
@@ -63,11 +101,11 @@ def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
     # Streak calculation
     streak = 0
     check_date = today
-    while check_date.strftime('%Y-%m-%d') in practice_dates:
+    while check_date.strftime('%Y-%m-%d') in normalized_practice_dates:
         streak += 1
         check_date -= timedelta(days=1)
 
-    practice_count = len([d for d in practice_dates
+    practice_count = len([d for d in normalized_practice_dates
                           if start_date.strftime('%Y-%m-%d') <= d <= today.strftime('%Y-%m-%d')])
 
     html = f"""

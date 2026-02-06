@@ -5,10 +5,37 @@ Groups sessions by week ("This Week", "Last Week", etc.)
 and renders journal cards for each.
 """
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from components.journal_card import render_journal_card
+
+
+def _parse_session_date(value) -> Optional[date]:
+    """Parse session_date from ISO datetime/date strings with fallbacks."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str):
+        return None
+
+    raw = value.strip()
+    if not raw:
+        return None
+
+    try:
+        return datetime.fromisoformat(raw).date()
+    except ValueError:
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                return datetime.fromisoformat(raw.split("T", 1)[0]).date()
+            except (ValueError, TypeError):
+                return None
 
 
 def _group_by_week(sessions: List[dict]) -> dict:
@@ -25,17 +52,8 @@ def _group_by_week(sessions: List[dict]) -> dict:
     }
 
     for session in sessions:
-        date_str = session.get('session_date')
-        if not date_str:
-            groups["Older"].append(session)
-            continue
-
-        try:
-            if isinstance(date_str, str):
-                session_date = datetime.strptime(date_str[:10], '%Y-%m-%d').date()
-            else:
-                session_date = date_str
-        except (ValueError, TypeError):
+        session_date = _parse_session_date(session.get('session_date'))
+        if session_date is None:
             groups["Older"].append(session)
             continue
 
