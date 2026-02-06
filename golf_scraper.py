@@ -1,7 +1,9 @@
 import os
 import re
 import requests
+import time
 import golf_db
+import observability
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -13,6 +15,26 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 API_BASE_URL = "https://api-v2.golfsvc.com/v2/oldmyuneekor/report"
+
+# Image download limits (security: prevent resource exhaustion)
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_MIME_TYPES = {'image/jpeg', 'image/png', 'image/gif'}
+
+def request_with_retries(url, timeout=30, max_retries=3, backoff=1.5):
+    """Fetch a URL with basic retry/backoff for transient failures."""
+    last_err = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.get(url, timeout=timeout)
+            if response.status_code in (429,) or response.status_code >= 500:
+                last_err = requests.HTTPError(f"HTTP {response.status_code} for {url}")
+                time.sleep(backoff * attempt)
+                continue
+            return response
+        except requests.exceptions.RequestException as e:
+            last_err = e
+            time.sleep(backoff * attempt)
+    raise last_err
 
 def extract_url_params(url):
     """Extract report_id and key from Uneekor URL"""
@@ -34,35 +56,84 @@ def calculate_smash(ball_speed, club_speed):
         return round(ball_speed / club_speed, 2)
     return 0.0
 
-def run_scraper(url, progress_callback):
+def run_scraper(url, progress_callback, session_date=None):
     """
     Main scraper function using Uneekor API
+
+    Args:
+        url: Uneekor report URL
+        progress_callback: Function to call with progress messages
+        session_date: Optional datetime for when the session occurred
+                      (if not provided, only date_added is recorded)
     """
+    start_time = time.time()
+    error_count = 0
+    report_id = None
+    sessions_found = 0
+
+    def log_run(status, message=None):
+        observability.append_event(
+            "import_runs.jsonl",
+            {
+                "status": status,
+                "report_id": report_id,
+                "sessions": sessions_found,
+                "shots_imported": total_shots_imported,
+                "errors": error_count,
+                "duration_sec": round(time.time() - start_time, 2),
+                "message": message,
+            },
+        )
 
     # 1. Extract report_id and key from URL
     progress_callback("Parsing URL...")
     report_id, key = extract_url_params(url)
 
     if not report_id or not key:
-        return "Error: Could not extract report ID and key from URL. Please use a valid Uneekor report URL."
+        total_shots_imported = 0
+        log_run("failed", "Invalid report URL")
+        return {
+            'status': 'error',
+            'message': "Could not extract report ID and key from URL. Please use a valid Uneekor report URL.",
+            'total_shots_imported': 0
+        }
 
     # 2. Fetch shot data from API
     progress_callback(f"Fetching data for report {report_id}...")
     api_url = f"{API_BASE_URL}/{report_id}/{key}"
 
     try:
-        response = requests.get(api_url, timeout=30)
+        response = request_with_retries(api_url, timeout=30)
         response.raise_for_status()
         sessions_data = response.json()
     except requests.exceptions.RequestException as e:
-        return f"Error: Failed to fetch data from Uneekor API: {str(e)}"
+        total_shots_imported = 0
+        log_run("failed", f"Uneekor API request failed: {str(e)}")
+        return {
+            'status': 'error',
+            'message': f"Failed to fetch data from Uneekor API: {str(e)}",
+            'total_shots_imported': 0
+        }
     except ValueError as e:
-        return f"Error: Invalid JSON response from API: {str(e)}"
+        total_shots_imported = 0
+        log_run("failed", f"Invalid JSON response: {str(e)}")
+        return {
+            'status': 'error',
+            'message': f"Invalid JSON response from API: {str(e)}",
+            'total_shots_imported': 0
+        }
 
     if not sessions_data or not isinstance(sessions_data, list):
-        return "Error: No session data found in API response"
+        total_shots_imported = 0
+        log_run("failed", "No session data in API response")
+        return {
+            'status': 'error',
+            'message': "No session data found in API response",
+            'total_shots_imported': 0
+        }
 
-    progress_callback(f"Found {len(sessions_data)} club sessions")
+    sessions_found = len(sessions_data)
+    progress_callback(f"Found {sessions_found} club sessions")
 
     total_shots_imported = 0
 
@@ -109,6 +180,7 @@ def run_scraper(url, progress_callback):
                 shot_data = {
                     'id': f"{report_id}_{session_id}_{shot.get('id')}",
                     'session': report_id,
+                    'session_date': session_date.isoformat() if session_date else None,
                     'club': club_name,
                     'carry_distance': carry_yards,
                     'total_distance': total_yards,
@@ -144,11 +216,20 @@ def run_scraper(url, progress_callback):
                 total_shots_imported += 1
 
             except Exception as e:
+                error_count += 1
                 print(f"Error processing shot {shot.get('id')}: {e}")
                 continue
 
     progress_callback(f"Import complete!")
-    return f"Success! Imported {total_shots_imported} shots (with images) from {len(sessions_data)} club sessions."
+    log_run("success", "Import complete")
+    return {
+        'status': 'success',
+        'message': f"Imported {total_shots_imported} shots (with images) from {len(sessions_data)} club sessions.",
+        'total_shots_imported': total_shots_imported,
+        'club_sessions': len(sessions_data),
+        'session_date': session_date.isoformat() if session_date else None,
+        'report_id': report_id
+    }
 
 def upload_shot_images(report_id, key, session_id, shot_id):
     """
@@ -163,7 +244,7 @@ def upload_shot_images(report_id, key, session_id, shot_id):
     uploaded_urls = {}
 
     try:
-        response = requests.get(image_api_url, timeout=30)
+        response = request_with_retries(image_api_url, timeout=30)
         if response.status_code != 200:
             return {}
             
@@ -176,9 +257,28 @@ def upload_shot_images(report_id, key, session_id, shot_id):
             if img_path:
                 full_url = f"https://api-v2.golfsvc.com/v2{img_path}"
 
+                # Security: Check image size and type before downloading
+                try:
+                    head_response = requests.head(full_url, timeout=10)
+                    content_length = int(head_response.headers.get('content-length', 0))
+                    content_type = head_response.headers.get('content-type', '').split(';')[0].strip()
+
+                    if content_length > MAX_IMAGE_SIZE:
+                        print(f"Skipping image - too large: {content_length} bytes (max: {MAX_IMAGE_SIZE})")
+                        continue
+                    if content_type and content_type not in ALLOWED_MIME_TYPES:
+                        print(f"Skipping image - invalid type: {content_type}")
+                        continue
+                except requests.exceptions.RequestException:
+                    pass  # HEAD failed, proceed with GET
+
                 # Download image into memory
-                img_response = requests.get(full_url, timeout=30)
+                img_response = request_with_retries(full_url, timeout=30)
                 if img_response.status_code == 200:
+                    # Double-check size after download
+                    if len(img_response.content) > MAX_IMAGE_SIZE:
+                        print(f"Skipping image - downloaded size exceeds limit")
+                        continue
                     image_bytes = img_response.content
                     
                     # Define path in Supabase bucket
@@ -186,15 +286,20 @@ def upload_shot_images(report_id, key, session_id, shot_id):
                     storage_path = f"{report_id}/{shot_id}_{img_name}.jpg"
                     
                     try:
-                        # Upload to Supabase
                         bucket = "shot-images"
-                        supabase.storage.from_(bucket).upload(
-                            path=storage_path,
-                            file=image_bytes,
-                            file_options={"content-type": "image/jpeg", "upsert": "true"}
-                        )
-                        
-                        # Get Public URL
+                        for attempt in range(1, 4):
+                            try:
+                                supabase.storage.from_(bucket).upload(
+                                    path=storage_path,
+                                    file=image_bytes,
+                                    file_options={"content-type": "image/jpeg", "upsert": "true"}
+                                )
+                                break
+                            except Exception as upload_err:
+                                if attempt == 3:
+                                    raise upload_err
+                                time.sleep(1.5 * attempt)
+
                         public_url = supabase.storage.from_(bucket).get_public_url(storage_path)
                         
                         if img_name == 'ballimpact':

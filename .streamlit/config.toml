@@ -1,0 +1,27 @@
+# Streamlit configuration for Google Cloud Run
+# This file configures the app for production deployment
+
+[server]
+port = 8080
+address = "0.0.0.0"
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
+serverAddress = "0.0.0.0"
+serverPort = 8080
+
+[theme]
+# Fairway Green - Golf-themed color palette
+primaryColor = "#2D7F3E"
+backgroundColor = "#FAFAFA"
+secondaryBackgroundColor = "#E8F5E9"
+textColor = "#212121"
+font = "sans serif"
+
+[client]
+showErrorDetails = false
+toolbarMode = "minimal"

@@ -32,3 +32,24 @@ debug_page_source.html
 # IDEs
 .vscode/
 .idea/
+
+# Automation credentials
+.uneekor_cookies.enc
+.uneekor_key
+
+# SQLite WAL files
+*.db-shm
+*.db-wal
+
+# Trained ML models (too large for git)
+/models/trained_*.pkl
+
+# Firebase debug
+firebase-debug.log
+
+# MCP config and Playwright screenshots
+.mcp.json
+.playwright-mcp/
+
+# Git worktrees
+.worktrees/

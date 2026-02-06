@@ -1,53 +1,106 @@
-# ⛳ Golf Data Lab (GolfDataApp)
+# Golf Data Lab (GolfDataApp)
 
-A powerful data pipeline for capturing, syncing, and analyzing golf shot data from Uneekor launch monitors.
+A local-first application for capturing, analyzing, and coaching golf performance using data from Uneekor launch monitors.
 
-## 🚀 Overview
+## Overview
 
-This application automates the flow of golf performance data:
-1.  **Capture**: Scrape report data and images from Uneekor's API via a local Streamlit dashboard.
-2.  **Storage**: Save data to a local SQLite database for offline access and sync to **Supabase** (PostgreSQL + Cloud Storage).
-3.  **Pipeline**: Automate data export from Supabase to **Google BigQuery** for long-term warehousing.
-4.  **Analysis**: Use **Vertex AI (Gemini)** to generate deep insights and performance recommendations.
-5.  **Control Plane**: Integrate with **MCP Database Toolbox** for conversational data analysis and autonomous discovery.
+1. **Capture**: Scrape shot data and images from Uneekor's API via a local Streamlit dashboard.
+2. **Automation**: Browser-based scraper with Playwright for hands-free data import and historical backfill.
+3. **Storage**: Local SQLite database with optional sync to Supabase (PostgreSQL).
+4. **Analysis**: Interactive dashboard with club comparisons, trends, and shot dispersion.
+5. **AI Coach**: Conversational coaching with local ML models or Gemini.
+6. **Workflow**: Tag shots, split sessions, and label session context inside the Database Manager.
 
-## 🛠️ Quick Start
+## Quick Start
 
-### 1. Local Setup & Data Capture
-To get the Streamlit server running and start importing your Uneekor data:
+### 1. Local Setup
+
 ```bash
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 streamlit run app.py
 ```
-*Full details in [SETUP_GUIDE.md](file:///Users/duck/Library/CloudStorage/GoogleDrive-matt@coloradolawclassic.org/My%20Drive/2025%20Golf%20Season/GolfDataApp/SETUP_GUIDE.md).*
 
-### 2. Cloud Data Sync
-Once you have data in Supabase, sync it to your personal data warehouse:
+*Full details in [SETUP_GUIDE.md](SETUP_GUIDE.md).*
+
+### 2. Automated Data Import
+
+Set up hands-free data import with browser automation:
+
 ```bash
-python scripts/supabase_to_bigquery.py incremental
-```
-*Full details in [QUICKSTART.md](file:///Users/duck/Library/CloudStorage/GoogleDrive-matt@coloradolawclassic.org/My%20Drive/2025%20Golf%20Season/GolfDataApp/QUICKSTART.md).*
+# Install Playwright browser
+playwright install chromium
 
-### 3. AI Performance Insights
-Get AI-powered analysis of your swing metrics:
+# First-time login (saves cookies)
+python automation_runner.py login
+
+# Discover and import new sessions
+python automation_runner.py discover --headless
+
+# Historical backfill
+python automation_runner.py backfill --start 2025-01-01
+
+# Extract session dates from listing page
+python automation_runner.py reclassify-dates --from-listing
+
+# Sync to Supabase cloud
+python automation_runner.py sync-database
+```
+
+*Full details in [AUTOMATION_GUIDE.md](AUTOMATION_GUIDE.md).*
+
+### 3. AI Coach
+
+Chat with the AI Coach for personalized insights:
+
 ```bash
-python scripts/vertex_ai_analysis.py analyze "7 Iron"
+streamlit run app.py
+# Navigate to AI Coach page
 ```
 
-### 4. Conversational Data Analysis
-Connect your databases to an AI agent via MCP for natural language queries:
+### 4. Optional: Supabase Cloud Sync
+
+Sync your local data to Supabase for backup and multi-device access:
+
 ```bash
-# Start the MCP Control Plane
-toolbox --tools-file ~/.mcp/database-toolbox/tools.yaml --stdio
+python scripts/migrate_to_supabase.py
 ```
 
-## 📂 Documentation
+*Full details in [SETUP_GUIDE.md](SETUP_GUIDE.md).*
 
-- [QUICKSTART.md](file:///Users/duck/Library/CloudStorage/GoogleDrive-matt@coloradolawclassic.org/My%20Drive/2025%20Golf%20Season/GolfDataApp/QUICKSTART.md): Streamlined guide for Supabase, BigQuery, and Vertex AI.
-- [SETUP_GUIDE.md](file:///Users/duck/Library/CloudStorage/GoogleDrive-matt@coloradolawclassic.org/My%20Drive/2025%20Golf%20Season/GolfDataApp/SETUP_GUIDE.md): Deep dive into every step of the pipeline.
-- [AUTOMATION_GUIDE.md](file:///Users/duck/Library/CloudStorage/GoogleDrive-matt@coloradolawclassic.org/My%20Drive/2025%20Golf%20Season/GolfDataApp/AUTOMATION_GUIDE.md): Instructions for setting up automated syncs (cron).
+## Documentation
 
-## ⚖️ License
+- [SETUP_GUIDE.md](SETUP_GUIDE.md): Full setup walkthrough (local environment, Supabase, MCP).
+- [AUTOMATION_GUIDE.md](AUTOMATION_GUIDE.md): Playwright scraper setup and usage.
+- [mcp/README.md](mcp/README.md): Supabase MCP connector for AI clients.
+
+## Tests
+
+Run the unit tests:
+
+```bash
+python -m unittest discover -s tests
+```
+
+## Data Source Selection
+
+By default the app reads from local SQLite and falls back to Supabase if the local DB is missing.
+To prefer cloud reads (useful when SQLite is empty), set:
+
+```bash
+USE_SUPABASE_READS=1
+```
+
+The active source appears in the Streamlit sidebar as **Data Source**.
+
+## Tagging & Session Context
+
+Use **Database Manager -> Tags & Session Split** to:
+- Tag warmup/practice/round shots per session.
+- Split mixed sessions into clean sub-sessions.
+- Label sessions with a `session_type` for filtering.
+
+## License
+
 Personal Use.
