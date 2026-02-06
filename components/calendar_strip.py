@@ -57,9 +57,9 @@ def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
 
         cells.append(
             f'<div title="{tooltip}" style="'
-            f'width:18px;height:18px;border-radius:3px;'
+            f'width:min(18px, 3%);height:18px;border-radius:3px;'
             f'background:{bg};border:{border};'
-            f'display:inline-block;margin:1px;'
+            f'flex:0 0 auto;margin:1px;'
             f'"></div>'
         )
 
@@ -69,7 +69,7 @@ def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
         week_start = start_date + timedelta(weeks=w)
         label = week_start.strftime('%b %d')
         week_labels.append(
-            f'<span style="display:inline-block;width:{7*20}px;'
+            f'<span style="flex:1 1 auto;min-width:80px;'
             f'font-size:0.7em;color:#888;text-align:left">{label}</span>'
         )
 
@@ -91,8 +91,8 @@ def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
                 {practice_count} sessions | {'Streak: ' + str(streak) + ' day' + ('s' if streak != 1 else '') if streak > 0 else 'No streak'}
             </span>
         </div>
-        <div style="line-height:0">{''.join(week_labels)}</div>
-        <div style="line-height:0">{''.join(cells)}</div>
+        <div style="display:flex;flex-wrap:wrap;max-width:100%">{''.join(week_labels)}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:1px;max-width:100%">{''.join(cells)}</div>
         <div style="margin-top:6px;font-size:0.7em;color:#666">
             <span style="display:inline-block;width:10px;height:10px;background:#2ca02c;border-radius:2px;margin-right:3px"></span> Practiced
             <span style="display:inline-block;width:10px;height:10px;background:#1f77b4;border-radius:2px;margin-left:10px;margin-right:3px"></span> Today
