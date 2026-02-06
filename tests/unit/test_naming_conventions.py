@@ -218,6 +218,90 @@ class TestAutoTagger(unittest.TestCase):
         self.assertIn("Marathon", tags)
 
 
+class TestSessionNamerDisplayName(unittest.TestCase):
+    """Tests for SessionNamer.generate_display_name and detect_session_type."""
+
+    def setUp(self):
+        self.namer = SessionNamer()
+
+    # --- detect_session_type ---
+
+    def test_detect_driver_focus(self):
+        """Session with >60% driver shots should be 'Driver Focus'."""
+        clubs = ['Driver'] * 15 + ['7 Iron'] * 5  # 75% driver
+        result = self.namer.detect_session_type(clubs)
+        self.assertEqual(result, 'Driver Focus')
+
+    def test_detect_iron_work(self):
+        """Session with >60% iron shots should be 'Iron Work'."""
+        clubs = ['7 Iron'] * 10 + ['6 Iron'] * 8 + ['Driver'] * 2  # 90% irons
+        result = self.namer.detect_session_type(clubs)
+        self.assertEqual(result, 'Iron Work')
+
+    def test_detect_short_game(self):
+        """Session with >60% wedge shots should be 'Short Game'."""
+        clubs = ['PW'] * 10 + ['SW'] * 8 + ['Driver'] * 2  # 90% wedges
+        result = self.namer.detect_session_type(clubs)
+        self.assertEqual(result, 'Short Game')
+
+    def test_detect_mixed_practice(self):
+        """Session with no dominant club category should be 'Mixed Practice'."""
+        clubs = ['Driver'] * 5 + ['7 Iron'] * 5 + ['PW'] * 5
+        result = self.namer.detect_session_type(clubs)
+        self.assertEqual(result, 'Mixed Practice')
+
+    def test_detect_warmup(self):
+        """Session with <10 shots should be 'Warmup'."""
+        clubs = ['Driver'] * 3
+        result = self.namer.detect_session_type(clubs)
+        self.assertEqual(result, 'Warmup')
+
+    def test_detect_empty_clubs(self):
+        """Empty club list should default to 'Mixed Practice'."""
+        result = self.namer.detect_session_type([])
+        self.assertEqual(result, 'Mixed Practice')
+
+    def test_detect_uses_normalized_names(self):
+        """Should work with standard normalized club names."""
+        clubs = ['3 Wood'] * 8 + ['5 Wood'] * 8 + ['PW'] * 4  # 80% woods
+        result = self.namer.detect_session_type(clubs)
+        self.assertEqual(result, 'Woods Focus')
+
+    # --- generate_display_name ---
+
+    def test_display_name_driver_focus(self):
+        """Full display name for driver focus session."""
+        date = datetime(2026, 2, 2)
+        clubs = ['Driver'] * 15 + ['7 Iron'] * 5
+        result = self.namer.generate_display_name(date, clubs)
+        self.assertEqual(result, '2026-02-02 Driver Focus (20 shots)')
+
+    def test_display_name_mixed_practice(self):
+        """Full display name for mixed practice session."""
+        date = datetime(2026, 1, 28)
+        clubs = ['Driver'] * 5 + ['7 Iron'] * 5 + ['PW'] * 5
+        result = self.namer.generate_display_name(date, clubs)
+        self.assertEqual(result, '2026-01-28 Mixed Practice (15 shots)')
+
+    def test_display_name_none_date(self):
+        """NULL date should use 'Unknown Date' placeholder."""
+        clubs = ['Driver'] * 20
+        result = self.namer.generate_display_name(None, clubs)
+        self.assertEqual(result, 'Unknown Date Driver Focus (20 shots)')
+
+    def test_display_name_string_date(self):
+        """Should handle string dates (from database)."""
+        clubs = ['PW'] * 15 + ['SW'] * 10
+        result = self.namer.generate_display_name('2026-01-15', clubs)
+        self.assertEqual(result, '2026-01-15 Short Game (25 shots)')
+
+    def test_display_name_iso_string_date(self):
+        """Should handle ISO datetime strings (YYYY-MM-DDTHH:MM:SS)."""
+        clubs = ['7 Iron'] * 20
+        result = self.namer.generate_display_name('2026-01-15T00:00:00', clubs)
+        self.assertEqual(result, '2026-01-15 Iron Work (20 shots)')
+
+
 class TestSessionContextParser(unittest.TestCase):
     """Tests for SessionContextParser, including listing date parsing."""
 

@@ -23,7 +23,7 @@ Session Naming Patterns:
 
 import re
 from datetime import datetime
-from typing import Optional, List, Dict, Set, Tuple
+from typing import Optional, List, Dict, Set, Tuple, Union
 from dataclasses import dataclass
 
 
@@ -385,6 +385,89 @@ class SessionNamer:
 
         # Default to practice
         return 'practice'
+
+    # --- Club categories for distribution-based session type detection ---
+
+    DRIVER_CLUBS = {'Driver'}
+    IRON_CLUBS = {f'{i} Iron' for i in range(1, 10)}
+    WEDGE_CLUBS = {'PW', 'GW', 'AW', 'SW', 'LW'}
+    WOOD_CLUBS = {'3 Wood', '5 Wood', '7 Wood', '2 Wood', '4 Wood', '9 Wood'}
+    HYBRID_CLUBS = {f'{i} Hybrid' for i in range(2, 7)}
+
+    def detect_session_type(self, clubs: List[str]) -> str:
+        """
+        Detect session type based on club distribution (shot-level list).
+
+        Uses the proportion of shots per club category to classify:
+        - 'Warmup' if <10 total shots
+        - 'Driver Focus' if >60% driver shots
+        - 'Iron Work' if >60% iron shots
+        - 'Short Game' if >60% wedge shots
+        - 'Woods Focus' if >60% wood/hybrid shots
+        - 'Mixed Practice' otherwise
+
+        Args:
+            clubs: List of club names per shot (with repetitions).
+                   Should be normalized canonical names.
+
+        Returns:
+            Session type string for display.
+        """
+        if not clubs:
+            return 'Mixed Practice'
+
+        total = len(clubs)
+
+        if total < 10:
+            return 'Warmup'
+
+        driver_count = sum(1 for c in clubs if c in self.DRIVER_CLUBS)
+        iron_count = sum(1 for c in clubs if c in self.IRON_CLUBS)
+        wedge_count = sum(1 for c in clubs if c in self.WEDGE_CLUBS)
+        wood_count = sum(1 for c in clubs if c in self.WOOD_CLUBS or c in self.HYBRID_CLUBS)
+
+        if driver_count / total > 0.6:
+            return 'Driver Focus'
+        if iron_count / total > 0.6:
+            return 'Iron Work'
+        if wedge_count / total > 0.6:
+            return 'Short Game'
+        if wood_count / total > 0.6:
+            return 'Woods Focus'
+
+        return 'Mixed Practice'
+
+    def generate_display_name(
+        self,
+        session_date: Union[datetime, str, None],
+        clubs: List[str],
+    ) -> str:
+        """
+        Generate a display name in standard format.
+
+        Format: "{YYYY-MM-DD} {SessionType} ({shot_count} shots)"
+
+        Args:
+            session_date: Date of the session (datetime, string, or None).
+            clubs: List of club names per shot (with repetitions).
+
+        Returns:
+            Display name string, e.g. "2026-01-25 Mixed Practice (47 shots)"
+        """
+        # Resolve date string
+        if session_date is None:
+            date_str = 'Unknown Date'
+        elif isinstance(session_date, datetime):
+            date_str = session_date.strftime('%Y-%m-%d')
+        elif isinstance(session_date, str):
+            date_str = session_date[:10]  # Handle both YYYY-MM-DD and YYYY-MM-DDTHH:MM:SS
+        else:
+            date_str = str(session_date)[:10]
+
+        session_type = self.detect_session_type(clubs)
+        shot_count = len(clubs)
+
+        return f"{date_str} {session_type} ({shot_count} shots)"
 
 
 class AutoTagger:

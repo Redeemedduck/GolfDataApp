@@ -1524,6 +1524,69 @@ def backfill_session_dates():
     return result
 
 
+def batch_update_session_names():
+    """
+    Update session names for all imported sessions based on their shot data.
+
+    Uses SessionNamer.generate_display_name() to create names in the format:
+        "{YYYY-MM-DD} {SessionType} ({shot_count} shots)"
+
+    Reads club data from the shots table and dates from sessions_discovered.
+
+    Returns:
+        Number of sessions updated.
+    """
+    from automation.naming_conventions import get_session_namer
+
+    namer = get_session_namer()
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    cursor = conn.cursor()
+
+    # Get all imported sessions with their dates
+    cursor.execute('''
+        SELECT sd.report_id, sd.session_date
+        FROM sessions_discovered sd
+        WHERE sd.import_status = 'imported'
+    ''')
+    sessions = cursor.fetchall()
+
+    updated = 0
+    for report_id, session_date in sessions:
+        # Get clubs for this session from shots table
+        cursor.execute('''
+            SELECT club FROM shots
+            WHERE session_id = ? AND club IS NOT NULL
+        ''', (report_id,))
+        clubs = [row[0] for row in cursor.fetchall()]
+
+        if not clubs:
+            continue
+
+        new_name = namer.generate_display_name(session_date, clubs)
+
+        cursor.execute('''
+            UPDATE sessions_discovered
+            SET session_name = ?
+            WHERE report_id = ?
+        ''', (new_name, report_id))
+
+        if cursor.rowcount > 0:
+            updated += 1
+
+    conn.commit()
+
+    # Log the batch update
+    cursor.execute(
+        "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
+        ("BATCH_RENAME", "sessions_discovered", "multiple",
+         f"Renamed {updated} sessions with display names")
+    )
+    conn.commit()
+    conn.close()
+
+    return updated
+
+
 def get_sessions_missing_dates(limit: int = 100):
     """
     Get sessions that are missing session_date values.
