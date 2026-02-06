@@ -28,11 +28,63 @@ else:
     print("Warning: Supabase credentials not found. Cloud sync disabled.")
 
 # --- Helper Functions ---
-def clean_value(val, default=0.0):
-    """Handle sentinel values (99999) and None."""
+def clean_value(val, default=None):
+    """Handle sentinel values (99999) and None.
+
+    Returns default (None) for missing/sentinel data so SQL AVG()
+    naturally ignores these rows instead of counting them as 0.
+    """
     if val is None or val == 99999:
         return default
     return val
+
+
+# Columns where 0.0 is NOT a valid measurement — sentinels must become NULL
+_ZERO_INVALID_COLUMNS = frozenset({
+    'carry', 'total', 'ball_speed', 'club_speed', 'smash',
+    'back_spin', 'launch_angle', 'apex', 'flight_time',
+    'descent_angle', 'dynamic_loft',
+})
+
+
+def migrate_zeros_to_null():
+    """Convert false-zero values back to NULL for columns where 0 is invalid.
+
+    Fixes historical data corrupted by the old clean_value(default=0.0) bug.
+    Columns like face_angle, club_path, impact_x/y where 0.0 means
+    "neutral/centered" are left untouched.
+
+    Returns:
+        Dict with counts per column of rows updated.
+    """
+    results = {}
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        for col in _ZERO_INVALID_COLUMNS:
+            cursor.execute(
+                f"UPDATE shots SET {col} = NULL WHERE {col} = 0.0"
+            )
+            results[col] = cursor.rowcount
+
+        conn.commit()
+
+        total = sum(results.values())
+        if total > 0:
+            cursor.execute(
+                "INSERT INTO change_log (operation, entity_type, entity_id, details) "
+                "VALUES (?, ?, ?, ?)",
+                ("MIGRATE_ZEROS", "shots", "all",
+                 f"Converted {total} false-zeros to NULL across {len(results)} columns")
+            )
+            conn.commit()
+
+        conn.close()
+    except Exception as e:
+        print(f"Migration Error: {e}")
+
+    return results
 
 def _normalize_read_mode(mode):
     if mode in ("auto", "sqlite", "supabase"):
@@ -106,7 +158,9 @@ def init_db():
         'lie_angle': 'TEXT',
         'shot_tag': 'TEXT',
         'session_type': 'TEXT',
-        'session_date': 'TIMESTAMP'
+        'session_date': 'TIMESTAMP',
+        'face_to_path': 'REAL',
+        'strike_distance': 'REAL',
     }
     
     for col, col_type in required_columns.items():
@@ -116,6 +170,9 @@ def init_db():
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_shots_session_id ON shots(session_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_shots_session_date ON shots(session_date)')
+    # Composite indexes for journal/club queries
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_shots_session_club ON shots(session_id, club)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_shots_date_club ON shots(session_date, club)')
 
     # Shared tag catalog
     cursor.execute('''
@@ -161,6 +218,31 @@ def init_db():
             records_failed INTEGER DEFAULT 0,
             error_message TEXT,
             details TEXT
+        )
+    ''')
+
+    # Pre-computed session aggregates (eliminates N+1 queries)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS session_stats (
+            session_id TEXT PRIMARY KEY,
+            session_date TEXT,
+            session_type TEXT,
+            shot_count INTEGER DEFAULT 0,
+            clubs_used TEXT,
+            avg_carry REAL,
+            avg_total REAL,
+            avg_ball_speed REAL,
+            avg_club_speed REAL,
+            avg_smash REAL,
+            best_carry REAL,
+            avg_face_angle REAL,
+            std_face_angle REAL,
+            avg_club_path REAL,
+            std_club_path REAL,
+            avg_face_to_path REAL,
+            avg_strike_distance REAL,
+            std_strike_distance REAL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
@@ -433,35 +515,54 @@ def save_shot(data):
         'session_date': data.get('session_date'),
         'session_type': data.get('session_type'),
         'club': data.get('club'),
+        # Distance/speed metrics — 0 is invalid (NULL = no data captured)
         'carry': clean_value(data.get('carry', data.get('carry_distance'))),
         'total': clean_value(data.get('total', data.get('total_distance'))),
-        'smash': clean_value(data.get('smash', 0.0)),
-        'club_path': clean_value(data.get('club_path')),
-        'face_angle': clean_value(data.get('face_angle', data.get('club_face_angle'))),
         'ball_speed': clean_value(data.get('ball_speed')),
         'club_speed': clean_value(data.get('club_speed')),
-        'side_spin': clean_value(data.get('side_spin'), 0),
-        'back_spin': clean_value(data.get('back_spin'), 0),
+        'smash': clean_value(data.get('smash')),
         'launch_angle': clean_value(data.get('launch_angle')),
-        'side_angle': clean_value(data.get('side_angle')),
         'dynamic_loft': clean_value(data.get('dynamic_loft')),
-        'attack_angle': clean_value(data.get('attack_angle')),
-        'impact_x': clean_value(data.get('impact_x')),
-        'impact_y': clean_value(data.get('impact_y')),
-        'side_distance': clean_value(data.get('side_distance')),
         'descent_angle': clean_value(data.get('descent_angle', data.get('decent_angle'))),
         'apex': clean_value(data.get('apex')),
         'flight_time': clean_value(data.get('flight_time')),
+        # Spin — 0 is valid (no spin)
+        'side_spin': clean_value(data.get('side_spin'), 0),
+        'back_spin': clean_value(data.get('back_spin'), 0),
+        # Angles/position — 0 means neutral/centered (valid)
+        'club_path': clean_value(data.get('club_path'), 0.0),
+        'face_angle': clean_value(data.get('face_angle', data.get('club_face_angle')), 0.0),
+        'attack_angle': clean_value(data.get('attack_angle'), 0.0),
+        'side_angle': clean_value(data.get('side_angle'), 0.0),
+        'side_distance': clean_value(data.get('side_distance'), 0.0),
+        'impact_x': clean_value(data.get('impact_x'), 0.0),
+        'impact_y': clean_value(data.get('impact_y'), 0.0),
         'shot_type': data.get('shot_type', data.get('type')),
         'impact_img': data.get('impact_img'),
         'swing_img': data.get('swing_img'),
-        # New advanced metrics
-        'optix_x': clean_value(data.get('optix_x')),
-        'optix_y': clean_value(data.get('optix_y')),
+        # Advanced metrics — 0 means centered (valid)
+        'optix_x': clean_value(data.get('optix_x'), 0.0),
+        'optix_y': clean_value(data.get('optix_y'), 0.0),
         'club_lie': clean_value(data.get('club_lie')),
         'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None,
         'shot_tag': data.get('shot_tag')
     }
+
+    # Compute derived columns
+    face = payload.get('face_angle')
+    path = payload.get('club_path')
+    if face is not None and path is not None:
+        payload['face_to_path'] = round(face - path, 2)
+    else:
+        payload['face_to_path'] = None
+
+    ix = payload.get('impact_x')
+    iy = payload.get('impact_y')
+    if ix is not None and iy is not None:
+        import math
+        payload['strike_distance'] = round(math.sqrt(ix ** 2 + iy ** 2), 4)
+    else:
+        payload['strike_distance'] = None
 
     # 1. Save to Local SQLite
     try:
@@ -1333,7 +1434,7 @@ ALLOWED_RESTORE_COLUMNS = frozenset({
     'side_angle', 'dynamic_loft', 'attack_angle', 'impact_x', 'impact_y',
     'side_distance', 'descent_angle', 'apex', 'flight_time', 'shot_type',
     'impact_img', 'swing_img', 'optix_x', 'optix_y', 'club_lie', 'lie_angle',
-    'shot_tag',
+    'shot_tag', 'face_to_path', 'strike_distance',
 })
 
 
@@ -1522,6 +1623,295 @@ def backfill_session_dates():
         result['errors'] += 1
 
     return result
+
+
+def backfill_derived_columns():
+    """Compute face_to_path and strike_distance for all existing shots.
+
+    Returns:
+        Number of shots updated.
+    """
+    import math
+
+    updated = 0
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT shot_id, face_angle, club_path, impact_x, impact_y
+            FROM shots
+            WHERE face_to_path IS NULL OR strike_distance IS NULL
+        ''')
+        rows = cursor.fetchall()
+
+        for shot_id, face, path, ix, iy in rows:
+            ftp = round(face - path, 2) if face is not None and path is not None else None
+            sd = round(math.sqrt(ix ** 2 + iy ** 2), 4) if ix is not None and iy is not None else None
+
+            cursor.execute(
+                "UPDATE shots SET face_to_path = ?, strike_distance = ? WHERE shot_id = ?",
+                (ftp, sd, shot_id)
+            )
+            updated += 1
+
+        conn.commit()
+
+        if updated > 0:
+            cursor.execute(
+                "INSERT INTO change_log (operation, entity_type, entity_id, details) "
+                "VALUES (?, ?, ?, ?)",
+                ("BACKFILL_DERIVED", "shots", "all",
+                 f"Computed face_to_path and strike_distance for {updated} shots")
+            )
+            conn.commit()
+
+        conn.close()
+    except Exception as e:
+        print(f"Backfill Derived Columns Error: {e}")
+
+    return updated
+
+
+# ============================================================================
+# SESSION STATS CACHE
+# ============================================================================
+
+def compute_session_stats(session_id=None):
+    """Compute and cache aggregated stats for sessions.
+
+    Args:
+        session_id: Optional — recompute one session. None = recompute all.
+
+    Returns:
+        Number of sessions updated.
+    """
+    updated = 0
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        if session_id:
+            session_ids = [session_id]
+        else:
+            cursor.execute("SELECT DISTINCT session_id FROM shots")
+            session_ids = [row[0] for row in cursor.fetchall()]
+
+        for sid in session_ids:
+            cursor.execute('''
+                SELECT
+                    COUNT(*) as shot_count,
+                    GROUP_CONCAT(DISTINCT club) as clubs_used,
+                    AVG(carry) as avg_carry,
+                    AVG(total) as avg_total,
+                    AVG(ball_speed) as avg_ball_speed,
+                    AVG(club_speed) as avg_club_speed,
+                    AVG(smash) as avg_smash,
+                    MAX(carry) as best_carry,
+                    AVG(face_angle) as avg_face_angle,
+                    AVG((face_angle - (SELECT AVG(face_angle) FROM shots WHERE session_id = ?)) *
+                        (face_angle - (SELECT AVG(face_angle) FROM shots WHERE session_id = ?))) as var_face,
+                    AVG(club_path) as avg_club_path,
+                    AVG((club_path - (SELECT AVG(club_path) FROM shots WHERE session_id = ?)) *
+                        (club_path - (SELECT AVG(club_path) FROM shots WHERE session_id = ?))) as var_path,
+                    AVG(face_to_path) as avg_face_to_path,
+                    AVG(strike_distance) as avg_strike_distance,
+                    AVG((strike_distance - (SELECT AVG(strike_distance) FROM shots WHERE session_id = ?)) *
+                        (strike_distance - (SELECT AVG(strike_distance) FROM shots WHERE session_id = ?))) as var_strike,
+                    MAX(session_date) as session_date,
+                    MAX(session_type) as session_type
+                FROM shots
+                WHERE session_id = ?
+            ''', (sid, sid, sid, sid, sid, sid, sid))
+
+            row = cursor.fetchone()
+            if row and row[0] > 0:
+                import math
+                std_face = math.sqrt(row[9]) if row[9] is not None else None
+                std_path = math.sqrt(row[11]) if row[11] is not None else None
+                std_strike = math.sqrt(row[14]) if row[14] is not None else None
+
+                cursor.execute('''
+                    INSERT OR REPLACE INTO session_stats
+                    (session_id, session_date, session_type, shot_count, clubs_used,
+                     avg_carry, avg_total, avg_ball_speed, avg_club_speed, avg_smash,
+                     best_carry, avg_face_angle, std_face_angle, avg_club_path,
+                     std_club_path, avg_face_to_path, avg_strike_distance,
+                     std_strike_distance, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (
+                    sid, row[15], row[16], row[0], row[1],
+                    row[2], row[3], row[4], row[5], row[6],
+                    row[7], row[8], std_face, row[10],
+                    std_path, row[12], row[13],
+                    std_strike,
+                ))
+                updated += 1
+
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Compute Session Stats Error: {e}")
+
+    return updated
+
+
+def get_recent_sessions_with_stats(weeks=4):
+    """Get recent sessions with pre-computed stats for the journal view.
+
+    Single query, no N+1. Returns sessions from the last `weeks` weeks.
+
+    Args:
+        weeks: Number of weeks to look back (default 4).
+
+    Returns:
+        List of dicts with session stats.
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT *
+            FROM session_stats
+            WHERE session_date >= date('now', ? || ' days')
+               OR session_date IS NULL
+            ORDER BY COALESCE(session_date, '9999-99-99') DESC
+        ''', (str(-weeks * 7),))
+
+        rows = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"Get Recent Sessions Error: {e}")
+        return []
+
+
+def get_session_aggregates(session_id):
+    """Get Big 3 + performance stats for a single session.
+
+    Returns:
+        Dict with all session stats, or empty dict if not found.
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM session_stats WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return dict(row)
+    except Exception as e:
+        print(f"Get Session Aggregates Error: {e}")
+
+    return {}
+
+
+def get_club_profile(club_name):
+    """Get per-club performance story over time.
+
+    Args:
+        club_name: Club to profile (e.g., "Driver", "7 Iron").
+
+    Returns:
+        DataFrame with per-session aggregates for this club, ordered by date.
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        df = pd.read_sql_query('''
+            SELECT
+                session_id,
+                session_date,
+                COUNT(*) as shot_count,
+                AVG(carry) as avg_carry,
+                AVG(total) as avg_total,
+                AVG(ball_speed) as avg_ball_speed,
+                AVG(smash) as avg_smash,
+                MAX(carry) as best_carry,
+                AVG(face_angle) as avg_face_angle,
+                AVG(club_path) as avg_club_path,
+                AVG(face_to_path) as avg_face_to_path,
+                AVG(strike_distance) as avg_strike_distance
+            FROM shots
+            WHERE club = ?
+            GROUP BY session_id, session_date
+            ORDER BY COALESCE(session_date, date_added) ASC
+        ''', conn, params=[club_name])
+        conn.close()
+        return df
+    except Exception as e:
+        print(f"Get Club Profile Error: {e}")
+        return pd.DataFrame()
+
+
+def get_rolling_averages(club=None, window=5):
+    """Get rolling average baselines for comparison.
+
+    Args:
+        club: Optional club filter. None = all clubs.
+        window: Number of most recent sessions to average.
+
+    Returns:
+        Dict with rolling avg metrics.
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        if club:
+            cursor.execute('''
+                SELECT
+                    AVG(carry) as avg_carry,
+                    AVG(ball_speed) as avg_ball_speed,
+                    AVG(smash) as avg_smash,
+                    AVG(face_angle) as avg_face,
+                    AVG(club_path) as avg_path,
+                    AVG(strike_distance) as avg_strike
+                FROM (
+                    SELECT carry, ball_speed, smash, face_angle, club_path, strike_distance
+                    FROM shots
+                    WHERE club = ?
+                    ORDER BY COALESCE(session_date, date_added) DESC
+                    LIMIT ?
+                )
+            ''', (club, window * 20))  # ~20 shots per session
+        else:
+            cursor.execute('''
+                SELECT
+                    AVG(avg_carry) as avg_carry,
+                    AVG(avg_ball_speed) as avg_ball_speed,
+                    AVG(avg_smash) as avg_smash,
+                    AVG(avg_face_angle) as avg_face,
+                    AVG(avg_club_path) as avg_path,
+                    AVG(avg_strike_distance) as avg_strike
+                FROM (
+                    SELECT *
+                    FROM session_stats
+                    ORDER BY COALESCE(session_date, '9999-99-99') DESC
+                    LIMIT ?
+                )
+            ''', (window,))
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return {
+                'avg_carry': row[0],
+                'avg_ball_speed': row[1],
+                'avg_smash': row[2],
+                'avg_face_angle': row[3],
+                'avg_club_path': row[4],
+                'avg_strike_distance': row[5],
+            }
+    except Exception as e:
+        print(f"Get Rolling Averages Error: {e}")
+
+    return {}
 
 
 def batch_update_session_names():

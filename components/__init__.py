@@ -85,6 +85,19 @@ from .ai_insights import (
     render_quick_insights_banner,
 )
 
+# Wave 5: Big 3 Impact Laws + Journal
+from .big3_summary import render_big3_summary
+from .face_path_diagram import render_face_path_diagram
+from .direction_tendency import (
+    render_face_tendency,
+    render_path_tendency,
+    render_shot_shape_distribution,
+)
+from .big3_detail_view import render_big3_detail_view
+from .journal_card import render_journal_card
+from .journal_view import render_journal_view
+from .calendar_strip import render_calendar_strip
+
 __all__ = [
     # Original components
     'render_session_selector',
@@ -145,4 +158,14 @@ __all__ = [
     'generate_session_insights',
     'render_insights_card',
     'render_quick_insights_banner',
+    # Wave 5: Big 3 + Journal
+    'render_big3_summary',
+    'render_face_path_diagram',
+    'render_face_tendency',
+    'render_path_tendency',
+    'render_shot_shape_distribution',
+    'render_big3_detail_view',
+    'render_journal_card',
+    'render_journal_view',
+    'render_calendar_strip',
 ]

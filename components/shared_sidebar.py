@@ -53,11 +53,10 @@ def render_navigation(current_page: str = None) -> None:
     st.header("Navigation")
 
     pages = [
-        ("pages/1_📥_Data_Import.py", "Import Data", "📥"),
-        ("pages/2_📊_Dashboard.py", "Dashboard", "📊"),
-        ("pages/5_🔄_Session_Compare.py", "Compare Sessions", "🔄"),
-        ("pages/3_🗄️_Database_Manager.py", "Manage Data", "🗄️"),
-        ("pages/4_🤖_AI_Coach.py", "AI Coach", "🤖"),
+        ("pages/1_📊_Dashboard.py", "Dashboard", "📊"),
+        ("pages/2_🏌️_Club_Profiles.py", "Club Profiles", "🏌️"),
+        ("pages/3_🤖_AI_Coach.py", "AI Coach", "🤖"),
+        ("pages/4_⚙️_Settings.py", "Settings", "⚙️"),
     ]
 
     for page_path, label, icon in pages:

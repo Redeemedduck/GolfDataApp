@@ -37,6 +37,8 @@ jobs:
           python -m py_compile ml/*.py
           python -m py_compile utils/*.py
           python -m py_compile services/ai/*.py services/ai/providers/*.py
+          python -m py_compile components/*.py
+          for f in pages/*.py; do python -m py_compile "$f"; done
 
       - name: Run tests
         run: python -m unittest discover -s tests -v

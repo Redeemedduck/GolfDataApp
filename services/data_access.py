@@ -116,12 +116,43 @@ def get_session_summary(session_id: str, read_mode: str = "auto") -> dict:
     return summary
 
 
+@st.cache_data(show_spinner=False, ttl=120)
+def get_recent_sessions_with_stats(weeks: int = 4) -> list:
+    """Get recent sessions with pre-computed Big 3 stats for journal view.
+
+    Single query against session_stats table — no N+1.
+    """
+    return golf_db.get_recent_sessions_with_stats(weeks=weeks)
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def get_club_profile(club_name: str) -> pd.DataFrame:
+    """Get per-club performance story over time."""
+    return golf_db.get_club_profile(club_name)
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def get_rolling_averages(club: str = None, window: int = 5) -> dict:
+    """Get rolling average baselines for trend comparison."""
+    return golf_db.get_rolling_averages(club=club, window=window)
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def get_session_aggregates(session_id: str) -> dict:
+    """Get Big 3 + performance stats for a single session."""
+    return golf_db.get_session_aggregates(session_id)
+
+
 def clear_session_cache():
     """Clear all session-related caches."""
     get_unique_sessions.clear()
     get_session_data.clear()
     get_all_shots.clear()
     get_session_summary.clear()
+    get_recent_sessions_with_stats.clear()
+    get_club_profile.clear()
+    get_rolling_averages.clear()
+    get_session_aggregates.clear()
 
 
 def clear_all_caches():
