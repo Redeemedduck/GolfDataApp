@@ -19,10 +19,10 @@ def render_metrics_row(df: pd.DataFrame, show_trends: bool = False) -> None:
     This is the backward-compatible wrapper that uses the enhanced KPI cards.
 
     Args:
-        df: DataFrame containing shot data with columns: carry, total, smash, ball_speed
+        df: DataFrame containing shot data with columns: carry, smash
         show_trends: Whether to show trend indicators (requires session history)
     """
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3 = st.columns(3)
 
     # Total Shots
     with col1:
@@ -43,18 +43,8 @@ def render_metrics_row(df: pd.DataFrame, show_trends: bool = False) -> None:
             tooltip="Average carry distance (air distance before landing)"
         )
 
-    # Average Total
-    with col3:
-        avg_total = df['total'].mean() if len(df) > 0 and 'total' in df.columns else 0
-        render_kpi_card(
-            label="Avg Total",
-            value=avg_total,
-            unit="yds",
-            tooltip="Average total distance (carry + roll)"
-        )
-
     # Average Smash Factor
-    with col4:
+    with col3:
         avg_smash = 0
         if len(df) > 0 and 'smash' in df.columns:
             valid_smash = df[(df['smash'] > 0) & (df['smash'] < 2)]['smash']
@@ -66,16 +56,6 @@ def render_metrics_row(df: pd.DataFrame, show_trends: bool = False) -> None:
             format_str=".2f",
             benchmark=1.50,
             tooltip="Ball speed / Club speed. Tour average is ~1.50. Higher is better!"
-        )
-
-    # Average Ball Speed
-    with col5:
-        avg_ball_speed = df['ball_speed'].mean() if len(df) > 0 and 'ball_speed' in df.columns else 0
-        render_kpi_card(
-            label="Ball Speed",
-            value=avg_ball_speed,
-            unit="mph",
-            tooltip="Ball speed off the club face"
         )
 
 
