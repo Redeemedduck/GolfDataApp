@@ -83,18 +83,20 @@ if practice_dates:
         streak += 1
         check -= timedelta(days=1)
 
-col1, col2, col3, col4 = st.columns(4)
-with col1:
+# Hero stats — 2x2 grid (works on both desktop and mobile)
+r1c1, r1c2 = st.columns(2)
+r2c1, r2c2 = st.columns(2)
+with r1c1:
     st.metric("Sessions", total_sessions)
-with col2:
+with r1c2:
     st.metric("Total Shots", total_shots)
-with col3:
+with r2c1:
     if days_since is not None:
         label = "Today!" if days_since == 0 else f"{days_since} day{'s' if days_since != 1 else ''} ago"
         st.metric("Last Practice", label)
     else:
         st.metric("Last Practice", "—")
-with col4:
+with r2c2:
     st.metric("Streak", f"{streak} day{'s' if streak != 1 else ''}" if streak > 0 else "Start one!")
 
 # ─── Calendar Strip ───────────────────────────────────────────
