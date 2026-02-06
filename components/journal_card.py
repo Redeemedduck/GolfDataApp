@@ -6,8 +6,9 @@ key metrics, and trend arrows vs rolling averages.
 """
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
 from typing import Optional
+
+from utils.date_helpers import format_session_date
 
 
 def _trend_arrow(current, baseline):
@@ -53,40 +54,6 @@ def _strike_label(avg_dist):
     return "Scattered", "#d62728"
 
 
-def _parse_session_date(value) -> Optional[date]:
-    """Parse session date from ISO datetime/date strings or date objects."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if not isinstance(value, str):
-        return None
-
-    raw = value.strip()
-    if not raw:
-        return None
-
-    try:
-        return datetime.fromisoformat(raw).date()
-    except ValueError:
-        try:
-            return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
-        except ValueError:
-            try:
-                return datetime.fromisoformat(raw.split("T", 1)[0]).date()
-            except (ValueError, TypeError):
-                return None
-
-
-def _format_session_date(value) -> str:
-    """Format a session date as 'Mon D' or return a fallback label."""
-    parsed = _parse_session_date(value)
-    if parsed is None:
-        return "No date"
-    return f"{parsed.strftime('%b')} {parsed.day}"
-
 
 def render_journal_card(
     stats: dict,
@@ -102,7 +69,7 @@ def render_journal_card(
         expanded: Whether to show the card expanded by default.
     """
     session_id = stats.get('session_id', 'Unknown')
-    date = _format_session_date(stats.get('session_date'))
+    date = format_session_date(stats.get('session_date'))
     stype = stats.get('session_type') or 'Practice'
     shots = stats.get('shot_count', 0)
     clubs = stats.get('clubs_used', '')

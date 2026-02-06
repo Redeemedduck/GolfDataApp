@@ -4,45 +4,20 @@ Calendar strip component — horizontal date strip with dots on practice days.
 Rendered as HTML/CSS via st.markdown for a lightweight, fast visual.
 """
 import streamlit as st
-from datetime import date, datetime, timedelta
-from typing import Optional, Set
+from datetime import datetime, timedelta
+from typing import Set
+
+from utils.date_helpers import parse_session_date
 
 
-def _parse_practice_date(value) -> Optional[date]:
-    """Parse a practice date from ISO datetime/date strings with fallbacks."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if not isinstance(value, str):
-        return None
-
-    raw = value.strip()
-    if not raw:
-        return None
-
-    try:
-        return datetime.fromisoformat(raw).date()
-    except ValueError:
-        try:
-            return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
-        except ValueError:
-            try:
-                return datetime.fromisoformat(raw.split("T", 1)[0]).date()
-            except (ValueError, TypeError):
-                return None
-
-
-def _normalize_practice_dates(practice_dates: Set[str]) -> Set[str]:
+def _normalize_practice_dates(practice_dates):
     """Normalize incoming dates to canonical YYYY-MM-DD strings."""
-    normalized_dates = set()
+    normalized = set()
     for value in practice_dates or set():
-        parsed = _parse_practice_date(value)
+        parsed = parse_session_date(value)
         if parsed is not None:
-            normalized_dates.add(parsed.isoformat())
-    return normalized_dates
+            normalized.add(parsed.isoformat())
+    return normalized
 
 
 def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
