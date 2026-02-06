@@ -164,8 +164,12 @@ Key date distinction: `session_date` = when the practice occurred, `date_added` 
 - All database operations use **parameterized SQL**; `update_shot_metadata()` enforces a field allowlist (`ALLOWED_UPDATE_FIELDS`)
 - Deletions are **soft deletes** — records go to `shots_archive` for recovery
 - The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py`
-- Club names are normalized through `automation/naming_conventions.py`
-- Sessions are auto-tagged based on characteristics (Driver Focus, Short Game, etc.)
+- Club names are normalized through `automation/naming_conventions.py` (`ClubNameNormalizer`)
+- Sessions are auto-tagged based on characteristics (`AutoTagger`: Driver Focus, Short Game, etc.)
+- Session display names are generated via `SessionNamer.generate_display_name()` — format: `"2026-01-25 Mixed Practice (47 shots)"`
+- Session types detected by club distribution (`SessionNamer.detect_session_type()`): Driver Focus, Iron Work, Short Game, Woods Focus, Mixed Practice, Warmup
+- `golf_db.batch_update_session_names()` retroactively renames all imported sessions
+- **Backfill performance tip:** Disable Supabase during bulk import (`SUPABASE_URL=""`) then batch-sync after with `sync-database`. Per-shot upserts in `add_shot()` are slow for bulk operations.
 
 ### Coding Style
 
