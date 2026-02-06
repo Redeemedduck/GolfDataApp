@@ -8,6 +8,7 @@ import streamlit as st
 import pandas as pd
 from typing import Optional
 
+from utils.big3_constants import face_label, path_label, strike_label
 from utils.date_helpers import format_session_date
 
 
@@ -19,39 +20,6 @@ def _trend_arrow(current, baseline):
     if abs(delta) < 0.01:
         return "", 0
     return ("+" if delta > 0 else ""), delta
-
-
-def _face_label(std):
-    """Classify face angle consistency."""
-    if std is None:
-        return "—", "gray"
-    if std < 1.5:
-        return "Consistent", "#2ca02c"
-    if std < 3.0:
-        return "Moderate", "#ff7f0e"
-    return "Scattered", "#d62728"
-
-
-def _path_label(std):
-    """Classify club path consistency."""
-    if std is None:
-        return "—", "gray"
-    if std < 2.0:
-        return "Consistent", "#2ca02c"
-    if std < 4.0:
-        return "Moderate", "#ff7f0e"
-    return "Scattered", "#d62728"
-
-
-def _strike_label(avg_dist):
-    """Classify strike location quality."""
-    if avg_dist is None:
-        return "—", "gray"
-    if avg_dist < 0.25:
-        return "Center", "#2ca02c"
-    if avg_dist < 0.5:
-        return "Decent", "#ff7f0e"
-    return "Scattered", "#d62728"
 
 
 
@@ -116,9 +84,9 @@ def render_journal_card(
         st.markdown("**Big 3 Impact Laws**")
         b1, b2, b3 = st.columns(3)
 
-        face_lbl, face_clr = _face_label(stats.get('std_face_angle'))
-        path_lbl, path_clr = _path_label(stats.get('std_club_path'))
-        strike_lbl, strike_clr = _strike_label(stats.get('avg_strike_distance'))
+        face_lbl, face_clr = face_label(stats.get('std_face_angle'))
+        path_lbl, path_clr = path_label(stats.get('std_club_path'))
+        strike_lbl, strike_clr = strike_label(stats.get('avg_strike_distance'))
 
         with b1:
             avg_face = stats.get('avg_face_angle')
