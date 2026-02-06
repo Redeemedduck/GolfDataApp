@@ -6,6 +6,7 @@ This component eliminates the 70+ lines of duplicated sidebar code across pages.
 import streamlit as st
 import golf_db
 from utils.session_state import get_read_mode, set_read_mode, get_ui_mode, set_ui_mode
+from utils.responsive import render_compact_toggle
 
 
 def render_shared_sidebar(
@@ -39,6 +40,8 @@ def render_shared_sidebar(
 
         if show_sync_status:
             render_sync_status()
+
+        render_compact_toggle()
 
         render_appearance_toggle()
 
