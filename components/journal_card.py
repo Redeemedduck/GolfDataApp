@@ -52,11 +52,10 @@ def render_journal_card(
             st.caption(f"Clubs: {', '.join(c.strip() for c in club_list)}")
 
         # Key metrics row
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
 
         avg_carry = stats.get('avg_carry')
         avg_smash = stats.get('avg_smash')
-        best_carry = stats.get('best_carry')
 
         with col1:
             if avg_carry is not None:
@@ -74,52 +73,15 @@ def render_journal_card(
             else:
                 st.metric("Smash Factor", "—")
 
-        with col3:
-            if best_carry is not None:
-                st.metric("Best Carry", f"{best_carry:.1f} yds")
-            else:
-                st.metric("Best Carry", "—")
-
-        # Big 3 summary
-        st.markdown("**Big 3 Impact Laws**")
-        b1, b2, b3 = st.columns(3)
-
+        # Big 3 inline summary
         face_lbl, face_clr = face_label(stats.get('std_face_angle'))
         path_lbl, path_clr = path_label(stats.get('std_club_path'))
         strike_lbl, strike_clr = strike_label(stats.get('avg_strike_distance'))
 
-        with b1:
-            avg_face = stats.get('avg_face_angle')
-            face_val = f"{avg_face:+.1f}" if avg_face is not None else "—"
-            st.markdown(
-                f"<div style='text-align:center'>"
-                f"<span style='font-size:0.8em;color:#888'>Face Angle</span><br>"
-                f"<span style='font-size:1.3em;font-weight:bold'>{face_val}</span><br>"
-                f"<span style='color:{face_clr};font-size:0.9em'>{face_lbl}</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-        with b2:
-            avg_path = stats.get('avg_club_path')
-            path_val = f"{avg_path:+.1f}" if avg_path is not None else "—"
-            st.markdown(
-                f"<div style='text-align:center'>"
-                f"<span style='font-size:0.8em;color:#888'>Club Path</span><br>"
-                f"<span style='font-size:1.3em;font-weight:bold'>{path_val}</span><br>"
-                f"<span style='color:{path_clr};font-size:0.9em'>{path_lbl}</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-        with b3:
-            avg_strike = stats.get('avg_strike_distance')
-            strike_val = f"{avg_strike:.2f}\"" if avg_strike is not None else "—"
-            st.markdown(
-                f"<div style='text-align:center'>"
-                f"<span style='font-size:0.8em;color:#888'>Strike Quality</span><br>"
-                f"<span style='font-size:1.3em;font-weight:bold'>{strike_val}</span><br>"
-                f"<span style='color:{strike_clr};font-size:0.9em'>{strike_lbl}</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
+        st.markdown(
+            f"**Big 3:** "
+            f"<span style='color:{face_clr}'>Face: {face_lbl}</span> | "
+            f"<span style='color:{path_clr}'>Path: {path_lbl}</span> | "
+            f"<span style='color:{strike_clr}'>Strike: {strike_lbl}</span>",
+            unsafe_allow_html=True,
+        )
