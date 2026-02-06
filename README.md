@@ -4,12 +4,12 @@ A local-first application for capturing, analyzing, and coaching golf performanc
 
 ## Overview
 
-1. **Capture**: Scrape shot data and images from Uneekor's API via a local Streamlit dashboard.
-2. **Automation**: Browser-based scraper with Playwright for hands-free data import and historical backfill.
-3. **Storage**: Local SQLite database with optional sync to Supabase (PostgreSQL).
-4. **Analysis**: Interactive dashboard with club comparisons, trends, and shot dispersion.
-5. **AI Coach**: Conversational coaching with local ML models or Gemini.
-6. **Workflow**: Tag shots, split sessions, and label session context inside the Database Manager.
+1. **Practice Journal**: Rolling 4-week view with session cards, Big 3 Impact Laws summary, and calendar strip.
+2. **Dashboard**: 5-tab analytics — Overview, Big 3 Deep Dive (D-plane scatter, tendencies), Shots, Compare, Export.
+3. **Club Profiles**: Per-club deep dives with hero stats, distance trends, and Big 3 tendencies.
+4. **AI Coach**: Conversational coaching with local ML models or Gemini.
+5. **Automation**: Browser-based scraper with Playwright for hands-free data import and historical backfill.
+6. **Storage**: Local SQLite database with optional sync to Supabase (PostgreSQL).
 
 ## Quick Start
 
@@ -96,7 +96,7 @@ The active source appears in the Streamlit sidebar as **Data Source**.
 
 ## Tagging & Session Context
 
-Use **Database Manager -> Tags & Session Split** to:
+Use **Settings -> Tags** to:
 - Tag warmup/practice/round shots per session.
 - Split mixed sessions into clean sub-sessions.
 - Label sessions with a `session_type` for filtering.
