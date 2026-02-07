@@ -4,6 +4,51 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-06: UI Simplification & Mobile Optimization
+
+### Dashboard: 5 Tabs to 3
+- Removed **Compare** tab (moved session comparison to Club Profiles)
+- Removed **Export** tab (replaced with single "Export Session CSV" download button on Overview)
+- Removed redundant Big 3 summary from Overview (lives in Big 3 Deep Dive tab)
+- Removed carry box plot from Overview (dispersion plot covers it)
+- Trimmed Overview metrics from 5 to 3: Total Shots, Avg Carry, Avg Smash
+
+### Settings: 5 Tabs to 3
+- Merged **Import + Sessions** → **Data** tab
+- Merged **Data Quality + Sync** → **Maintenance** tab
+- **Tags** tab unchanged
+
+### Journal Cards Tightened
+- Metrics: 3 columns → 2 (dropped Best Carry, kept Avg Carry + Smash Factor)
+- Big 3: 3-column HTML blocks → single inline line: `Face: Moderate | Path: Consistent | Strike: Scattered`
+- Net -47 lines in journal_card.py
+
+### Home Page Mobile Fixes
+- Hero stats: `st.columns(4)` → 2x2 grid (`st.columns(2)` × 2 rows)
+- Calendar strip: Fixed-width cells → flexbox with `min(18px, 3%)` for responsive width
+
+### Club Profiles Enhancements
+- Club selector moved from sidebar to main content area
+- Added **"Compare Sessions for This Club"** expander (side-by-side session metrics)
+- Radar chart: Auto-selected 5 clubs → user multiselect with `max_selections=3`
+
+### Compact Layout Toggle
+- Added `is_compact_layout()` and `render_compact_toggle()` to `utils/responsive.py`
+- Toggle appears in sidebar below data source
+
+### DRY Refactors
+- Date parsing: Extracted `utils/date_helpers.py` from 3 files (journal_card, journal_view, calendar_strip)
+- Big 3 thresholds: Extracted `utils/big3_constants.py` from 2 files (journal_card, big3_summary)
+
+### Dead Code Removed
+- Deleted 4 unused components: `session_list.py`, `simple_view.py`, `coach_export.py`, `session_header.py` (1,291 lines)
+
+### Stats
+- 23 files changed (+1,008 / -1,838 lines) — net 830 lines lighter
+- 202 tests passing
+
+---
+
 ## 2026-02-06: UI/UX Redesign — Practice Journal with Big 3 Impact Laws
 
 ### Complete Redesign
@@ -13,10 +58,10 @@ Transformed the app from a database admin tool into a **golf practice journal** 
 | Page | Purpose |
 |------|---------|
 | `app.py` | Journal home — rolling 4-week view with calendar strip, session cards, Big 3 per session |
-| `pages/1_📊_Dashboard.py` | 5-tab analytics: Overview, Big 3 Deep Dive, Shots, Compare, Export |
+| `pages/1_📊_Dashboard.py` | 5-tab analytics (later simplified to 3 — see 2026-02-06 simplification) |
 | `pages/2_🏌️_Club_Profiles.py` | Per-club deep dives with hero stats, distance trends, Big 3 tendencies |
 | `pages/3_🤖_AI_Coach.py` | Chat interface with provider selection (unchanged, renumbered) |
-| `pages/4_⚙️_Settings.py` | Merged Data Import + Database Manager into 5 tabs |
+| `pages/4_⚙️_Settings.py` | Merged Data Import + Database Manager (later simplified to 3 tabs) |
 
 ### Deleted Pages (merged into new structure)
 - `pages/1_📥_Data_Import.py` → merged into Settings

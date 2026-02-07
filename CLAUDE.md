@@ -115,21 +115,26 @@ ML dependencies are **lazy-loaded** via `__getattr__` in `ml/__init__.py`. Code 
 
 ### Streamlit Pages
 
-- `app.py` — Practice Journal home (calendar strip, session cards grouped by week, Big 3 summary)
-- `pages/1_📊_Dashboard.py` — Analytics (5 tabs: Overview, Big 3 Deep Dive, Shots, Compare, Export)
-- `pages/2_🏌️_Club_Profiles.py` — Per-club deep dives (hero stats, distance trends, Big 3 tendencies)
+- `app.py` — Practice Journal home (2x2 hero stats, calendar strip, session cards grouped by week)
+- `pages/1_📊_Dashboard.py` — Analytics (3 tabs: Overview, Big 3 Deep Dive, Shots)
+- `pages/2_🏌️_Club_Profiles.py` — Per-club deep dives (hero stats, trends, Big 3, session comparison, radar)
 - `pages/3_🤖_AI_Coach.py` — Chat interface with provider selection dropdown
-- `pages/4_⚙️_Settings.py` — Data Import + Database Manager (5 tabs: Import, Sessions, Data Quality, Sync, Tags)
+- `pages/4_⚙️_Settings.py` — Data Import + Database Manager (3 tabs: Data, Maintenance, Tags)
 
 Components in `components/` are stateless: `render_*(data: pd.DataFrame, **kwargs) -> None`.
 
 Key UI components:
-- `journal_card.py` / `journal_view.py` — Session cards with Big 3 metrics + rolling week grouping
-- `calendar_strip.py` — HTML/CSS practice frequency strip
+- `journal_card.py` / `journal_view.py` — Session cards (2 metrics + inline Big 3) + rolling week grouping
+- `calendar_strip.py` — Flexbox practice frequency strip (responsive width)
 - `big3_summary.py` / `big3_detail_view.py` — Impact Laws visualization (Face, Path, Strike)
 - `face_path_diagram.py` — D-plane scatter (Face Angle vs Club Path)
 - `direction_tendency.py` — Face/path histograms + shot shape distribution
 - `club_hero.py` / `club_trends.py` — Club profile hero card + trend charts
+
+Shared utilities:
+- `utils/date_helpers.py` — `parse_session_date()`, `format_session_date()` (used by 3 components)
+- `utils/big3_constants.py` — Big 3 thresholds, colors, `face_label()`/`path_label()`/`strike_label()` (used by 2 components)
+- `utils/responsive.py` — `is_compact_layout()`, `render_compact_toggle()`, `add_responsive_css()`
 
 ### Automation Module
 
