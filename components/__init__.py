@@ -55,28 +55,6 @@ from .session_comparison import (
     render_session_comparison,
     render_comparison_selector,
 )
-from .session_header import (
-    render_session_header,
-    render_compact_session_header,
-)
-
-# Wave 3: Persona coverage components
-from .simple_view import (
-    render_simple_dashboard,
-    render_mode_toggle as render_view_mode_toggle,
-)
-from .coach_export import (
-    render_coach_export,
-    export_session_csv,
-    export_session_json,
-    generate_session_summary,
-    generate_club_summary,
-    identify_problem_shots,
-)
-from .session_list import (
-    render_session_list,
-    render_session_timeline,
-)
 
 # Wave 4: AI enhancements
 from .ai_insights import (
@@ -141,19 +119,6 @@ __all__ = [
     'render_club_kpi_cards',
     'render_session_comparison',
     'render_comparison_selector',
-    'render_session_header',
-    'render_compact_session_header',
-    # Wave 3: Persona coverage components
-    'render_simple_dashboard',
-    'render_view_mode_toggle',
-    'render_coach_export',
-    'export_session_csv',
-    'export_session_json',
-    'generate_session_summary',
-    'generate_club_summary',
-    'identify_problem_shots',
-    'render_session_list',
-    'render_session_timeline',
     # Wave 4: AI enhancements
     'generate_session_insights',
     'render_insights_card',

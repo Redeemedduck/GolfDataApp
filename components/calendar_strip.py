@@ -4,45 +4,20 @@ Calendar strip component — horizontal date strip with dots on practice days.
 Rendered as HTML/CSS via st.markdown for a lightweight, fast visual.
 """
 import streamlit as st
-from datetime import date, datetime, timedelta
-from typing import Optional, Set
+from datetime import datetime, timedelta
+from typing import Set
+
+from utils.date_helpers import parse_session_date
 
 
-def _parse_practice_date(value) -> Optional[date]:
-    """Parse a practice date from ISO datetime/date strings with fallbacks."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if not isinstance(value, str):
-        return None
-
-    raw = value.strip()
-    if not raw:
-        return None
-
-    try:
-        return datetime.fromisoformat(raw).date()
-    except ValueError:
-        try:
-            return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
-        except ValueError:
-            try:
-                return datetime.fromisoformat(raw.split("T", 1)[0]).date()
-            except (ValueError, TypeError):
-                return None
-
-
-def _normalize_practice_dates(practice_dates: Set[str]) -> Set[str]:
+def _normalize_practice_dates(practice_dates):
     """Normalize incoming dates to canonical YYYY-MM-DD strings."""
-    normalized_dates = set()
+    normalized = set()
     for value in practice_dates or set():
-        parsed = _parse_practice_date(value)
+        parsed = parse_session_date(value)
         if parsed is not None:
-            normalized_dates.add(parsed.isoformat())
-    return normalized_dates
+            normalized.add(parsed.isoformat())
+    return normalized
 
 
 def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
@@ -82,9 +57,9 @@ def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
 
         cells.append(
             f'<div title="{tooltip}" style="'
-            f'width:18px;height:18px;border-radius:3px;'
+            f'width:min(18px, 3%);height:18px;border-radius:3px;'
             f'background:{bg};border:{border};'
-            f'display:inline-block;margin:1px;'
+            f'flex:0 0 auto;margin:1px;'
             f'"></div>'
         )
 
@@ -94,7 +69,7 @@ def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
         week_start = start_date + timedelta(weeks=w)
         label = week_start.strftime('%b %d')
         week_labels.append(
-            f'<span style="display:inline-block;width:{7*20}px;'
+            f'<span style="flex:1 1 auto;min-width:80px;'
             f'font-size:0.7em;color:#888;text-align:left">{label}</span>'
         )
 
@@ -116,8 +91,8 @@ def render_calendar_strip(practice_dates: Set[str], weeks: int = 4) -> None:
                 {practice_count} sessions | {'Streak: ' + str(streak) + ' day' + ('s' if streak != 1 else '') if streak > 0 else 'No streak'}
             </span>
         </div>
-        <div style="line-height:0">{''.join(week_labels)}</div>
-        <div style="line-height:0">{''.join(cells)}</div>
+        <div style="display:flex;flex-wrap:wrap;max-width:100%">{''.join(week_labels)}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:1px;max-width:100%">{''.join(cells)}</div>
         <div style="margin-top:6px;font-size:0.7em;color:#666">
             <span style="display:inline-block;width:10px;height:10px;background:#2ca02c;border-radius:2px;margin-right:3px"></span> Practiced
             <span style="display:inline-block;width:10px;height:10px;background:#1f77b4;border-radius:2px;margin-left:10px;margin-right:3px"></span> Today

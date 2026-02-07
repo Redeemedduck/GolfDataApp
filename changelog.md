@@ -4,6 +4,69 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-06: UI/UX Redesign — Practice Journal with Big 3 Impact Laws
+
+### Complete Redesign
+Transformed the app from a database admin tool into a **golf practice journal** built around **Adam Young's Big 3 Impact Laws** (Face Angle, Club Path, Strike Location).
+
+### New Page Structure
+| Page | Purpose |
+|------|---------|
+| `app.py` | Journal home — rolling 4-week view with calendar strip, session cards, Big 3 per session |
+| `pages/1_📊_Dashboard.py` | 5-tab analytics: Overview, Big 3 Deep Dive, Shots, Compare, Export |
+| `pages/2_🏌️_Club_Profiles.py` | Per-club deep dives with hero stats, distance trends, Big 3 tendencies |
+| `pages/3_🤖_AI_Coach.py` | Chat interface with provider selection (unchanged, renumbered) |
+| `pages/4_⚙️_Settings.py` | Merged Data Import + Database Manager into 5 tabs |
+
+### Deleted Pages (merged into new structure)
+- `pages/1_📥_Data_Import.py` → merged into Settings
+- `pages/2_📊_Dashboard.py` → replaced by new Dashboard
+- `pages/3_🗄️_Database_Manager.py` → merged into Settings
+- `pages/5_🔄_Session_Compare.py` → merged into Dashboard Compare tab
+
+### New Components (12)
+- **`components/journal_card.py`** — Session entry card with Big 3 summary, metrics, trend arrows
+- **`components/journal_view.py`** — Rolling view grouped by week ("This Week", "Last Week", etc.)
+- **`components/calendar_strip.py`** — Horizontal date strip with dots on practice days (HTML/CSS)
+- **`components/big3_summary.py`** — Color-coded Big 3 indicator panel (green/yellow/red thresholds)
+- **`components/big3_detail_view.py`** — Full tabbed Big 3 deep dive (Face, Path, D-Plane, Strike)
+- **`components/face_path_diagram.py`** — D-plane scatter plot (Face Angle vs Club Path with quadrants)
+- **`components/direction_tendency.py`** — Face/path histograms + shot shape donut chart
+- **`components/club_hero.py`** — Club profile hero card (total shots, avg carry, personal best, smash)
+- **`components/club_trends.py`** — Per-club distance + Big 3 trend line charts
+
+### Data Foundation Fixes
+- **`golf_db.py`**: Fixed `clean_value()` converting 99999 sentinel → 0.0 instead of NULL (was corrupting all averages). Now returns `None` for invalid values.
+- **`golf_db.py`**: Added `face_to_path` and `strike_distance` derived columns, computed on ingest and backfilled for all 2041 existing shots
+- **`golf_db.py`**: Added `session_stats` cache table — pre-computed per-session aggregates eliminating N+1 query pattern
+- **`golf_db.py`**: Added composite indexes: `idx_shots_session_club`, `idx_shots_date_club`
+- **`services/data_access.py`**: New query functions with `@st.cache_data`: `get_recent_sessions_with_stats()`, `get_club_profile()`, `get_rolling_averages()`
+
+### Date Display Fixes
+- **`components/journal_card.py`**: Added `_parse_session_date()` + `_format_session_date()` — formats raw ISO datetime strings to clean "Jan 28" display
+- **`components/journal_view.py`**: Added date parsing for week grouping logic
+- **`components/calendar_strip.py`**: Added `_normalize_practice_dates()` to handle mixed date formats
+
+### Date Extraction
+- Ran `--from-listing --auto-backfill` extraction from Uneekor portal listing page
+- Scraped 106 sessions across 25 pages, 96 got dates from DOM headers
+- Result: 2041/2041 shots now have accurate `session_date` (was 2020/2041)
+
+### Other Changes
+- **`components/shared_sidebar.py`**: Updated navigation links for new 4-page structure
+- **`.github/workflows/ci.yml`**: Added `components/*.py` and `pages/*.py` lint steps
+- **`components/face_path_diagram.py`**: Fixed NaN bug — always compute `face_angle - club_path` from raw columns instead of potentially-null `face_to_path` column
+
+### Tests
+- Added `tests/unit/test_data_foundation.py` — tests for `clean_value()`, derived columns, session stats
+- 202 tests passing across unit, integration, and e2e suites
+
+### Stats
+- 157 files changed (+37,003 / -3,438 lines)
+- 12 new components, 4 new pages, 2 test files
+
+---
+
 ## 2026-02-05: Session Naming System & Backfill Pipeline
 
 ### New Feature: Distribution-Based Session Naming

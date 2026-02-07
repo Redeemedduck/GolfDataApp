@@ -13,25 +13,12 @@ import pandas as pd
 import numpy as np
 from typing import Optional
 
-
-# Thresholds from Adam Young's research
-FACE_STD_GREEN = 1.5   # degrees
-FACE_STD_YELLOW = 3.0
-PATH_STD_GREEN = 2.0
-PATH_STD_YELLOW = 4.0
-STRIKE_DIST_GREEN = 0.25   # inches from center
-STRIKE_DIST_YELLOW = 0.5
-
-
-def _color_for_threshold(val, green, yellow):
-    """Return CSS color based on threshold."""
-    if val is None:
-        return "#888"
-    if val <= green:
-        return "#2ca02c"
-    if val <= yellow:
-        return "#ff7f0e"
-    return "#d62728"
+from utils.big3_constants import (
+    FACE_STD_GREEN, FACE_STD_YELLOW,
+    PATH_STD_GREEN, PATH_STD_YELLOW,
+    STRIKE_DIST_GREEN, STRIKE_DIST_YELLOW,
+    color_for_threshold,
+)
 
 
 def _face_tendency(avg):
@@ -92,7 +79,7 @@ def render_big3_summary(
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        color = _color_for_threshold(face_std, FACE_STD_GREEN, FACE_STD_YELLOW)
+        color = color_for_threshold(face_std, FACE_STD_GREEN, FACE_STD_YELLOW)
         tendency = _face_tendency(face_avg)
         avg_str = f"{face_avg:+.1f}" if face_avg is not None else "—"
         std_str = f"{face_std:.1f}" if face_std is not None else "—"
@@ -111,7 +98,7 @@ def render_big3_summary(
         )
 
     with col2:
-        color = _color_for_threshold(path_std, PATH_STD_GREEN, PATH_STD_YELLOW)
+        color = color_for_threshold(path_std, PATH_STD_GREEN, PATH_STD_YELLOW)
         tendency = _path_tendency(path_avg)
         avg_str = f"{path_avg:+.1f}" if path_avg is not None else "—"
         std_str = f"{path_std:.1f}" if path_std is not None else "—"
@@ -130,7 +117,7 @@ def render_big3_summary(
         )
 
     with col3:
-        color = _color_for_threshold(strike_avg, STRIKE_DIST_GREEN, STRIKE_DIST_YELLOW)
+        color = color_for_threshold(strike_avg, STRIKE_DIST_GREEN, STRIKE_DIST_YELLOW)
         avg_str = f"{strike_avg:.2f}\"" if strike_avg is not None else "—"
         std_str = f"{strike_std:.2f}\"" if strike_std is not None else "—"
 

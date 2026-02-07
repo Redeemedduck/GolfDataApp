@@ -154,6 +154,20 @@ def add_responsive_css() -> None:
     st.markdown(css, unsafe_allow_html=True)
 
 
+def is_compact_layout() -> bool:
+    """Check if compact (mobile) layout is enabled."""
+    return st.session_state.get('compact_layout', False)
+
+
+def render_compact_toggle():
+    """Render compact layout toggle in sidebar."""
+    st.session_state.compact_layout = st.toggle(
+        "Compact Layout",
+        value=st.session_state.get('compact_layout', False),
+        help="Optimized for small screens",
+    )
+
+
 def get_layout_size() -> str:
     """
     Get estimated layout size based on Streamlit config.

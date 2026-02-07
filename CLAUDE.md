@@ -20,6 +20,7 @@ python -m unittest tests.unit.test_exceptions
 python -m unittest tests.unit.test_credential_manager
 python -m unittest tests.unit.test_naming_conventions
 python -m unittest tests.unit.test_rate_limiter_config
+python -m unittest tests.unit.test_data_foundation
 python -m unittest tests.integration.test_automation_flow
 python -m unittest tests.integration.test_date_reclassification
 
@@ -27,6 +28,8 @@ python -m unittest tests.integration.test_date_reclassification
 python -m py_compile app.py golf_db.py local_coach.py exceptions.py
 python -m py_compile automation/*.py ml/*.py utils/*.py
 python -m py_compile services/ai/*.py services/ai/providers/*.py
+python -m py_compile components/*.py
+for f in pages/*.py; do python -m py_compile "$f"; done
 
 # Train ML models (requires shot data in database)
 python -m ml.train_models
@@ -112,13 +115,21 @@ ML dependencies are **lazy-loaded** via `__getattr__` in `ml/__init__.py`. Code 
 
 ### Streamlit Pages
 
-- `app.py` — Landing page and navigation
-- `pages/1_Data_Import.py` — Import from Uneekor URLs
-- `pages/2_Dashboard.py` — Analytics (5 tabs: Overview, Impact, Trends, Shots, Export)
-- `pages/3_Database_Manager.py` — CRUD, tagging, session splitting (6 tabs)
-- `pages/4_AI_Coach.py` — Chat interface with provider selection dropdown
+- `app.py` — Practice Journal home (calendar strip, session cards grouped by week, Big 3 summary)
+- `pages/1_📊_Dashboard.py` — Analytics (5 tabs: Overview, Big 3 Deep Dive, Shots, Compare, Export)
+- `pages/2_🏌️_Club_Profiles.py` — Per-club deep dives (hero stats, distance trends, Big 3 tendencies)
+- `pages/3_🤖_AI_Coach.py` — Chat interface with provider selection dropdown
+- `pages/4_⚙️_Settings.py` — Data Import + Database Manager (5 tabs: Import, Sessions, Data Quality, Sync, Tags)
 
 Components in `components/` are stateless: `render_*(data: pd.DataFrame, **kwargs) -> None`.
+
+Key UI components:
+- `journal_card.py` / `journal_view.py` — Session cards with Big 3 metrics + rolling week grouping
+- `calendar_strip.py` — HTML/CSS practice frequency strip
+- `big3_summary.py` / `big3_detail_view.py` — Impact Laws visualization (Face, Path, Strike)
+- `face_path_diagram.py` — D-plane scatter (Face Angle vs Club Path)
+- `direction_tendency.py` — Face/path histograms + shot shape distribution
+- `club_hero.py` / `club_trends.py` — Club profile hero card + trend charts
 
 ### Automation Module
 
@@ -154,8 +165,11 @@ Key behaviors:
 | `automation_runs` | Automation: high-level run tracking | Yes — service role |
 | `backfill_runs` | Automation: backfill progress checkpoints | Yes — service role |
 | `sync_audit` | Tracks sync operations with timestamps, counts, errors | No — local only |
+| `session_stats` | Pre-computed per-session aggregates (Big 3 metrics, carry, smash) | No — local cache |
 
 Canonical Supabase schema: `supabase_schema.sql` (all tables, indexes, RLS policies, views).
+
+Derived columns on `shots` table: `face_to_path` (= face_angle - club_path), `strike_distance` (= sqrt(impact_x^2 + impact_y^2)). Computed on ingest in `save_shot()`, backfilled via `backfill_derived_columns()`.
 
 Key date distinction: `session_date` = when the practice occurred, `date_added` = when data was imported.
 
@@ -163,7 +177,7 @@ Key date distinction: `session_date` = when the practice occurred, `date_added` 
 
 - All database operations use **parameterized SQL**; `update_shot_metadata()` enforces a field allowlist (`ALLOWED_UPDATE_FIELDS`)
 - Deletions are **soft deletes** — records go to `shots_archive` for recovery
-- The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py`
+- The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py` (returns `None`, not `0.0`)
 - Club names are normalized through `automation/naming_conventions.py` (`ClubNameNormalizer`)
 - Sessions are auto-tagged based on characteristics (`AutoTagger`: Driver Focus, Short Game, etc.)
 - Session display names are generated via `SessionNamer.generate_display_name()` — format: `"2026-01-25 Mixed Practice (47 shots)"`

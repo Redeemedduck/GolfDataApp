@@ -46,7 +46,7 @@ with st.sidebar:
     )
 
 st.title("Settings")
-st.caption("Import data, manage sessions, and maintain data quality")
+st.caption("Data management, maintenance, and tagging")
 
 st.divider()
 
@@ -54,19 +54,17 @@ all_sessions = get_unique_sessions(read_mode=read_mode)
 all_clubs = df["club"].unique().tolist() if not df.empty and "club" in df.columns else []
 
 # ─── Tabs ──────────────────────────────────────────────────────
-tab_import, tab_sessions, tab_quality, tab_sync, tab_tags = st.tabs([
-    "Import",
-    "Sessions",
-    "Data Quality",
-    "Sync",
+tab_data, tab_maintenance, tab_tags = st.tabs([
+    "Data",
+    "Maintenance",
     "Tags",
 ])
 
 
 # ================================================================
-# TAB 1: IMPORT
+# TAB 1: DATA (Import + Sessions)
 # ================================================================
-with tab_import:
+with tab_data:
     st.header("Import Golf Data")
 
     col1, col2 = st.columns([2, 1])
@@ -150,13 +148,11 @@ with tab_import:
         else:
             st.caption("No import runs logged yet")
 
+    st.divider()
 
-# ================================================================
-# TAB 2: SESSIONS (Edit / Delete / Merge / Split / Bulk)
-# ================================================================
-with tab_sessions:
+    # ── Sessions Section ──
     if df.empty:
-        render_no_data_state()
+        st.info("Select a session in the sidebar to manage it.")
     else:
         st.header(f"Session: {selected_session_id}")
 
@@ -356,9 +352,9 @@ with tab_sessions:
 
 
 # ================================================================
-# TAB 3: DATA QUALITY
+# TAB 2: MAINTENANCE (Data Quality + Sync)
 # ================================================================
-with tab_quality:
+with tab_maintenance:
     if df.empty:
         render_no_data_state()
     else:
@@ -421,11 +417,9 @@ with tab_quality:
             else:
                 st.info("No duplicates found!")
 
+    st.divider()
 
-# ================================================================
-# TAB 4: SYNC
-# ================================================================
-with tab_sync:
+    # ── Sync Section ──
     st.header("Database Sync")
 
     sync_status = golf_db.get_sync_status()
@@ -477,7 +471,7 @@ with tab_sync:
 
 
 # ================================================================
-# TAB 5: TAGS
+# TAB 3: TAGS
 # ================================================================
 with tab_tags:
     if df.empty:
