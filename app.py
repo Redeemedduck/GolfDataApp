@@ -25,6 +25,10 @@ from components import (
 from components.journal_view import render_journal_view
 from components.calendar_strip import render_calendar_strip
 from utils.responsive import add_responsive_css
+from services.sync_service import (
+    has_credentials, load_credentials, save_credentials,
+    run_sync, check_playwright_available,
+)
 
 st.set_page_config(
     layout="wide",
@@ -98,6 +102,55 @@ with r2c1:
         st.metric("Last Practice", "—")
 with r2c2:
     st.metric("Streak", f"{streak} day{'s' if streak != 1 else ''}" if streak > 0 else "Start one!")
+
+# ─── Sync Button ─────────────────────────────────────────────
+sync_col, _ = st.columns([1, 2])
+with sync_col:
+    sync_clicked = st.button("Sync New Sessions", type="secondary",
+                             use_container_width=True, key="home_sync_btn")
+
+if sync_clicked:
+    pw_ok, pw_msg = check_playwright_available()
+    if not pw_ok:
+        st.error(f"Cannot sync: {pw_msg}")
+    elif not has_credentials():
+        st.info("Enter your Uneekor credentials to enable sync.")
+        with st.form("sync_creds_form"):
+            sync_user = st.text_input("Uneekor Email")
+            sync_pass = st.text_input("Uneekor Password", type="password")
+            if st.form_submit_button("Save & Sync", type="primary"):
+                if sync_user and sync_pass:
+                    save_credentials(sync_user, sync_pass)
+                    st.rerun()
+                else:
+                    st.error("Both email and password are required.")
+    else:
+        creds = load_credentials()
+        with st.status("Syncing with Uneekor...", expanded=True) as status_ui:
+            status_text = st.empty()
+            sync_result = run_sync(
+                username=creds['username'],
+                password=creds['password'],
+                on_status=lambda msg: status_text.write(msg),
+                max_sessions=10,
+            )
+            if sync_result.success:
+                if sync_result.status == 'no_new_sessions':
+                    status_ui.update(label="Already up to date", state="complete")
+                    st.info("No new sessions found.")
+                else:
+                    status_ui.update(label="Sync complete!", state="complete")
+                    st.success(
+                        f"Imported {sync_result.sessions_imported} session(s), "
+                        f"{sync_result.total_shots} shots."
+                    )
+                    clear_all_caches()
+                    st.rerun()
+            else:
+                status_ui.update(label="Sync failed", state="error")
+                st.error(sync_result.error_message or "Sync failed.")
+                if 'authentication' in (sync_result.error_message or '').lower():
+                    st.warning("Update credentials in Settings > Automation.")
 
 # ─── Calendar Strip ───────────────────────────────────────────
 render_calendar_strip(practice_dates, weeks=4)

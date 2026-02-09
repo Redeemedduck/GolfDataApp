@@ -36,6 +36,7 @@ debug_page_source.html
 # Automation credentials
 .uneekor_cookies.enc
 .uneekor_key
+.uneekor_credentials.json
 
 # SQLite WAL files
 *.db-shm

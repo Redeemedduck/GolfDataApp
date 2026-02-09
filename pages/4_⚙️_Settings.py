@@ -54,10 +54,11 @@ all_sessions = get_unique_sessions(read_mode=read_mode)
 all_clubs = df["club"].unique().tolist() if not df.empty and "club" in df.columns else []
 
 # ─── Tabs ──────────────────────────────────────────────────────
-tab_data, tab_maintenance, tab_tags = st.tabs([
+tab_data, tab_maintenance, tab_tags, tab_automation = st.tabs([
     "Data",
     "Maintenance",
     "Tags",
+    "Automation",
 ])
 
 
@@ -618,3 +619,149 @@ with tab_tags:
                     clear_all_caches()
                     st.success(f"Deleted {deleted} shots tagged '{del_tag_choice}'")
                     st.rerun()
+
+
+# ================================================================
+# TAB 4: AUTOMATION (Sync + History)
+# ================================================================
+with tab_automation:
+    from services.sync_service import (
+        has_credentials, load_credentials, save_credentials,
+        clear_credentials, run_sync, get_sync_history,
+        get_automation_status, check_playwright_available,
+    )
+
+    st.header("Uneekor Sync")
+
+    # ── Connection Status ──
+    st.subheader("Connection")
+    auto_status = get_automation_status()
+
+    if auto_status['credentials_configured']:
+        st.success(f"Configured — {auto_status['username']}")
+        if auto_status.get('cookies_valid'):
+            st.caption(f"Session cookies valid until {auto_status.get('cookies_expires', 'unknown')}")
+        else:
+            st.caption("No active session cookies (will login on next sync)")
+        if st.button("Clear Credentials", key="clear_creds_btn"):
+            clear_credentials()
+            st.success("Credentials cleared.")
+            st.rerun()
+    else:
+        st.warning("No credentials configured.")
+
+    # ── Credential Form ──
+    with st.expander("Update Credentials", expanded=not auto_status['credentials_configured']):
+        with st.form("automation_creds_form"):
+            existing = load_credentials()
+            auto_user = st.text_input(
+                "Uneekor Email",
+                value=existing.get('username', '') if existing else '',
+                key="auto_email",
+            )
+            auto_pass = st.text_input("Uneekor Password", type="password", key="auto_pass")
+            if st.form_submit_button("Save Credentials", type="primary"):
+                if auto_user and auto_pass:
+                    save_credentials(auto_user, auto_pass)
+                    st.success("Credentials saved.")
+                    st.rerun()
+                else:
+                    st.error("Both email and password are required.")
+
+    st.divider()
+
+    # ── Sync Controls ──
+    st.subheader("Sync Sessions")
+
+    pw_ok, pw_msg = check_playwright_available()
+    if not pw_ok:
+        st.error(f"Sync unavailable: {pw_msg}")
+        st.info("Install: `pip install playwright && playwright install chromium`")
+    else:
+        sync_c1, sync_c2 = st.columns([2, 1])
+        with sync_c1:
+            max_sessions_input = st.number_input(
+                "Max sessions to import", min_value=1, max_value=50,
+                value=10, step=5, key="auto_max_sessions",
+            )
+        with sync_c2:
+            st.write("")  # vertical alignment spacer
+            st.write("")
+            run_sync_btn = st.button(
+                "Run Sync", type="primary", use_container_width=True,
+                key="auto_run_sync_btn", disabled=not has_credentials(),
+            )
+
+        if run_sync_btn:
+            creds = load_credentials()
+            if not creds:
+                st.error("Configure credentials first.")
+            else:
+                with st.status("Syncing with Uneekor...", expanded=True) as status_ui:
+                    status_text = st.empty()
+                    sync_result = run_sync(
+                        username=creds['username'],
+                        password=creds['password'],
+                        on_status=lambda msg: status_text.write(msg),
+                        max_sessions=max_sessions_input,
+                    )
+                    if sync_result.success:
+                        if sync_result.status == 'no_new_sessions':
+                            status_ui.update(label="Already up to date", state="complete")
+                            st.info("No new sessions found.")
+                        else:
+                            status_ui.update(label="Sync complete!", state="complete")
+                            st.success(
+                                f"Imported {sync_result.sessions_imported} session(s), "
+                                f"{sync_result.total_shots} shots, "
+                                f"{sync_result.dates_updated} dates updated."
+                            )
+                            clear_all_caches()
+                            st.rerun()
+                    else:
+                        status_ui.update(label="Sync failed", state="error")
+                        st.error(sync_result.error_message or "Sync failed.")
+                        if sync_result.errors:
+                            with st.expander("Error details"):
+                                for err in sync_result.errors:
+                                    st.code(err)
+
+    st.divider()
+
+    # ── Sync History ──
+    st.subheader("Sync History")
+    history = get_sync_history(limit=10)
+    if history:
+        history_rows = []
+        for run in history:
+            started = run.get('started_at', '')
+            if isinstance(started, str) and len(started) > 19:
+                started = started[:19]
+            history_rows.append({
+                "Status": run.get('status', 'unknown'),
+                "Sessions": run.get('sessions_imported', 0),
+                "Shots": run.get('total_shots', 0),
+                "Failed": run.get('sessions_failed', 0),
+                "Started": started,
+            })
+        st.dataframe(
+            pd.DataFrame(history_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("No sync runs yet. Click 'Run Sync' to get started.")
+
+    st.divider()
+
+    # ── Recent Events ──
+    st.subheader("Recent Sync Events")
+    recent_syncs = observability.read_recent_events("sync_runs.jsonl", limit=5)
+    if recent_syncs:
+        for event in recent_syncs:
+            ts = event.get('timestamp', '')[:19] if event.get('timestamp') else ''
+            evt_status = event.get('status', 'unknown')
+            shots = event.get('shots', 0)
+            st.caption(f"{ts} | {evt_status} | {shots} shots")
+    else:
+        st.caption("No sync events logged yet.")
