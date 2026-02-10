@@ -1,8 +1,8 @@
 # Project State: Local AI/ML Golf Analytics
 
 **Last Updated:** 2026-02-10
-**Current Phase:** 02-analytics-engine
-**Status:** COMPLETE (4/4 plans complete including gap closure)
+**Current Phase:** 03-ml-enhancement-coaching
+**Status:** IN PROGRESS (1/3 plans complete)
 
 ---
 
@@ -12,30 +12,29 @@
 Golfers get actionable, personalized coaching and shot predictions that work offline — no API keys, no cloud dependency, no cost per query.
 
 ### Current Focus
-Phase 2: Analytics Engine COMPLETE. All analytics components built AND integrated into Dashboard. Users can now access dispersion charts, distance tables, miss tendency analysis, progress tracking, and session quality scoring. Ready for Phase 3.
+Phase 3: ML Enhancement & Coaching IN PROGRESS. Plan 03-01 COMPLETE: MAPIE prediction intervals and XGBoost tuning. Distance predictions now include confidence intervals (95%). Next: Analytics-driven coaching responses.
 
 ---
 
 ## Current Position
 
 ### Phase
-**Phase 02:** Analytics Engine
+**Phase 03:** ML Enhancement & Coaching
 
 ### Plan
-**Plan 02-01:** COMPLETE - Analytics Foundation (IQR filtering, dispersion, distance)
-**Plan 02-02:** COMPLETE - Miss Tendency & Progress Tracking (D-plane, statistical significance)
-**Plan 02-03:** COMPLETE - Session Quality & Component Package (composite scoring, unit tests)
-**Plan 02-04:** COMPLETE - Dashboard Analytics Integration (gap closure - all 5 components accessible)
-**Current:** Phase 02 COMPLETE (4/4 plans complete including gap closure)
+**Plan 03-01:** COMPLETE - MAPIE Prediction Intervals & XGBoost Tuning
+**Plan 03-02:** NOT STARTED - Analytics-Driven Coaching Responses
+**Plan 03-03:** NOT STARTED - Practice Plan Generation
+**Current:** Phase 03-01 COMPLETE (1/3 plans complete)
 
 ### Status
-Phase 02 COMPLETE. All analytics components built AND integrated into Dashboard. Gap closure plan connected all 5 components to the UI with club filtering and session quality metrics. Users can now access all analytics from the Dashboard. Ready for Phase 3.
+Phase 03-01 COMPLETE. Extended DistancePredictor with MAPIE conformal prediction intervals (95% confidence) and dataset-size-aware XGBoost regularization (3 tiers). Distance predictions now return {predicted_value, lower_bound, upper_bound, confidence_level, interval_width, has_intervals}. Ready for Phase 03-02.
 
 ### Progress
 ```
-[████████████████████████████████████████████████] 100%
+[████████████████                                ] 33%
 ```
-4/4 Phase 02 plans complete (8 tasks, 9 files created, 1 file modified, 25 tests added)
+1/3 Phase 03 plans complete (2 tasks, 2 files created, 3 files modified, 12 tests added)
 
 ---
 
@@ -53,16 +52,17 @@ Phase 02 COMPLETE. All analytics components built AND integrated into Dashboard.
 | 02-02 | 11m 30s | 2 | 2 | 0 | 2026-02-10 |
 | 02-03 | 7m 52s | 2 | 3 | 25 | 2026-02-10 |
 | 02-04 | 4m 48s | 2 | 1 | 0 | 2026-02-10 |
+| 03-01 | 4m 57s | 2 | 5 | 12 | 2026-02-10 |
 
 ### Velocity
-- Plans completed: 8
-- Tasks completed: 19
+- Plans completed: 9
+- Tasks completed: 21
 - Time in current phase: 1 session
-- Average time per plan: ~5.5 minutes
+- Average time per plan: ~5.4 minutes
 
 ### Quality
-- Tests passing: 207 tests (80 skipped)
-- New tests added: 41 (4 from 01-01, 12 from 01-03, 25 from 02-03)
+- Tests passing: 219 tests (80 skipped) - 12 new from 03-01
+- New tests added: 53 (4 from 01-01, 12 from 01-03, 25 from 02-03, 12 from 03-01)
 - Verification status: All criteria met
 - Rework incidents: 0
 - Regressions: 0
@@ -104,6 +104,12 @@ Phase 02 COMPLETE. All analytics components built AND integrated into Dashboard.
 30. **2026-02-10 (02-04):** Insert new Shot Analytics tab as tab4, shift existing tabs to preserve order
 31. **2026-02-10 (02-04):** Add progress tracker to Trends tab (multi-session context fits naturally)
 32. **2026-02-10 (02-04):** Club selector dropdown with "All Clubs" default (no forced selection)
+33. **2026-02-10 (03-01):** Use MAPIE CrossConformalRegressor with cv-plus method for conformal prediction (distribution-free guarantees)
+34. **2026-02-10 (03-01):** Require 1000+ shots for confidence intervals (30% conformalization set needs sufficient samples)
+35. **2026-02-10 (03-01):** Three-tier regularization based on dataset size: max_depth 3/4/5, reg_lambda 3.0/2.0/1.0
+36. **2026-02-10 (03-01):** Save models as dict {'base_model': XGBRegressor, 'mapie_model': CrossConformalRegressor} for backward compatibility
+37. **2026-02-10 (03-01):** predict_with_intervals() returns dict with has_intervals flag and optional message for graceful degradation
+38. **2026-02-10 (03-01):** Update existing train() to use get_small_dataset_params() for consistent tuning
 
 ### Active Todos
 - [x] Execute plan 01-01 (ML Import Refactoring) — COMPLETE
@@ -114,12 +120,15 @@ Phase 02 COMPLETE. All analytics components built AND integrated into Dashboard.
 - [x] Execute plan 02-02 (Miss Tendency & Progress Tracking) — COMPLETE
 - [x] Execute plan 02-03 (Session Quality & Component Package) — COMPLETE
 - [x] Execute plan 02-04 (Dashboard Analytics Integration - gap closure) — COMPLETE
-- [ ] Begin Phase 03 execution
+- [x] Execute plan 03-01 (MAPIE Prediction Intervals & XGBoost Tuning) — COMPLETE
+- [ ] Execute plan 03-02 (Analytics-Driven Coaching Responses)
+- [ ] Execute plan 03-03 (Practice Plan Generation)
 
 ### Blockers
 None.
 
 ### Recent Changes
+- 2026-02-10: **Plan 03-01 COMPLETE** - MAPIE prediction intervals and XGBoost tuning (2 commits, 5 files, 12 tests) - Distance predictions now include 95% confidence intervals
 - 2026-02-10: **Phase 02 COMPLETE** - All 4 analytics plans executed successfully (8 tasks, 9 files created, 1 modified, 25 tests)
 - 2026-02-10: **Plan 02-04 COMPLETE** - Dashboard analytics integration (gap closure) - All 5 components accessible with club filtering (1 commit, 1 file)
 - 2026-02-10: **Plan 02-03 COMPLETE** - Session quality scoring with composite components and analytics utility tests (2 commits, 3 files, 25 tests)
@@ -130,16 +139,15 @@ None.
 - 2026-02-10: Plan 01-03 complete (Session Metrics Table) - 3 commits, model versioning, session aggregates
 - 2026-02-10: Plan 01-02 complete (Database Sync Monitoring) - 3 commits, structured logging, sync status tracking
 - 2026-02-10: Plan 01-01 complete (ML Import Refactoring) - 3 commits
-- 2026-02-10: ROADMAP.md created with 4 phases
 
 ---
 
 ## Session Continuity
 
 ### For Next Session
-Begin Phase 3: `/gsd:progress`
+Continue Phase 3: `/gsd:progress`
 
-Phase 2 Analytics Engine COMPLETE. All 5 analytics components built, tested, AND integrated into Dashboard UI. Gap closure plan (02-04) connected all components with club filtering and session quality metrics. Users can now access all analytics from the Dashboard. Ready for Phase 3: Advanced Analytics Integration.
+Phase 03-01 COMPLETE: MAPIE prediction intervals and XGBoost tuning. Distance predictions now include 95% confidence intervals with graceful degradation. XGBoost uses dataset-size-aware regularization (3 tiers). Ready for Phase 03-02: Analytics-driven coaching responses.
 
 ### Context to Preserve
 - Project uses existing XGBoost/scikit-learn stack; graceful degradation is architectural pattern
