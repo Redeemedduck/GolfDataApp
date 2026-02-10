@@ -77,14 +77,19 @@
 | COACH-01 | Phase 3 | Pending |
 | COACH-02 | Phase 3 | Pending |
 | COACH-03 | Phase 3 | Pending |
+| MONTR-02 | Phase 3 | Pending (partial — retraining UI) |
 | MONTR-01 | Phase 4 | Pending |
-| MONTR-02 | Phase 4 | Pending |
+| MONTR-02 | Phase 4 | Pending (full — automated triggers) |
 
 **Coverage:**
 - v1 requirements: 14 total
 - Mapped to phases: 14
 - Unmapped: 0 ✓
 
+**Notes:**
+- MONTR-02 split across Phase 3 (manual retraining UI) and Phase 4 (automated retraining triggers)
+- Phase count compressed from 5 to 4 for quick depth mode
+
 ---
 *Requirements defined: 2026-02-10*
-*Last updated: 2026-02-10 after initial definition*
+*Last updated: 2026-02-10 after roadmap creation*
