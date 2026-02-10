@@ -25,7 +25,7 @@ Plans:
 - [x] 01-01-PLAN.md — Refactor ML imports to explicit try/except with feature flags
 - [x] 01-02-PLAN.md — Add structured logging and sync status UI for Supabase operations
 - [x] 01-03-PLAN.md — Validate model versioning and implement session metrics population
-- [ ] 01-04-PLAN.md — Gap closure: Add missing session_stats CREATE TABLE to init_db()
+- [x] 01-04-PLAN.md — Gap closure: Add missing session_stats CREATE TABLE to init_db()
 
 **Success Criteria:**
 1. ML module imports use explicit try/except with feature flags; startup validates dependencies and displays clear UI state
@@ -95,12 +95,12 @@ Plans:
 
 | Phase | Status | Requirements | Completion |
 |-------|--------|--------------|------------|
-| 1 - Foundation & Stability | Not Started | 4 | 0% |
+| 1 - Foundation & Stability | Complete (2026-02-10) | 4 | 100% |
 | 2 - Analytics Engine | Not Started | 5 | 0% |
 | 3 - ML Enhancement & Coaching | Not Started | 4 | 0% |
 | 4 - Monitoring & Model Health | Not Started | 2 | 0% |
 
-**Overall:** 0/14 requirements complete (0%)
+**Overall:** 4/14 requirements complete (29%)
 
 ---
 
