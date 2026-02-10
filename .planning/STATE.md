@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-10
 **Current Phase:** 02-analytics-engine
-**Status:** IN PROGRESS (2/3 plans complete)
+**Status:** COMPLETE (4/4 plans complete including gap closure)
 
 ---
 
@@ -12,7 +12,7 @@
 Golfers get actionable, personalized coaching and shot predictions that work offline — no API keys, no cloud dependency, no cost per query.
 
 ### Current Focus
-Phase 2: Analytics Engine IN PROGRESS. Analytics foundation (plan 01) and miss tendency + progress tracking (plan 02) complete. Ready for club recommendations and gap analysis.
+Phase 2: Analytics Engine COMPLETE. All analytics components built AND integrated into Dashboard. Users can now access dispersion charts, distance tables, miss tendency analysis, progress tracking, and session quality scoring. Ready for Phase 3.
 
 ---
 
@@ -25,16 +25,17 @@ Phase 2: Analytics Engine IN PROGRESS. Analytics foundation (plan 01) and miss t
 **Plan 02-01:** COMPLETE - Analytics Foundation (IQR filtering, dispersion, distance)
 **Plan 02-02:** COMPLETE - Miss Tendency & Progress Tracking (D-plane, statistical significance)
 **Plan 02-03:** COMPLETE - Session Quality & Component Package (composite scoring, unit tests)
-**Current:** Phase 02 COMPLETE (3/3 plans complete)
+**Plan 02-04:** COMPLETE - Dashboard Analytics Integration (gap closure - all 5 components accessible)
+**Current:** Phase 02 COMPLETE (4/4 plans complete including gap closure)
 
 ### Status
-Phase 02 COMPLETE. All analytics components built: utilities, dispersion charts, distance tables, miss tendency analysis, progress tracking, and session quality scoring. All 5 new components exported from components package. 25 unit tests added for analytics utilities. Ready for Phase 3.
+Phase 02 COMPLETE. All analytics components built AND integrated into Dashboard. Gap closure plan connected all 5 components to the UI with club filtering and session quality metrics. Users can now access all analytics from the Dashboard. Ready for Phase 3.
 
 ### Progress
 ```
 [████████████████████████████████████████████████] 100%
 ```
-3/3 Phase 02 plans complete (6 tasks, 9 files created, 25 tests added)
+4/4 Phase 02 plans complete (8 tasks, 9 files created, 1 file modified, 25 tests added)
 
 ---
 
@@ -51,12 +52,13 @@ Phase 02 COMPLETE. All analytics components built: utilities, dispersion charts,
 | 02-01 | 3m 15s | 2 | 4 | 0 | 2026-02-10 |
 | 02-02 | 11m 30s | 2 | 2 | 0 | 2026-02-10 |
 | 02-03 | 7m 52s | 2 | 3 | 25 | 2026-02-10 |
+| 02-04 | 4m 48s | 2 | 1 | 0 | 2026-02-10 |
 
 ### Velocity
-- Plans completed: 7
-- Tasks completed: 17
+- Plans completed: 8
+- Tasks completed: 19
 - Time in current phase: 1 session
-- Average time per plan: ~6.5 minutes
+- Average time per plan: ~5.5 minutes
 
 ### Quality
 - Tests passing: 207 tests (80 skipped)
@@ -99,6 +101,9 @@ Phase 02 COMPLETE. All analytics components built: utilities, dispersion charts,
 27. **2026-02-10 (02-03):** render_session_quality takes dict (not DataFrame) due to pre-aggregated metrics
 28. **2026-02-10 (02-03):** Color-coded interpretation tiers for overall quality score (5 levels)
 29. **2026-02-10 (02-03):** Actionable coaching tip based on lowest component score
+30. **2026-02-10 (02-04):** Insert new Shot Analytics tab as tab4, shift existing tabs to preserve order
+31. **2026-02-10 (02-04):** Add progress tracker to Trends tab (multi-session context fits naturally)
+32. **2026-02-10 (02-04):** Club selector dropdown with "All Clubs" default (no forced selection)
 
 ### Active Todos
 - [x] Execute plan 01-01 (ML Import Refactoring) — COMPLETE
@@ -108,13 +113,15 @@ Phase 02 COMPLETE. All analytics components built: utilities, dispersion charts,
 - [x] Execute plan 02-01 (Analytics Foundation) — COMPLETE
 - [x] Execute plan 02-02 (Miss Tendency & Progress Tracking) — COMPLETE
 - [x] Execute plan 02-03 (Session Quality & Component Package) — COMPLETE
+- [x] Execute plan 02-04 (Dashboard Analytics Integration - gap closure) — COMPLETE
 - [ ] Begin Phase 03 execution
 
 ### Blockers
 None.
 
 ### Recent Changes
-- 2026-02-10: **Phase 02 COMPLETE** - All 3 analytics plans executed successfully (6 tasks, 9 files, 25 tests)
+- 2026-02-10: **Phase 02 COMPLETE** - All 4 analytics plans executed successfully (8 tasks, 9 files created, 1 modified, 25 tests)
+- 2026-02-10: **Plan 02-04 COMPLETE** - Dashboard analytics integration (gap closure) - All 5 components accessible with club filtering (1 commit, 1 file)
 - 2026-02-10: **Plan 02-03 COMPLETE** - Session quality scoring with composite components and analytics utility tests (2 commits, 3 files, 25 tests)
 - 2026-02-10: **Plan 02-02 COMPLETE** - Miss tendency analysis with D-plane classification and progress tracking with statistical significance (2 commits, 2 files)
 - 2026-02-10: **Plan 02-01 COMPLETE** - Analytics foundation with IQR filtering, dispersion charts, distance tables (2 commits, 4 files)
@@ -132,7 +139,7 @@ None.
 ### For Next Session
 Begin Phase 3: `/gsd:progress`
 
-Phase 2 Analytics Engine COMPLETE. All 5 analytics components built and exported: dispersion charts, distance tables, miss tendency analysis, progress tracking, and session quality scoring. 25 unit tests added for analytics utilities. All tests passing. Ready for Phase 3: Advanced Analytics Integration.
+Phase 2 Analytics Engine COMPLETE. All 5 analytics components built, tested, AND integrated into Dashboard UI. Gap closure plan (02-04) connected all components with club filtering and session quality metrics. Users can now access all analytics from the Dashboard. Ready for Phase 3: Advanced Analytics Integration.
 
 ### Context to Preserve
 - Project uses existing XGBoost/scikit-learn stack; graceful degradation is architectural pattern
