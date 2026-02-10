@@ -52,12 +52,13 @@ Plans:
 4. User tracks session-over-session progress with trend lines and % improvement; statistical significance is indicated
 5. User sees session quality score (0-100) summarizing consistency and improvement; score is interpretable and motivating
 
-**Plans:** 3 plans
+**Plans:** 4 plans (3 original + 1 gap closure)
 
 Plans:
-- [ ] 02-01-PLAN.md -- Analytics utilities, dispersion chart (ANLYT-01), distance table (ANLYT-02)
-- [ ] 02-02-PLAN.md -- Miss tendency analysis (ANLYT-03), progress tracker (ANLYT-04)
-- [ ] 02-03-PLAN.md -- Session quality score (ANLYT-05), component exports, analytics tests
+- [x] 02-01-PLAN.md -- Analytics utilities, dispersion chart (ANLYT-01), distance table (ANLYT-02)
+- [x] 02-02-PLAN.md -- Miss tendency analysis (ANLYT-03), progress tracker (ANLYT-04)
+- [x] 02-03-PLAN.md -- Session quality score (ANLYT-05), component exports, analytics tests
+- [ ] 02-04-PLAN.md -- Gap closure: integrate all 5 analytics components into Dashboard page
 
 **Why this phase:** Analytics engine is self-contained with zero dependencies on existing ML models. Delivers immediate user value while de-risking architecture changes. All features can be built in parallel.
 
