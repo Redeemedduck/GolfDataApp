@@ -275,6 +275,199 @@ class TestSwingFlawDetector(unittest.TestCase):
         self.assertIn('recommendations', analysis)
 
 
+@unittest.skipUnless(HAS_DEPS, "numpy/sklearn not installed")
+class TestModelVersioning(unittest.TestCase):
+    """Test model versioning and metadata."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.model_path = Path(self.temp_dir) / 'test_model.joblib'
+
+    def tearDown(self):
+        """Clean up test files."""
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    def test_save_model_creates_metadata(self):
+        """Training and saving a model should create metadata file."""
+        from ml.train_models import save_model, ModelMetadata
+        import joblib
+        from sklearn.linear_model import LinearRegression
+
+        # Create a simple model
+        model = LinearRegression()
+        X = np.array([[1], [2], [3]])
+        y = np.array([2, 4, 6])
+        model.fit(X, y)
+
+        # Create metadata
+        metadata = ModelMetadata(
+            model_type='test_model',
+            version='1.0.0',
+            trained_at='2026-02-10T00:00:00Z',
+            training_samples=3,
+            features=['x'],
+            target='y',
+            metrics={'mae': 0.1},
+            hyperparameters={}
+        )
+
+        # Save model
+        save_model(model, self.model_path, metadata)
+
+        # Verify files exist
+        self.assertTrue(self.model_path.exists())
+        metadata_path = self.model_path.with_suffix('.metadata.json')
+        self.assertTrue(metadata_path.exists())
+
+    def test_load_model_with_metadata(self):
+        """Loading a model with metadata should return both."""
+        from ml.train_models import save_model, load_model, ModelMetadata
+        from sklearn.linear_model import LinearRegression
+
+        # Create and save a model
+        model = LinearRegression()
+        X = np.array([[1], [2], [3]])
+        y = np.array([2, 4, 6])
+        model.fit(X, y)
+
+        metadata = ModelMetadata(
+            model_type='test_model',
+            version='1.0.0',
+            trained_at='2026-02-10T00:00:00Z',
+            training_samples=3,
+            features=['x'],
+            target='y',
+            metrics={'mae': 0.1},
+            hyperparameters={}
+        )
+
+        save_model(model, self.model_path, metadata)
+
+        # Load model
+        loaded_model, loaded_metadata = load_model(self.model_path)
+
+        self.assertIsNotNone(loaded_model)
+        self.assertIsNotNone(loaded_metadata)
+        self.assertEqual(loaded_metadata.version, '1.0.0')
+        self.assertEqual(loaded_metadata.features, ['x'])
+
+    def test_load_model_without_metadata(self):
+        """Loading a model without metadata should not crash (backward compatibility)."""
+        from ml.train_models import load_model
+        from sklearn.linear_model import LinearRegression
+        import joblib
+
+        # Save model without metadata
+        model = LinearRegression()
+        X = np.array([[1], [2], [3]])
+        y = np.array([2, 4, 6])
+        model.fit(X, y)
+        joblib.dump(model, self.model_path)
+
+        # Load model
+        loaded_model, loaded_metadata = load_model(self.model_path)
+
+        self.assertIsNotNone(loaded_model)
+        self.assertIsNone(loaded_metadata)
+
+    def test_get_model_info(self):
+        """get_model_info should return metadata without loading model."""
+        from ml.train_models import save_model, get_model_info, ModelMetadata
+        from sklearn.linear_model import LinearRegression
+
+        # Create and save model with metadata
+        model = LinearRegression()
+        X = np.array([[1], [2], [3]])
+        y = np.array([2, 4, 6])
+        model.fit(X, y)
+
+        metadata = ModelMetadata(
+            model_type='test_model',
+            version='1.0.0',
+            trained_at='2026-02-10T00:00:00Z',
+            training_samples=3,
+            features=['x'],
+            target='y',
+            metrics={'mae': 0.1},
+            hyperparameters={}
+        )
+
+        save_model(model, self.model_path, metadata)
+
+        # Get model info
+        info = get_model_info(self.model_path)
+
+        self.assertIsNotNone(info)
+        self.assertEqual(info.version, '1.0.0')
+        self.assertEqual(info.training_samples, 3)
+
+    def test_get_model_info_no_metadata(self):
+        """get_model_info should return None if metadata doesn't exist."""
+        from ml.train_models import get_model_info
+        from sklearn.linear_model import LinearRegression
+        import joblib
+
+        # Save model without metadata
+        model = LinearRegression()
+        X = np.array([[1], [2], [3]])
+        y = np.array([2, 4, 6])
+        model.fit(X, y)
+        joblib.dump(model, self.model_path)
+
+        # Get model info
+        info = get_model_info(self.model_path)
+
+        self.assertIsNone(info)
+
+    def test_feature_name_mismatch_logs_warning(self):
+        """Feature count mismatch should log a warning but not crash."""
+        from ml.train_models import save_model, load_model, ModelMetadata
+        from sklearn.linear_model import LinearRegression
+        import io
+        import sys
+
+        # Create model with 2 features
+        model = LinearRegression()
+        X = np.array([[1, 2], [3, 4], [5, 6]])
+        y = np.array([2, 4, 6])
+        model.fit(X, y)
+
+        # Create metadata with wrong number of features
+        metadata = ModelMetadata(
+            model_type='test_model',
+            version='1.0.0',
+            trained_at='2026-02-10T00:00:00Z',
+            training_samples=3,
+            features=['x'],  # Only 1 feature, but model has 2
+            target='y',
+            metrics={'mae': 0.1},
+            hyperparameters={}
+        )
+
+        save_model(model, self.model_path, metadata)
+
+        # Capture stdout to check for warning
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+
+        try:
+            loaded_model, loaded_metadata = load_model(self.model_path)
+            output = captured_output.getvalue()
+
+            # Should have loaded successfully
+            self.assertIsNotNone(loaded_model)
+            self.assertIsNotNone(loaded_metadata)
+
+            # Should have logged a warning
+            self.assertIn('Warning', output)
+            self.assertIn('mismatch', output.lower())
+        finally:
+            sys.stdout = sys.__stdout__
+
+
 class TestMLImportFallback(unittest.TestCase):
     """Test ML import failure scenarios and graceful degradation."""
 
