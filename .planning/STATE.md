@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-10
 **Current Phase:** 03-ml-enhancement-coaching
-**Status:** IN PROGRESS (2/4 plans complete)
+**Status:** IN PROGRESS (3/4 plans complete)
 
 ---
 
@@ -12,7 +12,7 @@
 Golfers get actionable, personalized coaching and shot predictions that work offline — no API keys, no cloud dependency, no cost per query.
 
 ### Current Focus
-Phase 3: ML Enhancement & Coaching IN PROGRESS. Plan 03-02 COMPLETE: Practice planner with weakness detection. Analytics-driven practice plans generated from shot data with 8 weakness types and 10+ curated drills. Next: Conformal prediction integration.
+Phase 3: ML Enhancement & Coaching IN PROGRESS. Plan 03-03 COMPLETE: Analytics-driven LocalCoach. Coach now cites specific metrics (median carry, dispersion IQR, shot shape %). Practice plans render visually in AI Coach UI with drill expanders. Prediction intervals integrated. Next: Plan 03-04 (final plan).
 
 ---
 
@@ -24,18 +24,18 @@ Phase 3: ML Enhancement & Coaching IN PROGRESS. Plan 03-02 COMPLETE: Practice pl
 ### Plan
 **Plan 03-01:** COMPLETE - MAPIE Prediction Intervals & XGBoost Tuning
 **Plan 03-02:** COMPLETE - Practice Planner + Weakness Mapper
-**Plan 03-03:** NOT STARTED - Conformal Prediction Integration
-**Plan 03-04:** NOT STARTED - Analytics-Driven Coaching
-**Current:** Phase 03-02 COMPLETE (2/4 plans complete)
+**Plan 03-03:** COMPLETE - Analytics-Driven LocalCoach
+**Plan 03-04:** NOT STARTED - Analytics-Driven Coaching (final plan)
+**Current:** Phase 03-03 COMPLETE (3/4 plans complete)
 
 ### Status
-Phase 03-02 COMPLETE. Built WeaknessMapper detecting 8 weakness types (dispersion, shot shape, smash, distance, launch) using Phase 2 analytics and PracticePlanner with 10+ curated drills. Practice plans are time-bounded (15-30 min) with severity-based drill selection. Ready for Phase 03-03.
+Phase 03-03 COMPLETE. LocalCoach evolved to analytics-driven responses citing median carry, dispersion IQR, shot shape percentages from Phase 2 analytics. Practice plans integrated with visual drill rendering in AI Coach UI. Prediction intervals wired into predict_distance() with confidence messaging. Ready for Phase 03-04 (final plan).
 
 ### Progress
 ```
-[████████████████████████                        ] 50%
+[████████████████████████████████████            ] 75%
 ```
-2/4 Phase 03 plans complete (4 tasks, 4 files created, 3 files modified, 36 tests added)
+3/4 Phase 03 plans complete (7 tasks, 4 files created, 7 files modified, 47 tests added)
 
 ---
 
@@ -55,16 +55,17 @@ Phase 03-02 COMPLETE. Built WeaknessMapper detecting 8 weakness types (dispersio
 | 02-04 | 4m 48s | 2 | 1 | 0 | 2026-02-10 |
 | 03-01 | 4m 57s | 2 | 5 | 12 | 2026-02-10 |
 | 03-02 | 5m 0s | 2 | 4 | 24 | 2026-02-10 |
+| 03-03 | 10m 0s | 3 | 4 | 11 | 2026-02-10 |
 
 ### Velocity
-- Plans completed: 10
-- Tasks completed: 23
+- Plans completed: 11
+- Tasks completed: 26
 - Time in current phase: 1 session
-- Average time per plan: ~5.4 minutes
+- Average time per plan: ~5.8 minutes
 
 ### Quality
-- Tests passing: 219 tests (80 skipped) - 12 new from 03-01
-- New tests added: 53 (4 from 01-01, 12 from 01-03, 25 from 02-03, 12 from 03-01)
+- Tests passing: 230 tests (105 skipped) - 11 new from 03-03
+- New tests added: 64 (4 from 01-01, 12 from 01-03, 25 from 02-03, 12 from 03-01, 11 from 03-03)
 - Verification status: All criteria met
 - Rework incidents: 0
 - Regressions: 0
@@ -117,6 +118,11 @@ Phase 03-02 COMPLETE. Built WeaknessMapper detecting 8 weakness types (dispersio
 41. **2026-02-10 (03-02):** Minimum 5 shots required for weakness detection (statistical reliability)
 42. **2026-02-10 (03-02):** Sentinel values (0, 99999) cleaned before all weakness calculations
 43. **2026-02-10 (03-02):** Greedy drill selection prioritizes highest severity weaknesses first
+44. **2026-02-10 (03-03):** LocalCoach reuses analytics.utils and components.miss_tendency for consistency with Phase 2
+45. **2026-02-10 (03-03):** _calculate_club_stats renamed to _legacy_club_stats as fallback when analytics unavailable
+46. **2026-02-10 (03-03):** Practice plan detection via response['data']['plan'] key in AI Coach page
+47. **2026-02-10 (03-03):** Visual drill rendering uses st.expander for each drill (name, duration, reps, instructions)
+48. **2026-02-10 (03-03):** Prediction intervals cite confidence level in user-friendly message format
 
 ### Active Todos
 - [x] Execute plan 01-01 (ML Import Refactoring) — COMPLETE
@@ -129,13 +135,14 @@ Phase 03-02 COMPLETE. Built WeaknessMapper detecting 8 weakness types (dispersio
 - [x] Execute plan 02-04 (Dashboard Analytics Integration - gap closure) — COMPLETE
 - [x] Execute plan 03-01 (MAPIE Prediction Intervals & XGBoost Tuning) — COMPLETE
 - [x] Execute plan 03-02 (Practice Planner + Weakness Mapper) — COMPLETE
-- [ ] Execute plan 03-03 (Conformal Prediction Integration)
-- [ ] Execute plan 03-04 (Analytics-Driven Coaching)
+- [x] Execute plan 03-03 (Analytics-Driven LocalCoach) — COMPLETE
+- [ ] Execute plan 03-04 (Analytics-Driven Coaching - final plan)
 
 ### Blockers
 None.
 
 ### Recent Changes
+- 2026-02-10: **Plan 03-03 COMPLETE** - Analytics-driven LocalCoach (3 commits, 4 files, 11 tests) - Coach cites median carry, dispersion IQR, shot shape %. Practice plans render visually in AI Coach UI with drill expanders. Prediction intervals integrated into predict_distance().
 - 2026-02-10: **Plan 03-02 COMPLETE** - Practice planner + weakness mapper (2 commits, 4 files, 24 tests) - Analytics-driven practice plans with 8 weakness types and 10+ drills
 - 2026-02-10: **Plan 03-01 COMPLETE** - MAPIE prediction intervals and XGBoost tuning (2 commits, 5 files, 12 tests) - Distance predictions now include 95% confidence intervals
 - 2026-02-10: **Phase 02 COMPLETE** - All 4 analytics plans executed successfully (8 tasks, 9 files created, 1 modified, 25 tests)
@@ -156,7 +163,7 @@ None.
 ### For Next Session
 Continue Phase 3: `/gsd:progress`
 
-Phase 03-02 COMPLETE: Practice planner with weakness detection. WeaknessMapper detects 8 weakness types using Phase 2 analytics. PracticePlanner generates time-bounded plans (15-30 min) with 10+ curated drills. Drill selection based on severity scores. Ready for Phase 03-03: Conformal prediction integration.
+Phase 03-03 COMPLETE: Analytics-driven LocalCoach. Coach now cites specific metrics from Phase 2 analytics (median carry, dispersion IQR, shot shape distribution). Practice plans render visually in AI Coach UI with st.expander per drill. Prediction intervals integrated into predict_distance() with confidence messaging. Ready for Phase 03-04 (final plan in Phase 3).
 
 ### Context to Preserve
 - Project uses existing XGBoost/scikit-learn stack; graceful degradation is architectural pattern
