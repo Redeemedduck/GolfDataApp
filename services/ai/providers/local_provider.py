@@ -43,7 +43,8 @@ class LocalProvider:
             message: User's question or request
 
         Returns:
-            Dict with 'response' and 'function_calls' keys to match Gemini format
+            Dict with 'response', 'function_calls', and 'data' keys
+            - 'data' may contain 'plan' key for practice plan rendering
         """
         coach_response = self._coach.get_response(message)
 
@@ -57,7 +58,7 @@ class LocalProvider:
         return {
             'response': "\n".join(response_parts),
             'function_calls': [],  # Local coach doesn't use function calling
-            'data': coach_response.data,  # Extra data for transparency
+            'data': coach_response.data,  # Extra data for transparency (includes 'plan' for practice plans)
         }
 
     def reset_conversation(self):
@@ -93,6 +94,6 @@ class LocalProvider:
             "supported_intents": [
                 "driver_stats", "iron_stats", "club_comparison",
                 "session_analysis", "trend_analysis", "swing_issue",
-                "consistency", "gapping", "profile"
+                "consistency", "gapping", "profile", "practice_plan"
             ]
         }

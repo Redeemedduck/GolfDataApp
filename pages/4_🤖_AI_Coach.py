@@ -228,7 +228,19 @@ st.subheader("💬 Chat with Your Coach")
 # Display conversation history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        # Check if message contains a practice plan
+        has_practice_plan = (
+            message.get("data") and
+            isinstance(message["data"], dict) and
+            'plan' in message["data"]
+        )
+
+        if has_practice_plan:
+            # Render practice plan visually
+            render_practice_plan(message["data"]["plan"])
+        else:
+            # Display standard message content
+            st.markdown(message["content"])
 
         # Show function calls if present
         if message.get("function_calls"):
@@ -268,6 +280,27 @@ def build_context_prompt(user_prompt: str) -> str:
     return f"{context}\n\n{user_prompt}"
 
 
+def render_practice_plan(plan_data: dict) -> None:
+    """
+    Render a practice plan visually with drill expanders.
+
+    Args:
+        plan_data: Practice plan dict with keys:
+            - duration_min: Total duration
+            - focus_areas: List of focus areas
+            - drills: List of drill dicts (name, duration_min, reps, instructions)
+            - rationale: Explanation of why these drills were selected
+    """
+    st.subheader(f"📋 Practice Plan ({plan_data['duration_min']} min)")
+    st.caption(f"Focus: {', '.join(plan_data['focus_areas'])}")
+
+    for i, drill in enumerate(plan_data['drills'], 1):
+        with st.expander(f"{i}. {drill['name']} ({drill['duration_min']} min, {drill['reps']} reps)"):
+            st.markdown(drill['instructions'])
+
+    st.info(f"**Rationale:** {plan_data['rationale']}")
+
+
 # Check if we need to generate a response (e.g., after button click rerun)
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     # Last message is from user with no response - generate one now
@@ -277,8 +310,19 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             coach_prompt = build_context_prompt(last_user_msg)
             response_data = st.session_state.coach.chat(coach_prompt)
 
-            # Display response
-            st.markdown(response_data['response'])
+            # Check if response contains a practice plan
+            has_practice_plan = (
+                response_data.get('data') and
+                isinstance(response_data['data'], dict) and
+                'plan' in response_data['data']
+            )
+
+            if has_practice_plan:
+                # Render practice plan visually instead of plain text
+                render_practice_plan(response_data['data']['plan'])
+            else:
+                # Display standard response
+                st.markdown(response_data['response'])
 
             # Show function calls if any
             if response_data.get('function_calls'):
@@ -291,7 +335,8 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": response_data['response'],
-                "function_calls": response_data.get('function_calls', [])
+                "function_calls": response_data.get('function_calls', []),
+                "data": response_data.get('data')
             })
 
 # Suggested questions (show when no messages)
@@ -341,8 +386,19 @@ if prompt := st.chat_input("Ask me anything about your golf game..."):
             coach_prompt = build_context_prompt(prompt)
             response_data = st.session_state.coach.chat(coach_prompt)
 
-            # Display response
-            st.markdown(response_data['response'])
+            # Check if response contains a practice plan
+            has_practice_plan = (
+                response_data.get('data') and
+                isinstance(response_data['data'], dict) and
+                'plan' in response_data['data']
+            )
+
+            if has_practice_plan:
+                # Render practice plan visually instead of plain text
+                render_practice_plan(response_data['data']['plan'])
+            else:
+                # Display standard response
+                st.markdown(response_data['response'])
 
             # Show function calls if any were made
             if response_data.get('function_calls'):
@@ -377,7 +433,8 @@ if prompt := st.chat_input("Ask me anything about your golf game..."):
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": response_data['response'],
-                "function_calls": response_data.get('function_calls', [])
+                "function_calls": response_data.get('function_calls', []),
+                "data": response_data.get('data')
             })
 
 # Help section at the bottom
