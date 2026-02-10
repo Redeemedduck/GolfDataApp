@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from typing import Optional
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
@@ -168,6 +169,34 @@ def init_db():
 
     # Initialize sync_status row if it doesn't exist
     cursor.execute('INSERT OR IGNORE INTO sync_status (id) VALUES (1)')
+
+    # Create session stats table for aggregate session metrics
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS session_stats (
+            session_id TEXT PRIMARY KEY,
+            session_date TIMESTAMP,
+            session_type TEXT,
+            shot_count INTEGER,
+            clubs_used TEXT,
+            avg_carry REAL,
+            avg_total REAL,
+            avg_ball_speed REAL,
+            avg_club_speed REAL,
+            avg_smash REAL,
+            best_carry REAL,
+            avg_face_angle REAL,
+            std_face_angle REAL,
+            avg_club_path REAL,
+            std_club_path REAL,
+            avg_face_to_path REAL,
+            avg_strike_distance REAL,
+            std_strike_distance REAL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create index on session_date for trend queries
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_session_stats_date ON session_stats(session_date)')
 
     conn.commit()
     conn.close()
