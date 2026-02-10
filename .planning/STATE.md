@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-10
 **Current Phase:** 02-analytics-engine
-**Status:** IN PROGRESS (1/3 plans complete)
+**Status:** IN PROGRESS (2/3 plans complete)
 
 ---
 
@@ -12,7 +12,7 @@
 Golfers get actionable, personalized coaching and shot predictions that work offline — no API keys, no cloud dependency, no cost per query.
 
 ### Current Focus
-Phase 2: Analytics Engine IN PROGRESS. Analytics foundation (plan 01) complete with IQR filtering, dispersion charts, and distance tables. Ready for dashboard integration.
+Phase 2: Analytics Engine IN PROGRESS. Analytics foundation (plan 01) and miss tendency + progress tracking (plan 02) complete. Ready for club recommendations and gap analysis.
 
 ---
 
@@ -23,18 +23,18 @@ Phase 2: Analytics Engine IN PROGRESS. Analytics foundation (plan 01) complete w
 
 ### Plan
 **Plan 02-01:** COMPLETE - Analytics Foundation (IQR filtering, dispersion, distance)
-**Plan 02-02:** PENDING - Dashboard Analytics Integration
+**Plan 02-02:** COMPLETE - Miss Tendency & Progress Tracking (D-plane, statistical significance)
 **Plan 02-03:** PENDING - Club Recommendations with Gap Analysis
-**Current:** Phase 02 in progress (1/3 plans complete)
+**Current:** Phase 02 in progress (2/3 plans complete)
 
 ### Status
-Phase 02 in progress. Analytics foundation complete with shared utilities, dispersion visualization, and median-based distance analysis. Ready for dashboard integration.
+Phase 02 in progress. Analytics foundation complete with utilities, dispersion, and distance tables. Miss tendency analysis and progress tracking with statistical significance complete. Ready for club recommendations.
 
 ### Progress
 ```
-[████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 33%
+[████████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 50%
 ```
-1/3 Phase 02 plans complete (2 tasks, 4 files created)
+2/3 Phase 02 plans complete (4 tasks, 6 files created)
 
 ---
 
@@ -49,19 +49,20 @@ Phase 02 in progress. Analytics foundation complete with shared utilities, dispe
 | 01-03 | 3m 40s | 3 | 4 | 12 | 2026-02-10 |
 | 01-04 | 55s | 1 | 1 | 0 | 2026-02-10 |
 | 02-01 | 3m 15s | 2 | 4 | 0 | 2026-02-10 |
+| 02-02 | 11m 30s | 2 | 2 | 0 | 2026-02-10 |
 
 ### Velocity
-- Plans completed: 5
-- Tasks completed: 13
+- Plans completed: 6
+- Tasks completed: 15
 - Time in current phase: 1 session
-- Average time per plan: ~3.5 minutes
+- Average time per plan: ~5.2 minutes
 
 ### Quality
-- Tests passing: 177 tests (5 errors in ML, 1 skipped)
+- Tests passing: 182 tests (80 skipped)
 - New tests added: 16 (4 from 01-01, 12 from 01-03)
 - Verification status: All criteria met
 - Rework incidents: 0
-- Regressions: 0 (pre-existing ML errors unrelated to Phase 2 work)
+- Regressions: 0
 
 ---
 
@@ -87,6 +88,11 @@ Phase 02 in progress. Analytics foundation complete with shared utilities, dispe
 17. **2026-02-10 (02-01):** IQR multiplier 1.5 for outlier filtering (standard statistical practice)
 18. **2026-02-10 (02-01):** Median distances over maximums for club selection reliability
 19. **2026-02-10 (02-01):** Confidence levels based on sample size: low (<5), medium (<10), high (10+)
+20. **2026-02-10 (02-02):** D-plane classification uses rule-based thresholds (no ML dependencies)
+21. **2026-02-10 (02-02):** Face-to-path difference is primary determinant of shot curve
+22. **2026-02-10 (02-02):** Statistical significance requires p < 0.05 AND n >= 5 sessions
+23. **2026-02-10 (02-02):** Trend lines color-coded by significance and direction (green/red/gray)
+24. **2026-02-10 (02-02):** Angle metrics treated as context-dependent (neutral delta coloring)
 
 ### Active Todos
 - [x] Execute plan 01-01 (ML Import Refactoring) — COMPLETE
@@ -94,13 +100,14 @@ Phase 02 in progress. Analytics foundation complete with shared utilities, dispe
 - [x] Execute plan 01-03 (Session Metrics Table) — COMPLETE
 - [x] Execute plan 01-04 (Session Stats Table Creation - gap closure) — COMPLETE
 - [x] Execute plan 02-01 (Analytics Foundation) — COMPLETE
-- [ ] Execute plan 02-02 (Dashboard Analytics Integration)
+- [x] Execute plan 02-02 (Miss Tendency & Progress Tracking) — COMPLETE
 - [ ] Execute plan 02-03 (Club Recommendations)
 
 ### Blockers
 None.
 
 ### Recent Changes
+- 2026-02-10: **Plan 02-02 COMPLETE** - Miss tendency analysis with D-plane classification and progress tracking with statistical significance (2 commits, 2 files)
 - 2026-02-10: **Plan 02-01 COMPLETE** - Analytics foundation with IQR filtering, dispersion charts, distance tables (2 commits, 4 files)
 - 2026-02-10: **Phase 01 COMPLETE** - All 3 plans plus 1 gap closure executed successfully
 - 2026-02-10: Plan 01-04 complete (Session Stats Table Creation - gap closure) - 1 commit, fixed OperationalError
@@ -114,9 +121,9 @@ None.
 ## Session Continuity
 
 ### For Next Session
-Execute Phase 2 Plan 02: `/gsd:execute-plan 02-analytics-engine 02`
+Execute Phase 2 Plan 03: `/gsd:execute-plan 02-analytics-engine 03`
 
-Analytics foundation complete: IQR filtering utilities, dispersion visualization, median-based distance tables. Ready to integrate into Dashboard page.
+Analytics foundation complete: IQR filtering, dispersion, distance tables. Miss tendency and progress tracking complete with D-plane classification and statistical significance testing. Ready for club recommendations and gap analysis.
 
 ### Context to Preserve
 - Project uses existing XGBoost/scikit-learn stack; graceful degradation is architectural pattern
