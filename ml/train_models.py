@@ -147,7 +147,43 @@ def load_model(path: Path) -> Tuple[Any, Optional[ModelMetadata]]:
             data = json.load(f)
             metadata = ModelMetadata(**data)
 
+            # Validate feature compatibility
+            if metadata.features:
+                # Get expected features from model
+                if hasattr(model, 'n_features_in_'):
+                    expected_count = model.n_features_in_
+                    actual_count = len(metadata.features)
+                    if expected_count != actual_count:
+                        print(f"Warning: Feature count mismatch - model expects {expected_count}, metadata has {actual_count}")
+
     return model, metadata
+
+
+def get_model_info(model_path: Path) -> Optional[ModelMetadata]:
+    """
+    Get model metadata without loading the full model (fast check).
+
+    Args:
+        model_path: Path to the model file
+
+    Returns:
+        ModelMetadata if metadata exists, None otherwise (backward compatibility)
+
+    Note:
+        This is useful for UI showing model details before prediction.
+        Does not validate the model file itself.
+    """
+    metadata_path = model_path.with_suffix('.metadata.json')
+    if not metadata_path.exists():
+        return None
+
+    try:
+        with open(metadata_path, 'r') as f:
+            data = json.load(f)
+            return ModelMetadata(**data)
+    except Exception as e:
+        print(f"Warning: Could not load metadata from {metadata_path}: {e}")
+        return None
 
 
 def get_training_data() -> pd.DataFrame:
@@ -343,12 +379,24 @@ class DistancePredictor:
     def load(self) -> None:
         """Load the model from disk."""
         self.model, self.metadata = load_model(self.model_path)
+
+        # Validate metadata and set feature names
         if self.metadata and self.metadata.features:
             self._feature_names = self.metadata.features
+
+            # Validate features match model expectations
+            if hasattr(self.model, 'n_features_in_'):
+                expected_count = self.model.n_features_in_
+                actual_count = len(self.metadata.features)
+                if expected_count != actual_count:
+                    print(f"Warning: Feature count mismatch - model expects {expected_count}, metadata has {actual_count}")
+                    print(f"Warning: Falling back to default feature names")
+                    self._feature_names = self.DEFAULT_FEATURE_NAMES
         else:
-            # Fallback to defaults if metadata is missing
+            # Fallback to defaults if metadata is missing (backward compatibility)
             self._feature_names = self.DEFAULT_FEATURE_NAMES
-            print("Warning: Model loaded without feature names, using defaults")
+            print("Warning: Model loaded without metadata, using default feature names")
+
         print(f"Loaded distance model: {self.model_path}")
 
     def train(self, df: Optional[pd.DataFrame] = None, save: bool = True) -> ModelMetadata:
