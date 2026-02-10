@@ -49,6 +49,32 @@ except ImportError:
     detect_swing_flaws = None
     SwingFlaw = None
 
+# Analytics imports for data-driven coaching (with graceful degradation)
+try:
+    from analytics.utils import calculate_distance_stats, filter_outliers_iqr
+    ANALYTICS_AVAILABLE = True
+except ImportError:
+    ANALYTICS_AVAILABLE = False
+    calculate_distance_stats = None
+    filter_outliers_iqr = None
+
+# Shot shape classification import (with graceful degradation)
+try:
+    from components.miss_tendency import _classify_shot_shape
+    SHOT_SHAPE_CLASSIFICATION_AVAILABLE = True
+except ImportError:
+    SHOT_SHAPE_CLASSIFICATION_AVAILABLE = False
+    _classify_shot_shape = None
+
+# Coaching imports for practice plan generation (with graceful degradation)
+try:
+    from ml.coaching import PracticePlanner, WeaknessMapper
+    COACHING_AVAILABLE = True
+except ImportError:
+    COACHING_AVAILABLE = False
+    PracticePlanner = None
+    WeaknessMapper = None
+
 
 @dataclass
 class CoachResponse:
@@ -90,6 +116,7 @@ class LocalCoach:
         'consistency': r'\bconsisten\b|\bvariabl\b|\binconsisten\b',
         'gapping': r'\bgap\b|\bdistance\s*gap\b|\byardage\b',
         'profile': r'\bprofile\b|\boverall\b|\bsummary\b',
+        'practice_plan': r'\bpractice\s*plan\b|\bdrill\b|\bwhat.*work\s*on\b|\bpractice\b.*\bplan\b',
     }
 
     def __init__(self):
@@ -197,6 +224,7 @@ class LocalCoach:
             'consistency': self._handle_consistency,
             'gapping': self._handle_gapping,
             'profile': self._handle_profile,
+            'practice_plan': self._handle_practice_plan,
             'general': self._handle_general,
         }
 
@@ -208,7 +236,7 @@ class LocalCoach:
         return self._handle_club_stats("Driver")
 
     def _handle_club_stats(self, club: Optional[str]) -> CoachResponse:
-        """Handle statistics for a specific club."""
+        """Handle statistics for a specific club with analytics-driven responses."""
         df = golf_db.get_all_shots()
 
         if df.empty:
@@ -235,21 +263,118 @@ class LocalCoach:
         else:
             club_df = df
 
-        # Calculate stats
-        stats = self._calculate_club_stats(club_df)
         club_name = club or "all clubs"
 
-        message = self._format_club_stats(club_name, stats)
-        suggestions = self._generate_suggestions(stats, club_name)
+        # Use analytics-driven response if available, otherwise fall back to legacy
+        if ANALYTICS_AVAILABLE and calculate_distance_stats is not None:
+            return self._handle_club_stats_analytics(club_df, club_name)
+        else:
+            # Fall back to legacy template-based stats
+            stats = self._legacy_club_stats(club_df)
+            message = self._format_club_stats(club_name, stats)
+            suggestions = self._generate_suggestions(stats, club_name)
+            return CoachResponse(
+                message=message,
+                data=stats,
+                suggestions=suggestions,
+                confidence=0.85
+            )
+
+    def _handle_club_stats_analytics(self, club_df: pd.DataFrame, club_name: str) -> CoachResponse:
+        """Generate analytics-driven club stats response with specific metrics."""
+        # Get analytics-based distance stats
+        if club_name == "all clubs":
+            # For "all clubs", just aggregate without filtering by specific club
+            stats_data = calculate_distance_stats(club_df, None)
+        else:
+            stats_data = calculate_distance_stats(club_df, club_name)
+
+        if not stats_data:
+            # Not enough data, fall back to legacy
+            stats = self._legacy_club_stats(club_df)
+            message = self._format_club_stats(club_name, stats)
+            suggestions = self._generate_suggestions(stats, club_name)
+            return CoachResponse(
+                message=message,
+                data=stats,
+                suggestions=suggestions,
+                confidence=0.85
+            )
+
+        # Build message with specific metrics
+        parts = [f"Your {club_name} analysis:"]
+        parts.append(f"  - Median carry: {stats_data['median']:.0f} yards ({stats_data['q25']:.0f}-{stats_data['q75']:.0f} range)")
+
+        # Calculate dispersion IQR if side_total exists
+        dispersion_iqr = None
+        if 'side_total' in club_df.columns:
+            clean_side = club_df[club_df['side_total'].notna() &
+                                 (club_df['side_total'] != 0) &
+                                 (club_df['side_total'] != 99999)]
+            if len(clean_side) >= 3:
+                from scipy.stats import iqr as scipy_iqr
+                dispersion_iqr = scipy_iqr(clean_side['side_total'], nan_policy='omit')
+                parts.append(f"  - Dispersion: {dispersion_iqr:.1f} yards (IQR)")
+
+        # Compute shot shape distribution if face_angle and club_path exist
+        dominant_shape = None
+        dominant_pct = 0
+        if (SHOT_SHAPE_CLASSIFICATION_AVAILABLE and _classify_shot_shape is not None and
+            'face_angle' in club_df.columns and 'club_path' in club_df.columns and 'side_spin' in club_df.columns):
+            clean_shape = club_df[
+                club_df['face_angle'].notna() &
+                club_df['club_path'].notna() &
+                club_df['side_spin'].notna()
+            ]
+            if len(clean_shape) >= 5:
+                shapes = clean_shape.apply(
+                    lambda row: _classify_shot_shape(row['face_angle'], row['club_path'], row['side_spin']),
+                    axis=1
+                )
+                shape_counts = shapes.value_counts()
+                if not shape_counts.empty:
+                    dominant_shape = shape_counts.idxmax()
+                    dominant_pct = (shape_counts.max() / len(shapes)) * 100
+                    parts.append(f"  - Shot shape: {dominant_pct:.0f}% {dominant_shape}")
+
+        # Add sample size and confidence
+        parts.append(f"  - Based on {stats_data['sample_size']} shots ({stats_data['confidence']} confidence)")
+
+        # Generate data-driven suggestions
+        suggestions = []
+
+        # Dispersion-based suggestions
+        if dispersion_iqr is not None and dispersion_iqr > 15:
+            suggestions.append(f"High dispersion ({dispersion_iqr:.1f} yards) - focus on setup consistency")
+
+        # Shot shape-based suggestions
+        if dominant_shape and dominant_pct > 0:
+            if dominant_shape in ['Slice', 'Fade'] and dominant_pct > 60:
+                suggestions.append(f"Consistent {dominant_shape} pattern - work on face control")
+            elif dominant_shape == 'Hook' and dominant_pct > 40:
+                suggestions.append("Hook tendency - check grip pressure")
+
+        # Smash factor suggestion (check if exists in club_df)
+        if 'smash' in club_df.columns:
+            clean_smash = club_df[club_df['smash'].notna() &
+                                  (club_df['smash'] != 0) &
+                                  (club_df['smash'] != 99999)]
+            if len(clean_smash) > 0:
+                avg_smash = clean_smash['smash'].mean()
+                if avg_smash < 1.40:
+                    suggestions.append(f"Low smash factor ({avg_smash:.2f}) - focus on center contact")
+
+        if not suggestions:
+            suggestions.append("Looking good! Keep up the consistent practice")
 
         return CoachResponse(
-            message=message,
-            data=stats,
+            message="\n".join(parts),
+            data=stats_data,
             suggestions=suggestions,
             confidence=0.85
         )
 
-    def _calculate_club_stats(self, df: pd.DataFrame) -> Dict[str, Any]:
+    def _legacy_club_stats(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate statistics for a DataFrame of shots."""
         stats = {}
         metrics = ['carry', 'total', 'ball_speed', 'club_speed', 'smash', 'launch_angle', 'back_spin']
@@ -430,7 +555,7 @@ class LocalCoach:
                 confidence=0.9
             )
 
-        stats = self._calculate_club_stats(df)
+        stats = self._legacy_club_stats(df)
         clubs_used = df['club'].unique().tolist()
 
         parts = [f"Session Analysis ({session_id}):"]
@@ -462,7 +587,7 @@ class LocalCoach:
         )
 
     def _handle_trends(self, _: Any) -> CoachResponse:
-        """Handle trend analysis queries."""
+        """Handle trend analysis queries with analytics-driven stats."""
         df = golf_db.get_all_shots()
 
         if df.empty:
@@ -471,37 +596,82 @@ class LocalCoach:
                 confidence=0.9
             )
 
-        # Analyze carry trend
-        session_avgs = df.groupby('session_id')['carry'].apply(
-            lambda x: x.replace([0, 99999], np.nan).mean()
-        ).dropna()
+        # Use analytics stats per session if available
+        if ANALYTICS_AVAILABLE and calculate_distance_stats is not None:
+            # Group by session and calculate median carry per session
+            sessions = df['session_id'].unique()
+            if len(sessions) < 3:
+                return CoachResponse(
+                    message="Need at least 3 sessions for trend analysis. Keep practicing!",
+                    confidence=0.8
+                )
 
-        if len(session_avgs) < 3:
+            session_medians = []
+            for session_id in sessions:
+                session_df = df[df['session_id'] == session_id]
+                # Use overall median from session (pass None for club to get all shots)
+                session_stats = calculate_distance_stats(session_df, None)
+                if session_stats:
+                    session_medians.append(session_stats['median'])
+
+            if len(session_medians) < 3:
+                return CoachResponse(
+                    message="Need at least 3 sessions with valid data for trend analysis.",
+                    confidence=0.8
+                )
+
+            # Calculate trend
+            x = np.arange(len(session_medians))
+            y = np.array(session_medians)
+            slope, _ = np.polyfit(x, y, 1)
+
+            trend_dir = "improving" if slope > 0.5 else "declining" if slope < -0.5 else "stable"
+            message = f"Your median distance is {trend_dir} (trend: {slope:+.1f} yards/session, {len(session_medians)} sessions)"
+
+            suggestions = []
+            if trend_dir == "improving":
+                suggestions.append("Great progress! You're gaining distance consistently")
+            elif trend_dir == "declining":
+                suggestions.append("Consider focusing on fundamentals - tempo, grip pressure, balance")
+
             return CoachResponse(
-                message="Need at least 3 sessions for trend analysis. Keep practicing!",
+                message=message,
+                data={'trend_slope': slope, 'sessions': len(session_medians)},
+                suggestions=suggestions,
                 confidence=0.8
             )
+        else:
+            # Fall back to legacy groupby mean
+            session_avgs = df.groupby('session_id')['carry'].apply(
+                lambda x: x.replace([0, 99999], np.nan).mean()
+            ).dropna()
 
-        # Calculate trend
-        x = np.arange(len(session_avgs))
-        y = session_avgs.values
-        slope, _ = np.polyfit(x, y, 1)
+            if len(session_avgs) < 3:
+                return CoachResponse(
+                    message="Need at least 3 sessions for trend analysis. Keep practicing!",
+                    confidence=0.8
+                )
 
-        trend_dir = "improving" if slope > 0.5 else "declining" if slope < -0.5 else "stable"
-        message = f"Your overall distance is {trend_dir} (trend: {slope:+.1f} yards/session)"
+            # Calculate trend
+            x = np.arange(len(session_avgs))
+            y = session_avgs.values
+            slope, _ = np.polyfit(x, y, 1)
 
-        suggestions = []
-        if trend_dir == "improving":
-            suggestions.append("Great progress! You're gaining distance consistently")
-        elif trend_dir == "declining":
-            suggestions.append("Consider focusing on fundamentals - tempo, grip pressure, balance")
+            trend_dir = "improving" if slope > 0.5 else "declining" if slope < -0.5 else "stable"
+            message = f"Your overall distance is {trend_dir} (trend: {slope:+.1f} yards/session)"
 
-        return CoachResponse(
-            message=message,
-            data={'trend_slope': slope, 'sessions': len(session_avgs)},
-            suggestions=suggestions,
-            confidence=0.8
-        )
+            suggestions = []
+            if trend_dir == "improving":
+                suggestions.append("Great progress! You're gaining distance consistently")
+            elif trend_dir == "declining":
+                suggestions.append("Consider focusing on fundamentals - tempo, grip pressure, balance")
+
+            return CoachResponse(
+                message=message,
+                data={'trend_slope': slope, 'sessions': len(session_avgs)},
+                suggestions=suggestions,
+                confidence=0.8
+            )
 
     def _handle_swing_issue(self, entity: Any) -> CoachResponse:
         """Handle swing issue queries."""
@@ -627,11 +797,110 @@ class LocalCoach:
                    "  - Trend analysis (\"Am I improving?\")\n"
                    "  - Shot shape analysis (\"Why do I slice?\")\n"
                    "  - Consistency metrics (\"How consistent am I?\")\n"
-                   "  - Overall profile (\"Show my profile\")\n\n"
+                   "  - Overall profile (\"Show my profile\")\n"
+                   "  - Practice plans (\"What should I practice?\")\n\n"
                    "What would you like to know?",
-            suggestions=["Try asking about your driver distance", "Ask about your progress over time"],
+            suggestions=["Try asking about your driver distance", "Ask about your progress over time", "Request a practice plan"],
             confidence=0.9
         )
+
+    def _handle_practice_plan(self, entity: Any) -> CoachResponse:
+        """Handle practice plan requests."""
+        # Extract target duration from query if mentioned
+        target_duration = 30  # Default
+        if entity and isinstance(entity, str):
+            # Try to extract duration from entity (e.g., "15 minute practice plan")
+            import re
+            duration_match = re.search(r'(\d+)\s*min', entity.lower())
+            if duration_match:
+                target_duration = int(duration_match.group(1))
+
+        # Extract club from query if mentioned (not implemented in _detect_intent, but could be added)
+        # For now, just pass None
+        return self.get_practice_plan(target_duration=target_duration, club=None)
+
+    def get_practice_plan(self, target_duration: int = 30, club: str = None) -> CoachResponse:
+        """
+        Generate a practice plan based on detected weaknesses.
+
+        Args:
+            target_duration: Target plan duration in minutes (default 30)
+            club: Optional club to focus practice on
+
+        Returns:
+            CoachResponse with practice plan in message and structured plan in data
+        """
+        if not COACHING_AVAILABLE or PracticePlanner is None:
+            return CoachResponse(
+                message="Practice plan generation requires analytics modules. "
+                        "Try asking about your club statistics or trends instead.",
+                suggestions=["Ask about your driver performance", "Check your progress trends"],
+                confidence=0.7
+            )
+
+        df = golf_db.get_all_shots()
+
+        if df.empty:
+            return CoachResponse(
+                message="I don't have any shot data to analyze yet. Import some sessions first!",
+                confidence=0.9
+            )
+
+        # Filter by club if specified
+        if club and 'club' in df.columns:
+            df = df[df['club'].astype(str).str.lower() == club.lower()]
+            if df.empty:
+                return CoachResponse(
+                    message=f"No data available for {club}. Try without specifying a club.",
+                    confidence=0.8
+                )
+
+        # Generate practice plan
+        try:
+            planner = PracticePlanner()
+            clubs_list = [club] if club else None
+            plan = planner.generate_plan(df, target_duration=target_duration, clubs=clubs_list)
+
+            # Format plan into readable message
+            parts = [f"Practice Plan ({plan.duration_min} min):"]
+            parts.append(f"Focus areas: {', '.join(plan.focus_areas)}")
+            parts.append("")
+            for i, drill in enumerate(plan.drills, 1):
+                parts.append(f"{i}. {drill.name} ({drill.duration_min} min, {drill.reps} reps)")
+                parts.append(f"   {drill.instructions.split(chr(10))[0]}")  # First line only for message
+            parts.append("")
+            parts.append(f"Rationale: {plan.rationale}")
+
+            # Convert plan to dict for structured data
+            plan_dict = {
+                'duration_min': plan.duration_min,
+                'focus_areas': plan.focus_areas,
+                'drills': [
+                    {
+                        'name': drill.name,
+                        'duration_min': drill.duration_min,
+                        'focus': drill.focus,
+                        'instructions': drill.instructions,
+                        'reps': drill.reps,
+                        'weakness_key': drill.weakness_key
+                    }
+                    for drill in plan.drills
+                ],
+                'rationale': plan.rationale,
+                'weaknesses_addressed': plan.weaknesses_addressed
+            }
+
+            return CoachResponse(
+                message="\n".join(parts),
+                data={'plan': plan_dict, 'weaknesses': plan.weaknesses_addressed},
+                suggestions=["Follow this plan for your next practice session"],
+                confidence=0.85
+            )
+        except Exception as e:
+            return CoachResponse(
+                message=f"Could not generate practice plan: {str(e)}. Try asking about your club statistics.",
+                confidence=0.6
+            )
 
     def predict_distance(
         self,
@@ -641,7 +910,7 @@ class LocalCoach:
         club_speed: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
-        Predict carry distance using ML model.
+        Predict carry distance using ML model with prediction intervals.
 
         Args:
             ball_speed: Ball speed in mph
@@ -650,7 +919,7 @@ class LocalCoach:
             club_speed: Club speed in mph (optional)
 
         Returns:
-            Dict with predicted distance and confidence
+            Dict with predicted distance, confidence, and optionally prediction intervals
         """
         if not self.distance_predictor:
             return {
@@ -659,21 +928,52 @@ class LocalCoach:
             }
 
         try:
+            # Try to get prediction with intervals first
+            if hasattr(self.distance_predictor, 'predict_with_intervals'):
+                interval_result = self.distance_predictor.predict_with_intervals(
+                    ball_speed=ball_speed,
+                    launch_angle=launch_angle,
+                    back_spin=back_spin,
+                    club_speed=club_speed,
+                )
+
+                if interval_result['has_intervals']:
+                    # Build response with intervals
+                    return {
+                        'predicted_carry': interval_result['predicted_value'],
+                        'lower_bound': interval_result['lower_bound'],
+                        'upper_bound': interval_result['upper_bound'],
+                        'confidence_level': interval_result['confidence_level'],
+                        'interval_width': interval_result['interval_width'],
+                        'has_intervals': True,
+                        'message': f"Predicted carry: {interval_result['predicted_value']:.1f} yards "
+                                   f"({interval_result['lower_bound']:.1f}-{interval_result['upper_bound']:.1f}, "
+                                   f"{interval_result['confidence_level']*100:.0f}% confidence)"
+                    }
+                else:
+                    # Fall through to regular predict
+                    pass
+
+            # Fall back to regular predict (no intervals)
             result = self.distance_predictor.predict(
                 ball_speed=ball_speed,
                 launch_angle=launch_angle,
                 back_spin=back_spin,
                 club_speed=club_speed,
             )
+
             return {
                 'predicted_carry': result.predicted_value,
                 'confidence': result.confidence,
                 'feature_importance': result.feature_importance,
+                'has_intervals': False,
+                'message': f"Predicted carry: {result.predicted_value:.1f} yards (point estimate only - need 1000+ shots for confidence intervals)"
             }
         except Exception as e:
             return {
                 'error': str(e),
                 'fallback_estimate': self._estimate_distance(ball_speed),
+                'has_intervals': False
             }
 
     def _estimate_distance(self, ball_speed: float) -> float:
