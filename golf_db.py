@@ -506,6 +506,16 @@ def save_shot(data):
             )
             raise DatabaseError(f"Failed to sync shot to Supabase: {e}", operation="upsert", table="shots")
 
+    # 3. Update session metrics after successful save
+    try:
+        update_session_metrics(session_id)
+    except Exception as e:
+        # Log but don't fail the save if metrics update fails
+        logger.warning(
+            f"Failed to update session metrics after save: {e}",
+            extra={"session_id": session_id}
+        )
+
 # --- Data Retrieval (Local-First) ---
 def get_session_data(session_id=None, read_mode=None):
     """Get session data from local SQLite database, with fallback to Supabase."""
@@ -660,6 +670,19 @@ def get_unique_sessions(read_mode=None):
 # --- Data Management ---
 def delete_shot(shot_id):
     """Delete a specific shot from local SQLite and Supabase."""
+    # Get session_id before deletion for metrics update
+    session_id = None
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT session_id FROM shots WHERE shot_id = ?", (shot_id,))
+        row = cursor.fetchone()
+        if row:
+            session_id = row[0]
+        conn.close()
+    except Exception:
+        pass  # Continue with deletion even if we can't get session_id
+
     # Local
     try:
         conn = sqlite3.connect(SQLITE_DB_PATH)
@@ -694,6 +717,17 @@ def delete_shot(shot_id):
                 }
             )
             raise DatabaseError(f"Failed to delete shot from Supabase: {e}", operation="delete", table="shots")
+
+    # Update session metrics after successful deletion
+    if session_id:
+        try:
+            update_session_metrics(session_id)
+        except Exception as e:
+            # Log but don't fail the delete if metrics update fails
+            logger.warning(
+                f"Failed to update session metrics after delete: {e}",
+                extra={"session_id": session_id}
+            )
 
 def rename_club(session_id, old_name, new_name):
     """Rename all instances of a club within a session."""
@@ -1977,6 +2011,204 @@ def update_session_date_for_shots(session_id: str, session_date: str):
 # ============================================================================
 # SYNC STATUS TRACKING
 # ============================================================================
+
+def update_session_metrics(session_id: str) -> None:
+    """
+    Compute and store aggregate metrics for a session in session_stats table.
+
+    Args:
+        session_id: Session ID to compute metrics for
+
+    This function computes:
+    - shot_count: Total shots in session
+    - clubs_used: Comma-separated list of unique clubs
+    - Average metrics: carry, total, ball_speed, club_speed, smash
+    - best_carry: Maximum carry distance
+    - Face/path statistics: avg and std for face_angle, club_path, face_to_path
+    - Strike statistics: avg and std for strike distance from center
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        # Get all shots for this session
+        cursor.execute("SELECT * FROM shots WHERE session_id = ?", (session_id,))
+        rows = cursor.fetchall()
+
+        if not rows:
+            # No shots - delete metrics if they exist
+            cursor.execute("DELETE FROM session_stats WHERE session_id = ?", (session_id,))
+            conn.commit()
+            conn.close()
+            return
+
+        # Convert to DataFrame for efficient computation
+        columns = [desc[0] for desc in cursor.description]
+        df = pd.DataFrame(rows, columns=columns)
+
+        # Compute metrics
+        shot_count = len(df)
+        clubs_used = ', '.join(sorted(df['club'].dropna().unique()))
+
+        # Get session metadata
+        session_date = df['session_date'].iloc[0] if 'session_date' in df.columns else None
+        session_type = df['session_type'].iloc[0] if 'session_type' in df.columns else None
+
+        # Average metrics (filter out zeros and nulls)
+        def safe_avg(series):
+            valid = series[(series.notna()) & (series > 0)]
+            return float(valid.mean()) if len(valid) > 0 else None
+
+        def safe_std(series):
+            valid = series[(series.notna()) & (series > 0)]
+            return float(valid.std()) if len(valid) > 0 else None
+
+        def safe_max(series):
+            valid = series[(series.notna()) & (series > 0)]
+            return float(valid.max()) if len(valid) > 0 else None
+
+        avg_carry = safe_avg(df['carry'])
+        avg_total = safe_avg(df['total'])
+        avg_ball_speed = safe_avg(df['ball_speed'])
+        avg_club_speed = safe_avg(df['club_speed'])
+        avg_smash = safe_avg(df['smash'])
+        best_carry = safe_max(df['carry'])
+
+        # Face/path statistics (allow negative values, they're meaningful)
+        def safe_avg_signed(series):
+            valid = series[series.notna()]
+            return float(valid.mean()) if len(valid) > 0 else None
+
+        def safe_std_signed(series):
+            valid = series[series.notna()]
+            return float(valid.std()) if len(valid) > 0 else None
+
+        avg_face_angle = safe_avg_signed(df['face_angle'])
+        std_face_angle = safe_std_signed(df['face_angle'])
+        avg_club_path = safe_avg_signed(df['club_path'])
+        std_club_path = safe_std_signed(df['club_path'])
+
+        # Face to path (D-plane)
+        if 'face_angle' in df.columns and 'club_path' in df.columns:
+            face_to_path = df['face_angle'] - df['club_path']
+            avg_face_to_path = safe_avg_signed(face_to_path)
+        else:
+            avg_face_to_path = None
+
+        # Strike distance from center
+        if 'impact_x' in df.columns and 'impact_y' in df.columns:
+            strike_distance = np.sqrt(df['impact_x']**2 + df['impact_y']**2)
+            avg_strike_distance = safe_avg(strike_distance)
+            std_strike_distance = safe_std(strike_distance)
+        else:
+            avg_strike_distance = None
+            std_strike_distance = None
+
+        # Upsert into session_stats
+        cursor.execute('''
+            INSERT OR REPLACE INTO session_stats (
+                session_id, session_date, session_type, shot_count, clubs_used,
+                avg_carry, avg_total, avg_ball_speed, avg_club_speed, avg_smash,
+                best_carry, avg_face_angle, std_face_angle, avg_club_path, std_club_path,
+                avg_face_to_path, avg_strike_distance, std_strike_distance, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (
+            session_id, session_date, session_type, shot_count, clubs_used,
+            avg_carry, avg_total, avg_ball_speed, avg_club_speed, avg_smash,
+            best_carry, avg_face_angle, std_face_angle, avg_club_path, std_club_path,
+            avg_face_to_path, avg_strike_distance, std_strike_distance
+        ))
+
+        conn.commit()
+        conn.close()
+
+        logger.info(
+            f"Updated session metrics",
+            extra={
+                "session_id": session_id,
+                "shot_count": shot_count,
+                "clubs_used": clubs_used
+            }
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Failed to update session metrics: {e}",
+            extra={
+                "session_id": session_id,
+                "error_type": type(e).__name__
+            }
+        )
+
+
+def get_session_metrics(session_id: str) -> Optional[dict]:
+    """
+    Retrieve stored metrics for a session.
+
+    Args:
+        session_id: Session ID to get metrics for
+
+    Returns:
+        Dict with all metrics, or None if session not found
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM session_stats WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            return dict(row)
+        return None
+
+    except Exception as e:
+        logger.error(
+            f"Failed to get session metrics: {e}",
+            extra={
+                "session_id": session_id,
+                "error_type": type(e).__name__
+            }
+        )
+        return None
+
+
+def update_all_session_metrics() -> int:
+    """
+    Backfill metrics for all existing sessions.
+
+    Returns:
+        Count of sessions updated
+    """
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        # Get all unique session IDs
+        cursor.execute("SELECT DISTINCT session_id FROM shots WHERE session_id IS NOT NULL")
+        session_ids = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        count = 0
+        for session_id in session_ids:
+            try:
+                update_session_metrics(session_id)
+                count += 1
+            except Exception as e:
+                logger.error(
+                    f"Failed to update metrics for session {session_id}: {e}",
+                    extra={"session_id": session_id}
+                )
+
+        logger.info(f"Backfilled metrics for {count} sessions")
+        return count
+
+    except Exception as e:
+        logger.error(f"Failed to update all session metrics: {e}")
+        return 0
+
 
 def get_sync_status() -> dict:
     """
