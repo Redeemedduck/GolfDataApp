@@ -13,6 +13,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 import golf_db
 from components import render_session_selector
+from components.sync_status import render_sync_status
 
 st.set_page_config(layout="wide", page_title="Database Manager - My Golf Lab")
 
@@ -34,6 +35,8 @@ with st.sidebar:
     st.page_link("pages/1_📥_Data_Import.py", label="📥 Import Data", icon="📥")
     st.page_link("pages/2_📊_Dashboard.py", label="📊 Dashboard", icon="📊")
 
+    st.divider()
+    render_sync_status()
     st.divider()
     st.header("🧭 Data Source")
     if "read_mode" not in st.session_state:

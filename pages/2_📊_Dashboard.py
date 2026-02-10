@@ -21,6 +21,7 @@ from components import (
     render_radar_chart,
     render_summary_export
 )
+from components.sync_status import render_sync_status
 
 st.set_page_config(layout="wide", page_title="Dashboard - My Golf Lab")
 
@@ -42,6 +43,8 @@ with st.sidebar:
     st.page_link("pages/1_📥_Data_Import.py", label="📥 Import Data", icon="📥")
     st.page_link("pages/3_🗄️_Database_Manager.py", label="🗄️ Manage Data", icon="🗄️")
 
+    st.divider()
+    render_sync_status()
     st.divider()
     st.header("🧭 Data Source")
     if "read_mode" not in st.session_state:

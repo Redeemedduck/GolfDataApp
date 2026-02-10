@@ -11,6 +11,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 import golf_scraper
 import golf_db
 import observability
+from components.sync_status import render_sync_status
 
 st.set_page_config(layout="wide", page_title="Data Import - My Golf Lab")
 
@@ -159,6 +160,8 @@ with st.expander("📖 How to Import Data"):
 # Database stats in sidebar
 with st.sidebar:
     st.header("🧭 Data Source")
+    render_sync_status()
+    st.divider()
     if "read_mode" not in st.session_state:
         st.session_state.read_mode = "auto"
     read_mode_options = {
@@ -180,7 +183,6 @@ with st.sidebar:
 
     st.header("📊 Database Stats")
     st.info(f"📌 Data Source: {golf_db.get_read_source()}")
-    sync_status = golf_db.get_sync_status()
 
     # Get total shot count
     all_shots = get_session_data_cached(read_mode=st.session_state.read_mode)
@@ -194,9 +196,6 @@ with st.sidebar:
         if 'club' in all_shots.columns:
             unique_clubs = all_shots['club'].nunique()
             st.metric("Unique Clubs", unique_clubs)
-
-    if golf_db.supabase and sync_status["drift_exceeds"]:
-        st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
 
     st.divider()
     st.header("🩺 Health")
