@@ -17,6 +17,14 @@ from datetime import datetime
 import json
 import golf_db
 from services.ai import list_providers, get_provider
+from components import render_retraining_ui
+
+# Import ML components for model status (graceful degradation)
+try:
+    from ml.train_models import get_model_info, DISTANCE_MODEL_PATH
+except ImportError:
+    get_model_info = None
+    DISTANCE_MODEL_PATH = None
 
 
 # Page config
@@ -190,6 +198,32 @@ with st.sidebar:
     else:
         st.warning("No shot data available. Import data first!")
 
+    # ML Model section
+    st.divider()
+    st.subheader("🤖 ML Model")
+
+    # Show compact model status
+    if get_model_info and DISTANCE_MODEL_PATH:
+        try:
+            from pathlib import Path
+            if Path(DISTANCE_MODEL_PATH).exists():
+                metadata = get_model_info(DISTANCE_MODEL_PATH)
+                if metadata:
+                    mae = metadata.metrics.get('mae', 0)
+                    st.caption(f"Model: v{metadata.version}, MAE: {mae:.1f}yd")
+                else:
+                    st.caption("Model exists (no metadata)")
+            else:
+                st.caption("No model trained")
+        except Exception:
+            st.caption("Model status unavailable")
+    else:
+        st.caption("ML not available")
+
+    # Retrain button
+    if st.button("⚙️ Manage Model", key="sidebar_retrain", use_container_width=True):
+        st.session_state.show_retrain = True
+
 # Initialize session state
 if 'messages' not in st.session_state:
     st.session_state.messages = []
@@ -347,6 +381,8 @@ if len(st.session_state.messages) == 0:
         "How consistent is my ball striking?",
         "Show me my performance trends over time",
         "Do I have any club gapping issues?",
+        "Generate a personalized practice plan for me",
+        "What are my biggest weaknesses?",
         "What should I work on in my next practice session?",
         "Are there any outliers in my recent data?",
         "How does my smash factor compare to optimal?",
@@ -437,6 +473,18 @@ if prompt := st.chat_input("Ask me anything about your golf game..."):
                 "data": response_data.get('data')
             })
 
+# Model retraining panel
+if st.session_state.get('show_retrain', False):
+    st.divider()
+    render_retraining_ui()
+
+    # Close button
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("✖️ Close Model Management", use_container_width=True):
+            st.session_state.show_retrain = False
+            st.rerun()
+
 # Help section at the bottom
 with st.expander("ℹ️ How to Use the AI Coach"):
     st.markdown("""
@@ -467,6 +515,10 @@ with st.expander("ℹ️ How to Use the AI Coach"):
     - "What should I work on?"
     - "How can I improve my consistency?"
     - "What's my strongest club?"
+
+    **Advanced Features:**
+    - **Prediction Intervals**: Ask "Predict my 7-iron distance" to see predictions with confidence intervals
+    - **Practice Plans**: Ask "Give me a practice plan" to get a personalized drill plan based on your data
 
     ### Function Calling
 
