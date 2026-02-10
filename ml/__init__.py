@@ -34,12 +34,14 @@ try:
         train_distance_model,
         load_model,
         save_model,
+        HAS_MAPIE,
     )
 except ImportError as e:
     DistancePredictor = None
     train_distance_model = None
     load_model = None
     save_model = None
+    HAS_MAPIE = False
     ML_AVAILABLE = False
     if "xgboost" in str(e).lower():
         ML_MISSING_DEPS.append("xgboost")
@@ -50,6 +52,15 @@ except ImportError as e:
     # Generic fallback if we can't determine specific package
     if not ML_MISSING_DEPS:
         ML_MISSING_DEPS.append("ML dependencies (xgboost, scikit-learn, joblib)")
+
+# Import tuning utilities
+try:
+    from .tuning import get_small_dataset_params
+except ImportError:
+    get_small_dataset_params = None
+    if ML_AVAILABLE:
+        # ML deps present but tuning module missing (shouldn't happen)
+        print("Warning: tuning module not available")
 
 # Import shot shape classifiers
 try:
@@ -100,11 +111,14 @@ __all__ = [
     # Feature flags
     'ML_AVAILABLE',
     'ML_MISSING_DEPS',
+    'HAS_MAPIE',
     # Distance prediction
     'train_distance_model',
     'load_model',
     'save_model',
     'DistancePredictor',
+    # Tuning
+    'get_small_dataset_params',
     # Shot shape classification
     'ShotShapeClassifier',
     'ShotShape',

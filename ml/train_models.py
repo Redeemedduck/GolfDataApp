@@ -40,6 +40,14 @@ except (ImportError, Exception) as e:
     joblib = None  # Will error if used without deps
     xgb = None
 
+# MAPIE import for prediction intervals (graceful degradation)
+try:
+    from mapie.regression import CrossConformalRegressor
+    HAS_MAPIE = True
+except ImportError:
+    HAS_MAPIE = False
+    CrossConformalRegressor = None
+
 # Import golf_db for data access
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -48,6 +56,20 @@ try:
     HAS_GOLF_DB = True
 except ImportError:
     HAS_GOLF_DB = False
+
+# Import tuning utilities
+try:
+    from .tuning import get_small_dataset_params
+except ImportError:
+    # Fallback if tuning module not available
+    def get_small_dataset_params(n_samples: int) -> dict:
+        return {
+            'n_estimators': 100,
+            'max_depth': 5,
+            'learning_rate': 0.1,
+            'objective': 'reg:squarederror',
+            'random_state': 42,
+        }
 
 
 # Model storage paths
@@ -286,14 +308,11 @@ def train_distance_model(
         X, y, test_size=test_size, random_state=random_state
     )
 
-    # Train XGBoost model
-    model = xgb.XGBRegressor(
-        n_estimators=100,
-        max_depth=5,
-        learning_rate=0.1,
-        objective='reg:squarederror',
-        random_state=random_state,
-    )
+    # Get dataset-size-aware hyperparameters
+    tuned_params = get_small_dataset_params(len(X))
+
+    # Train XGBoost model with tuned parameters
+    model = xgb.XGBRegressor(**tuned_params)
 
     model.fit(X_train, y_train)
 
@@ -312,7 +331,7 @@ def train_distance_model(
     cv_mae = -cv_scores.mean()
     print(f"Cross-validation MAE: {cv_mae:.2f} yards (+/- {cv_scores.std():.2f})")
 
-    # Create metadata
+    # Create metadata with tuned hyperparameters
     metadata = ModelMetadata(
         model_type='xgboost_regressor',
         version='1.0.0',
@@ -326,11 +345,7 @@ def train_distance_model(
             'r2': r2,
             'cv_mae': cv_mae,
         },
-        hyperparameters={
-            'n_estimators': 100,
-            'max_depth': 5,
-            'learning_rate': 0.1,
-        },
+        hyperparameters=tuned_params,
     )
 
     return model, metadata
@@ -361,6 +376,7 @@ class DistancePredictor:
         self.model = None
         self.metadata = None
         self._feature_names = None
+        self.mapie_model = None
 
     def is_loaded(self) -> bool:
         """Check if model is loaded."""
@@ -378,7 +394,17 @@ class DistancePredictor:
 
     def load(self) -> None:
         """Load the model from disk."""
-        self.model, self.metadata = load_model(self.model_path)
+        loaded_model, self.metadata = load_model(self.model_path)
+
+        # Handle backward compatibility: old models are XGBRegressor, new models are dicts
+        if isinstance(loaded_model, dict):
+            # New format: dict with 'base_model' and optionally 'mapie_model'
+            self.model = loaded_model.get('base_model')
+            self.mapie_model = loaded_model.get('mapie_model')
+        else:
+            # Old format: just the XGBRegressor model
+            self.model = loaded_model
+            self.mapie_model = None
 
         # Validate metadata and set feature names
         if self.metadata and self.metadata.features:
@@ -418,6 +444,186 @@ class DistancePredictor:
 
         return self.metadata
 
+    def train_with_intervals(
+        self,
+        df: Optional[pd.DataFrame] = None,
+        confidence_level: float = 0.95,
+        save: bool = True
+    ) -> ModelMetadata:
+        """
+        Train XGBoost model and wrap with MAPIE for confidence intervals.
+
+        Uses cross-conformal prediction (cv-plus method) for distribution-free
+        confidence intervals. Requires MAPIE to be installed and at least 1000 shots.
+
+        Args:
+            df: Training data (loads from database if not provided)
+            confidence_level: Confidence level for intervals (default 0.95)
+            save: Whether to save the model
+
+        Returns:
+            Model metadata
+
+        Raises:
+            ImportError: If MAPIE not installed
+            ValueError: If fewer than 1000 shots available
+        """
+        if not HAS_MAPIE:
+            raise ImportError(
+                "MAPIE not installed. Run: pip install mapie>=1.3.0\n"
+                "Also requires: pip install --upgrade scikit-learn>=1.4.0"
+            )
+
+        check_ml_deps()
+
+        # Get data
+        if df is None:
+            df = get_training_data()
+
+        # Prepare features
+        X, y = prepare_features(df, target='carry')
+        features = list(X.columns)
+
+        # Minimum sample check for reliable intervals
+        if len(X) < 1000:
+            raise ValueError(
+                f"Need at least 1000 shots for confidence intervals (have {len(X)}). "
+                "Use train() method for point predictions with smaller datasets."
+            )
+
+        print(f"Training with intervals: {len(X)} samples, {len(features)} features")
+        print(f"Features: {features}")
+
+        # Split: 70% train, 30% conformalization (MAPIE requires separate sets)
+        X_train_full, X_conform, y_train_full, y_conform = train_test_split(
+            X, y, test_size=0.3, random_state=42
+        )
+
+        # Further split train for early stopping validation
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_train_full, y_train_full, test_size=0.2, random_state=42
+        )
+
+        # Get dataset-size-aware hyperparameters
+        tuned_params = get_small_dataset_params(len(X))
+        print(f"Using tuned params for {len(X)} samples: max_depth={tuned_params['max_depth']}, "
+              f"reg_lambda={tuned_params['reg_lambda']}")
+
+        # Train base XGBoost model with early stopping
+        base_model = xgb.XGBRegressor(**tuned_params)
+        base_model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            early_stopping_rounds=10,
+            verbose=False
+        )
+
+        # Wrap with MAPIE using cv-plus method
+        self.mapie_model = CrossConformalRegressor(
+            base_model,
+            method="plus",        # Jackknife+ (conservative, good for small data)
+            cv=5,                 # 5-fold CV
+        )
+
+        # Conformalize using held-out data
+        self.mapie_model.fit(X_conform, y_conform)
+
+        # Store base model for feature importance and backward compat
+        self.model = base_model
+        self._feature_names = features
+
+        # Evaluate on conformalization set
+        y_pred = base_model.predict(X_conform)
+        mae = mean_absolute_error(y_conform, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_conform, y_pred))
+        r2 = r2_score(y_conform, y_pred)
+
+        print(f"Conformalization set MAE: {mae:.2f} yards")
+        print(f"Conformalization set RMSE: {rmse:.2f} yards")
+        print(f"Conformalization set R2: {r2:.3f}")
+
+        # Cross-validation on full dataset
+        cv_scores = cross_val_score(base_model, X, y, cv=5, scoring='neg_mean_absolute_error')
+        cv_mae = -cv_scores.mean()
+        print(f"Cross-validation MAE: {cv_mae:.2f} yards (+/- {cv_scores.std():.2f})")
+
+        # Create metadata
+        self.metadata = ModelMetadata(
+            model_type='xgboost_regressor_with_intervals',
+            version='1.0.0',
+            trained_at=datetime.utcnow().isoformat(),
+            training_samples=len(X),
+            features=features,
+            target='carry',
+            metrics={
+                'mae': mae,
+                'rmse': rmse,
+                'r2': r2,
+                'cv_mae': cv_mae,
+                'confidence_level': confidence_level,
+            },
+            hyperparameters=tuned_params,
+        )
+
+        if save:
+            # Save both models as a dict
+            model_dict = {
+                'base_model': self.model,
+                'mapie_model': self.mapie_model,
+            }
+            save_model(model_dict, self.model_path, self.metadata)
+
+        return self.metadata
+
+    def _build_feature_array(
+        self,
+        ball_speed: float,
+        launch_angle: float = 12.0,
+        back_spin: float = 2500,
+        club_speed: Optional[float] = None,
+        attack_angle: Optional[float] = None,
+        dynamic_loft: Optional[float] = None,
+    ) -> np.ndarray:
+        """
+        Build feature array for prediction (internal helper).
+
+        Args:
+            ball_speed: Ball speed in mph
+            launch_angle: Launch angle in degrees
+            back_spin: Back spin in rpm
+            club_speed: Club speed in mph (estimated if not provided)
+            attack_angle: Attack angle in degrees
+            dynamic_loft: Dynamic loft in degrees
+
+        Returns:
+            Feature array ready for model.predict()
+        """
+        # Estimate missing values
+        if club_speed is None:
+            # Rough estimate: ball_speed / 1.5 for driver
+            club_speed = ball_speed / 1.5
+        if attack_angle is None:
+            attack_angle = 0.0  # Neutral
+        if dynamic_loft is None:
+            dynamic_loft = launch_angle + 1.0  # Rough estimate
+
+        # Build feature array in the correct order
+        feature_values = {
+            'ball_speed': ball_speed,
+            'launch_angle': launch_angle,
+            'back_spin': back_spin,
+            'club_speed': club_speed,
+            'attack_angle': attack_angle,
+            'dynamic_loft': dynamic_loft,
+        }
+
+        # Create feature array
+        features = []
+        for name in self._feature_names:
+            features.append(feature_values.get(name, 0.0))
+
+        return np.array([features])
+
     def predict(
         self,
         ball_speed: float,
@@ -444,31 +650,15 @@ class DistancePredictor:
         if not self.is_loaded():
             self.load()
 
-        # Estimate missing values
-        if club_speed is None:
-            # Rough estimate: ball_speed / 1.5 for driver
-            club_speed = ball_speed / 1.5
-        if attack_angle is None:
-            attack_angle = 0.0  # Neutral
-        if dynamic_loft is None:
-            dynamic_loft = launch_angle + 1.0  # Rough estimate
-
-        # Build feature array in the correct order
-        feature_values = {
-            'ball_speed': ball_speed,
-            'launch_angle': launch_angle,
-            'back_spin': back_spin,
-            'club_speed': club_speed,
-            'attack_angle': attack_angle,
-            'dynamic_loft': dynamic_loft,
-        }
-
-        # Create feature array
-        features = []
-        for name in self._feature_names:
-            features.append(feature_values.get(name, 0.0))
-
-        X = np.array([features])
+        # Build feature array
+        X = self._build_feature_array(
+            ball_speed=ball_speed,
+            launch_angle=launch_angle,
+            back_spin=back_spin,
+            club_speed=club_speed,
+            attack_angle=attack_angle,
+            dynamic_loft=dynamic_loft,
+        )
 
         # Predict
         predicted = float(self.model.predict(X)[0])
@@ -488,6 +678,102 @@ class DistancePredictor:
             confidence=confidence,
             feature_importance=importance,
         )
+
+    def predict_with_intervals(
+        self,
+        ball_speed: float,
+        launch_angle: float = 12.0,
+        back_spin: float = 2500,
+        club_speed: Optional[float] = None,
+        attack_angle: Optional[float] = None,
+        dynamic_loft: Optional[float] = None,
+        confidence_level: float = 0.95,
+    ) -> Dict[str, Any]:
+        """
+        Predict carry distance with confidence intervals.
+
+        Returns prediction intervals using MAPIE conformal prediction if available.
+        Falls back to point estimate only if MAPIE not available or model not
+        trained with intervals.
+
+        Args:
+            ball_speed: Ball speed in mph
+            launch_angle: Launch angle in degrees
+            back_spin: Back spin in rpm
+            club_speed: Club speed in mph (estimated if not provided)
+            attack_angle: Attack angle in degrees
+            dynamic_loft: Dynamic loft in degrees
+            confidence_level: Confidence level for intervals (default 0.95)
+
+        Returns:
+            Dict with:
+            - predicted_value: Point estimate (float)
+            - lower_bound: Lower CI bound (float, if has_intervals=True)
+            - upper_bound: Upper CI bound (float, if has_intervals=True)
+            - confidence_level: Confidence level (float, if has_intervals=True)
+            - interval_width: Width of interval (float, if has_intervals=True)
+            - has_intervals: Whether intervals are available (bool)
+            - message: Explanation if intervals not available (str, optional)
+
+        Example:
+            >>> predictor.predict_with_intervals(ball_speed=165, launch_angle=12)
+            {
+                'predicted_value': 250.5,
+                'lower_bound': 245.2,
+                'upper_bound': 255.8,
+                'confidence_level': 0.95,
+                'interval_width': 10.6,
+                'has_intervals': True
+            }
+        """
+        if not self.is_loaded():
+            self.load()
+
+        # Build feature array
+        X = self._build_feature_array(
+            ball_speed=ball_speed,
+            launch_angle=launch_angle,
+            back_spin=back_spin,
+            club_speed=club_speed,
+            attack_angle=attack_angle,
+            dynamic_loft=dynamic_loft,
+        )
+
+        # Try to use MAPIE for intervals
+        if self.mapie_model is not None and HAS_MAPIE:
+            try:
+                # Predict with intervals
+                y_pred, y_pis = self.mapie_model.predict(X, alpha=1 - confidence_level)
+
+                return {
+                    'predicted_value': float(y_pred[0]),
+                    'lower_bound': float(y_pis[0, 0, 0]),
+                    'upper_bound': float(y_pis[0, 1, 0]),
+                    'confidence_level': confidence_level,
+                    'interval_width': float(y_pis[0, 1, 0] - y_pis[0, 0, 0]),
+                    'has_intervals': True,
+                }
+            except Exception as e:
+                print(f"Warning: MAPIE prediction failed: {e}")
+                # Fall through to point estimate
+
+        # Fallback: point estimate only
+        predicted = float(self.model.predict(X)[0])
+
+        result = {
+            'predicted_value': predicted,
+            'has_intervals': False,
+        }
+
+        # Add explanation
+        if not HAS_MAPIE:
+            result['message'] = "Install MAPIE for confidence intervals: pip install mapie>=1.3.0"
+        elif self.mapie_model is None:
+            result['message'] = "Model not trained with intervals. Use train_with_intervals() method."
+        else:
+            result['message'] = "Intervals not available for this prediction."
+
+        return result
 
     def predict_batch(self, df: pd.DataFrame) -> pd.Series:
         """
