@@ -19,7 +19,12 @@ from components import (
     render_impact_heatmap,
     render_trend_chart,
     render_radar_chart,
-    render_summary_export
+    render_summary_export,
+    render_dispersion_chart,
+    render_distance_table,
+    render_miss_tendency,
+    render_progress_tracker,
+    render_session_quality
 )
 from components.sync_status import render_sync_status
 
@@ -99,10 +104,11 @@ multi-metric radar charts, and comprehensive export options.
 st.divider()
 
 # Create tabs for different views
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 Performance Overview",
     "🎯 Impact Analysis",
     "📊 Trends Over Time",
+    "🏌️ Shot Analytics",
     "🔍 Shot Viewer",
     "💾 Export Data"
 ])
@@ -327,11 +333,59 @@ with tab3:
             else:
                 st.info(f"No {selected_club} data available across sessions")
 
+        st.divider()
+        st.subheader("Statistical Progress Analysis")
+        all_shots_for_progress = get_session_data_cached(read_mode=read_mode)
+        if not all_shots_for_progress.empty:
+            progress_metric = st.selectbox(
+                "Track Metric",
+                ['carry', 'total', 'ball_speed', 'smash'],
+                format_func=lambda x: {'carry': 'Carry Distance', 'total': 'Total Distance', 'ball_speed': 'Ball Speed', 'smash': 'Smash Factor'}[x],
+                key="progress_metric"
+            )
+            render_progress_tracker(all_shots_for_progress, metric=progress_metric)
+
 
 # ============================================================================
-# TAB 4: SHOT VIEWER (EXISTING)
+# TAB 4: SHOT ANALYTICS (NEW)
 # ============================================================================
 with tab4:
+    st.header("Shot Analytics")
+
+    # Club selector dropdown
+    clubs_in_data = sorted(df['club'].unique().tolist())
+    club_options = ["All Clubs"] + clubs_in_data
+    selected_analytics_club = st.selectbox(
+        "Filter by Club",
+        club_options,
+        key="analytics_club_filter"
+    )
+    analytics_club = None if selected_analytics_club == "All Clubs" else selected_analytics_club
+
+    # Dispersion Chart and Distance Table
+    col_disp, col_dist = st.columns(2)
+    with col_disp:
+        render_dispersion_chart(df, selected_club=analytics_club)
+    with col_dist:
+        render_distance_table(df)
+
+    # Miss Tendency
+    st.divider()
+    render_miss_tendency(df, selected_club=analytics_club)
+
+    # Session Quality
+    st.divider()
+    session_metrics = golf_db.get_session_metrics(selected_session_id)
+    if session_metrics:
+        render_session_quality(session_metrics)
+    else:
+        st.info("Session quality score not available. Session metrics may not be computed yet.")
+
+
+# ============================================================================
+# TAB 5: SHOT VIEWER (EXISTING)
+# ============================================================================
+with tab5:
     st.header("Detailed Shot Analysis")
 
     # Grid View
@@ -402,9 +456,9 @@ with tab4:
 
 
 # ============================================================================
-# TAB 5: EXPORT DATA (NEW)
+# TAB 6: EXPORT DATA (NEW)
 # ============================================================================
-with tab5:
+with tab6:
     st.header("Export & Reports")
 
     st.markdown("""
