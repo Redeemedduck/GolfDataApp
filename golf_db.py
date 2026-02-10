@@ -6,8 +6,12 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 from exceptions import ValidationError, DatabaseError
+from utils.logging_config import get_logger
 
 load_dotenv()
+
+# Initialize logger
+logger = get_logger(__name__)
 
 # --- Configuration ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -460,14 +464,32 @@ def save_shot(data):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Error: {e}")
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "insert",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "shot_id": payload.get('shot_id')
+            }
+        )
+        raise DatabaseError(f"Failed to save shot to SQLite: {e}", operation="insert", table="shots")
 
     # 2. Save to Supabase (if available)
     if supabase:
         try:
             supabase.table('shots').upsert(payload).execute()
         except Exception as e:
-            print(f"Supabase Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "upsert",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "shot_id": payload.get('shot_id')
+                }
+            )
+            raise DatabaseError(f"Failed to sync shot to Supabase: {e}", operation="upsert", table="shots")
 
 # --- Data Retrieval (Local-First) ---
 def get_session_data(session_id=None, read_mode=None):
@@ -487,14 +509,30 @@ def get_session_data(session_id=None, read_mode=None):
                 conn.close()
                 return local_df
         except Exception as e:
-            print(f"SQLite Read Error: {e}")
+            logger.warning(
+                f"SQLite read operation failed, will try fallback: {e}",
+                extra={
+                    "operation": "select",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id
+                }
+            )
         return pd.DataFrame()
 
     def fetch_from_supabase():
         try:
             return _fetch_supabase_shots(session_id=session_id)
         except Exception as e:
-            print(f"Supabase Read Error: {e}")
+            logger.warning(
+                f"Supabase read operation failed: {e}",
+                extra={
+                    "operation": "select",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id
+                }
+            )
             return pd.DataFrame()
 
     mode = _normalize_read_mode(read_mode or READ_MODE)
@@ -538,7 +576,15 @@ def get_unique_sessions(read_mode=None):
             local_df = pd.read_sql_query(query, conn)
             conn.close()
     except Exception as e:
-        print(f"SQLite Session Error: {e}")
+        logger.warning(
+            f"SQLite read operation failed, will try fallback: {e}",
+            extra={
+                "operation": "select",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "function": "get_sessions"
+            }
+        )
 
     mode = _normalize_read_mode(read_mode or READ_MODE)
     should_check_cloud = supabase and (USE_SUPABASE_READS or IS_CLOUD_RUN or mode == "supabase" or local_df.empty)
@@ -560,7 +606,15 @@ def get_unique_sessions(read_mode=None):
                     .reset_index()
                 )
         except Exception as e:
-            print(f"Supabase Session Error: {e}")
+            logger.warning(
+                f"Supabase read operation failed: {e}",
+                extra={
+                    "operation": "select",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "function": "get_sessions"
+                }
+            )
 
     if local_df.empty and cloud_df.empty:
         return []
@@ -599,14 +653,32 @@ def delete_shot(shot_id):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Delete Error: {e}")
-    
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "delete",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "shot_id": shot_id
+            }
+        )
+        raise DatabaseError(f"Failed to delete shot from SQLite: {e}", operation="delete", table="shots")
+
     # Cloud
     if supabase:
         try:
             supabase.table('shots').delete().eq('shot_id', shot_id).execute()
         except Exception as e:
-            print(f"Supabase Delete Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "delete",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "shot_id": shot_id
+                }
+            )
+            raise DatabaseError(f"Failed to delete shot from Supabase: {e}", operation="delete", table="shots")
 
 def rename_club(session_id, old_name, new_name):
     """Rename all instances of a club within a session."""
@@ -618,14 +690,32 @@ def rename_club(session_id, old_name, new_name):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Rename Error: {e}")
-    
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "session_id": session_id
+            }
+        )
+        raise DatabaseError(f"Failed to rename club in SQLite: {e}", operation="update", table="shots")
+
     # Cloud
     if supabase:
         try:
             supabase.table('shots').update({'club': new_name}).eq('session_id', session_id).eq('club', old_name).execute()
         except Exception as e:
-            print(f"Supabase Rename Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "update",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id
+                }
+            )
+            raise DatabaseError(f"Failed to rename club in Supabase: {e}", operation="update", table="shots")
 
 def delete_club_session(session_id, club_name):
     """Delete all shots for a specific club within a session."""
@@ -637,14 +727,34 @@ def delete_club_session(session_id, club_name):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Club Delete Error: {e}")
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "delete",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "session_id": session_id,
+                "club": club_name
+            }
+        )
+        raise DatabaseError(f"Failed to delete club shots from SQLite: {e}", operation="delete", table="shots")
 
     # Cloud
     if supabase:
         try:
             supabase.table('shots').delete().eq('session_id', session_id).eq('club', club_name).execute()
         except Exception as e:
-            print(f"Supabase Club Delete Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "delete",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id,
+                    "club": club_name
+                }
+            )
+            raise DatabaseError(f"Failed to delete club shots from Supabase: {e}", operation="delete", table="shots")
 
 def delete_shots_by_tag(session_id, tag):
     """Delete all shots for a specific tag within a session."""
@@ -665,13 +775,33 @@ def delete_shots_by_tag(session_id, tag):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Tag Delete Error: {e}")
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "delete",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "session_id": session_id,
+                "tag": tag
+            }
+        )
+        raise DatabaseError(f"Failed to delete shots by tag from SQLite: {e}", operation="delete", table="shots")
 
     if supabase:
         try:
             supabase.table('shots').delete().eq('session_id', session_id).eq('shot_tag', tag).execute()
         except Exception as e:
-            print(f"Supabase Tag Delete Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "delete",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id,
+                    "tag": tag
+                }
+            )
+            raise DatabaseError(f"Failed to delete shots by tag from Supabase: {e}", operation="delete", table="shots")
 
     return deleted
 
@@ -713,7 +843,17 @@ def delete_session(session_id, archive=True):
             conn.commit()
             conn.close()
         except Exception as e:
-            print(f"Archive Error: {e}")
+            logger.error(
+                f"SQLite operation failed: {e}",
+                extra={
+                    "operation": "insert",
+                    "table": "shots_archive",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id,
+                    "shot_count": shot_count
+                }
+            )
+            raise DatabaseError(f"Failed to archive shots in SQLite: {e}", operation="insert", table="shots_archive")
 
     # Delete from local
     try:
@@ -730,7 +870,17 @@ def delete_session(session_id, archive=True):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Delete Session Error: {e}")
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "delete",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "session_id": session_id,
+                "shot_count": shot_count
+            }
+        )
+        raise DatabaseError(f"Failed to delete session from SQLite: {e}", operation="delete", table="shots")
 
     # Archive to cloud before deleting
     if supabase and archive and shot_count > 0:
@@ -744,14 +894,33 @@ def delete_session(session_id, archive=True):
                     'original_data': json.dumps(original_data, default=str)
                 }).execute()
         except Exception as e:
-            print(f"Supabase Archive Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "upsert",
+                    "table": "shots_archive",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id,
+                    "shot_count": shot_count
+                }
+            )
+            raise DatabaseError(f"Failed to archive shots in Supabase: {e}", operation="upsert", table="shots_archive")
 
     # Delete from cloud
     if supabase:
         try:
             supabase.table('shots').delete().eq('session_id', session_id).execute()
         except Exception as e:
-            print(f"Supabase Delete Session Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "delete",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id
+                }
+            )
+            raise DatabaseError(f"Failed to delete session from Supabase: {e}", operation="delete", table="shots")
 
     return shot_count
 
@@ -788,7 +957,17 @@ def merge_sessions(session_ids, new_session_id):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Merge Error: {e}")
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "new_session_id": new_session_id,
+                "session_count": len(session_ids)
+            }
+        )
+        raise DatabaseError(f"Failed to merge sessions in SQLite: {e}", operation="update", table="shots")
 
     # Cloud
     if supabase:
@@ -796,7 +975,17 @@ def merge_sessions(session_ids, new_session_id):
             for old_session_id in session_ids:
                 supabase.table('shots').update({'session_id': new_session_id}).eq('session_id', old_session_id).execute()
         except Exception as e:
-            print(f"Supabase Merge Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "update",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "new_session_id": new_session_id,
+                    "session_count": len(session_ids)
+                }
+            )
+            raise DatabaseError(f"Failed to merge sessions in Supabase: {e}", operation="update", table="shots")
 
     return total_shots
 
@@ -840,8 +1029,18 @@ def split_session(session_id, shot_ids, new_session_id):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Split Error: {e}")
-        shots_moved = 0
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "session_id": session_id,
+                "new_session_id": new_session_id,
+                "shot_count": len(shot_ids)
+            }
+        )
+        raise DatabaseError(f"Failed to split session in SQLite: {e}", operation="update", table="shots")
 
     # Cloud
     if supabase:
@@ -849,7 +1048,20 @@ def split_session(session_id, shot_ids, new_session_id):
             for shot_id in shot_ids:
                 supabase.table('shots').update({'session_id': new_session_id}).eq('shot_id', shot_id).execute()
         except Exception as e:
-            print(f"Supabase Split Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "update",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id,
+                    "new_session_id": new_session_id,
+                    "shot_count": len(shot_ids)
+                }
+            )
+            raise DatabaseError(f"Failed to split session in Supabase: {e}", operation="update", table="shots")
+
+    return shots_moved
 
     return shots_moved
 
@@ -881,15 +1093,36 @@ def rename_session(old_session_id, new_session_id):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Rename Session Error: {e}")
-        shots_updated = 0
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "old_session_id": old_session_id,
+                "new_session_id": new_session_id
+            }
+        )
+        raise DatabaseError(f"Failed to rename session in SQLite: {e}", operation="update", table="shots")
 
     # Cloud
     if supabase:
         try:
             supabase.table('shots').update({'session_id': new_session_id}).eq('session_id', old_session_id).execute()
         except Exception as e:
-            print(f"Supabase Rename Session Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "update",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "old_session_id": old_session_id,
+                    "new_session_id": new_session_id
+                }
+            )
+            raise DatabaseError(f"Failed to rename session in Supabase: {e}", operation="update", table="shots")
+
+    return shots_updated
 
     return shots_updated
 
@@ -918,14 +1151,33 @@ def update_session_type(session_id, session_type):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Session Type Error: {e}")
-        updated = 0
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "session_id": session_id,
+                "session_type": session_type
+            }
+        )
+        raise DatabaseError(f"Failed to update session type in SQLite: {e}", operation="update", table="shots")
 
     if supabase:
         try:
             supabase.table('shots').update({'session_type': session_type}).eq('session_id', session_id).execute()
         except Exception as e:
-            print(f"Supabase Session Type Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "update",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id,
+                    "session_type": session_type
+                }
+            )
+            raise DatabaseError(f"Failed to update session type in Supabase: {e}", operation="update", table="shots")
 
     return updated
 
@@ -989,8 +1241,17 @@ def update_shot_metadata(shot_ids, field, value):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Bulk Update Error: {e}")
-        shots_updated = 0
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "field": field,
+                "shot_count": len(shot_ids)
+            }
+        )
+        raise DatabaseError(f"Failed to bulk update shots in SQLite: {e}", operation="update", table="shots")
 
     # Cloud
     if supabase:
@@ -998,7 +1259,17 @@ def update_shot_metadata(shot_ids, field, value):
             for shot_id in shot_ids:
                 supabase.table('shots').update({field: value}).eq('shot_id', shot_id).execute()
         except Exception as e:
-            print(f"Supabase Bulk Update Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "update",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "field": field,
+                    "shot_count": len(shot_ids)
+                }
+            )
+            raise DatabaseError(f"Failed to bulk update shots in Supabase: {e}", operation="update", table="shots")
 
     return shots_updated
 
@@ -1033,14 +1304,35 @@ def split_session_by_tag(session_id, tag, new_session_id):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Split by Tag Error: {e}")
-        shots_moved = 0
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "session_id": session_id,
+                "tag": tag,
+                "new_session_id": new_session_id
+            }
+        )
+        raise DatabaseError(f"Failed to split session by tag in SQLite: {e}", operation="update", table="shots")
 
     if supabase:
         try:
             supabase.table('shots').update({'session_id': new_session_id}).eq('session_id', session_id).eq('shot_tag', tag).execute()
         except Exception as e:
-            print(f"Supabase Split by Tag Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "update",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id,
+                    "tag": tag,
+                    "new_session_id": new_session_id
+                }
+            )
+            raise DatabaseError(f"Failed to split session by tag in Supabase: {e}", operation="update", table="shots")
 
     return shots_moved
 
@@ -1101,7 +1393,17 @@ def recalculate_metrics(session_id=None):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"Recalculate Error: {e}")
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "session_id": session_id,
+                "function": "recalculate_metrics"
+            }
+        )
+        raise DatabaseError(f"Failed to recalculate metrics in SQLite: {e}", operation="update", table="shots")
 
     return shots_updated
 
@@ -1133,15 +1435,36 @@ def bulk_rename_clubs(old_name, new_name):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"SQLite Bulk Rename Error: {e}")
-        shots_updated = 0
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "old_name": old_name,
+                "new_name": new_name
+            }
+        )
+        raise DatabaseError(f"Failed to bulk rename club in SQLite: {e}", operation="update", table="shots")
 
     # Cloud
     if supabase:
         try:
             supabase.table('shots').update({'club': new_name}).eq('club', old_name).execute()
         except Exception as e:
-            print(f"Supabase Bulk Rename Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "update",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "old_name": old_name,
+                    "new_name": new_name
+                }
+            )
+            raise DatabaseError(f"Failed to bulk rename club in Supabase: {e}", operation="update", table="shots")
+
+    return shots_updated
 
     return shots_updated
 
@@ -1384,8 +1707,17 @@ def restore_deleted_shots(shot_ids):
 
         conn.close()
     except Exception as e:
-        print(f"Restore Error: {e}")
-        restored = 0
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "insert",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "function": "restore_archived_shots",
+                "shot_count": len(shot_ids) if shot_ids else 0
+            }
+        )
+        raise DatabaseError(f"Failed to restore archived shots in SQLite: {e}", operation="insert", table="shots")
 
     return restored
 
@@ -1441,7 +1773,15 @@ def get_archived_shots(session_id=None):
         conn.close()
         return df
     except Exception as e:
-        print(f"Archive Retrieval Error: {e}")
+        logger.warning(
+            f"SQLite read operation failed: {e}",
+            extra={
+                "operation": "select",
+                "table": "shots_archive",
+                "error_type": type(e).__name__,
+                "session_id": session_id
+            }
+        )
         return pd.DataFrame()
 
 
@@ -1585,7 +1925,17 @@ def update_session_date_for_shots(session_id: str, session_date: str):
         conn.close()
 
     except Exception as e:
-        print(f"Update Session Date Error: {e}")
+        logger.error(
+            f"SQLite operation failed: {e}",
+            extra={
+                "operation": "update",
+                "table": "shots",
+                "error_type": type(e).__name__,
+                "session_id": session_id,
+                "session_date": session_date
+            }
+        )
+        raise DatabaseError(f"Failed to update session date in SQLite: {e}", operation="update", table="shots")
 
     # Also update in Supabase if available
     if supabase:
@@ -1594,7 +1944,17 @@ def update_session_date_for_shots(session_id: str, session_date: str):
                 {'session_date': session_date}
             ).eq('session_id', session_id).execute()
         except Exception as e:
-            print(f"Supabase Update Session Date Error: {e}")
+            logger.error(
+                f"Supabase sync failed: {e}",
+                extra={
+                    "operation": "update",
+                    "table": "shots",
+                    "error_type": type(e).__name__,
+                    "session_id": session_id,
+                    "session_date": session_date
+                }
+            )
+            raise DatabaseError(f"Failed to update session date in Supabase: {e}", operation="update", table="shots")
 
     return updated
 
