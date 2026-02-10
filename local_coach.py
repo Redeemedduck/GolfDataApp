@@ -24,14 +24,30 @@ import numpy as np
 
 import golf_db
 
-# ML imports - optional
+# ML imports with explicit feature flags
 try:
-    from ml.train_models import DistancePredictor
-    from ml.classifiers import ShotShapeClassifier, classify_shot_shape, ShotShape
-    from ml.anomaly_detection import SwingFlawDetector, detect_swing_flaws, SwingFlaw
-    HAS_ML = True
+    from ml import (
+        ML_AVAILABLE,
+        ML_MISSING_DEPS,
+        DistancePredictor,
+        ShotShapeClassifier,
+        classify_shot_shape,
+        ShotShape,
+        SwingFlawDetector,
+        detect_swing_flaws,
+        SwingFlaw,
+    )
 except ImportError:
-    HAS_ML = False
+    # Fallback if ml module itself can't be imported
+    ML_AVAILABLE = False
+    ML_MISSING_DEPS = ["ml module"]
+    DistancePredictor = None
+    ShotShapeClassifier = None
+    classify_shot_shape = None
+    ShotShape = None
+    SwingFlawDetector = None
+    detect_swing_flaws = None
+    SwingFlaw = None
 
 
 @dataclass
@@ -83,31 +99,56 @@ class LocalCoach:
         self.flaw_detector = None
 
         # Try to load ML models if available
-        self._load_ml_models()
+        if ML_AVAILABLE:
+            self._load_ml_models()
 
     @property
     def ml_available(self) -> bool:
         """Check if ML models are loaded and available."""
-        return self.distance_predictor is not None or HAS_ML
+        return ML_AVAILABLE
+
+    def get_ml_status(self) -> Dict[str, Any]:
+        """
+        Get ML feature availability status.
+
+        Returns:
+            Dict with availability, missing dependencies, and user-friendly message
+        """
+        if ML_AVAILABLE:
+            return {
+                'available': True,
+                'missing_deps': [],
+                'message': 'ML features are available and ready to use.',
+            }
+        else:
+            deps_list = ', '.join(ML_MISSING_DEPS)
+            return {
+                'available': False,
+                'missing_deps': ML_MISSING_DEPS,
+                'message': f'ML features unavailable. Install missing dependencies: pip install {deps_list}',
+            }
 
     def _load_ml_models(self) -> None:
         """Load ML models if available."""
-        if not HAS_ML:
+        if not ML_AVAILABLE:
             return
 
         try:
-            # Distance prediction
-            predictor = DistancePredictor()
-            if Path(predictor.model_path).exists():
-                predictor.load()
-                self.distance_predictor = predictor
+            # Distance prediction - check if class is available
+            if DistancePredictor is not None:
+                predictor = DistancePredictor()
+                if Path(predictor.model_path).exists():
+                    predictor.load()
+                    self.distance_predictor = predictor
         except Exception:
             pass
 
         # Shot classifier and flaw detector use rule-based by default
         try:
-            self.shot_classifier = ShotShapeClassifier()
-            self.flaw_detector = SwingFlawDetector()
+            if ShotShapeClassifier is not None:
+                self.shot_classifier = ShotShapeClassifier()
+            if SwingFlawDetector is not None:
+                self.flaw_detector = SwingFlawDetector()
         except Exception:
             pass
 
