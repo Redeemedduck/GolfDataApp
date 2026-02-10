@@ -19,6 +19,13 @@ Transform GolfDataApp into an intelligent offline golf coach by strengthening ML
 
 **Requirements:** FNDTN-01, FNDTN-02, FNDTN-03, FNDTN-04
 
+**Plans:** 3 plans in 1 wave (all parallel)
+
+Plans:
+- [ ] 01-01-PLAN.md — Refactor ML imports to explicit try/except with feature flags
+- [ ] 01-02-PLAN.md — Add structured logging and sync status UI for Supabase operations
+- [ ] 01-03-PLAN.md — Validate model versioning and implement session metrics population
+
 **Success Criteria:**
 1. ML module imports use explicit try/except with feature flags; startup validates dependencies and displays clear UI state
 2. Database sync failures are logged with context and surfaced to user; sync status visible in UI ("Synced 5s ago" or "23 shots pending")
