@@ -98,6 +98,13 @@ Plans:
 
 **Requirements:** MONTR-01, MONTR-02 (full implementation)
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Database schema (model_predictions, model_performance) + DriftDetector and PerformanceTracker modules
+- [ ] 04-02-PLAN.md — Integration wiring (save_shot prediction logging, update_session_metrics drift check) + unit tests
+- [ ] 04-03-PLAN.md — Model Health dashboard page with MAE trends, feature importance, drift alerts, retraining
+
 **Success Criteria:**
 1. Model drift detection runs after each session; alerts fire when predictions deviate significantly from actuals (e.g., "7-iron prediction off by >10 yards for 3 sessions")
 2. Automated retraining is triggered by drift alerts or manual user action; retraining pipeline includes nested cross-validation and regularization checks
@@ -114,7 +121,7 @@ Plans:
 | 1 - Foundation & Stability | Complete (2026-02-10) | 4 | 100% |
 | 2 - Analytics Engine | Complete (2026-02-10) | 5 | 100% |
 | 3 - ML Enhancement & Coaching | Complete (2026-02-10) | 4 | 100% |
-| 4 - Monitoring & Model Health | Not Started | 2 | 0% |
+| 4 - Monitoring & Model Health | Planned | 2 | 0% |
 
 **Overall:** 13/14 requirements complete (93%)
 
@@ -124,9 +131,9 @@ Plans:
 
 - **Depth rationale:** Compressed from research's 5 phases to 4 for quick mode. Combined ML Enhancement + basic Coaching (Phase 3) and deferred advanced features to v2.
 - **Research flags:** Phase 3 may need deeper research for MAPIE integration patterns and XGBoost regularization tuning if docs are sparse.
-- **Out of scope (deferred to v2):** Fault pattern recognition, probabilistic club recommendations, ML dashboard page, automated drift retraining, equipment change detection.
+- **Out of scope (deferred to v2):** Fault pattern recognition, probabilistic club recommendations, equipment change detection.
 
 ---
 
 *Roadmap created: 2026-02-10*
-*Last updated: 2026-02-10 (Phase 3 complete)*
+*Last updated: 2026-02-10 (Phase 4 planned)*
