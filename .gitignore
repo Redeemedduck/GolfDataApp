@@ -46,3 +46,6 @@ debug_page_source.html
 
 # Firebase debug
 firebase-debug.log
+
+# Git worktrees
+.worktrees/
