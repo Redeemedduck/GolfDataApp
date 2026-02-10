@@ -18,6 +18,8 @@ from .distance_table import render_distance_table
 from .miss_tendency import render_miss_tendency
 from .progress_tracker import render_progress_tracker
 from .session_quality import render_session_quality
+from .prediction_interval import render_prediction_interval
+from .retraining_ui import render_retraining_ui
 
 __all__ = [
     'render_session_selector',
@@ -34,4 +36,6 @@ __all__ = [
     'render_miss_tendency',
     'render_progress_tracker',
     'render_session_quality',
+    'render_prediction_interval',
+    'render_retraining_ui',
 ]
