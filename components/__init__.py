@@ -13,6 +13,11 @@ from .export_tools import (
     render_excel_export_button,
     render_summary_export
 )
+from .dispersion_chart import render_dispersion_chart
+from .distance_table import render_distance_table
+from .miss_tendency import render_miss_tendency
+from .progress_tracker import render_progress_tracker
+from .session_quality import render_session_quality
 
 __all__ = [
     'render_session_selector',
@@ -24,4 +29,9 @@ __all__ = [
     'render_csv_export_button',
     'render_excel_export_button',
     'render_summary_export',
+    'render_dispersion_chart',
+    'render_distance_table',
+    'render_miss_tendency',
+    'render_progress_tracker',
+    'render_session_quality',
 ]
