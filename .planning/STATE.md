@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-10
 **Current Phase:** 03-ml-enhancement-coaching
-**Status:** IN PROGRESS (1/3 plans complete)
+**Status:** IN PROGRESS (2/4 plans complete)
 
 ---
 
@@ -12,7 +12,7 @@
 Golfers get actionable, personalized coaching and shot predictions that work offline — no API keys, no cloud dependency, no cost per query.
 
 ### Current Focus
-Phase 3: ML Enhancement & Coaching IN PROGRESS. Plan 03-01 COMPLETE: MAPIE prediction intervals and XGBoost tuning. Distance predictions now include confidence intervals (95%). Next: Analytics-driven coaching responses.
+Phase 3: ML Enhancement & Coaching IN PROGRESS. Plan 03-02 COMPLETE: Practice planner with weakness detection. Analytics-driven practice plans generated from shot data with 8 weakness types and 10+ curated drills. Next: Conformal prediction integration.
 
 ---
 
@@ -23,18 +23,19 @@ Phase 3: ML Enhancement & Coaching IN PROGRESS. Plan 03-01 COMPLETE: MAPIE predi
 
 ### Plan
 **Plan 03-01:** COMPLETE - MAPIE Prediction Intervals & XGBoost Tuning
-**Plan 03-02:** NOT STARTED - Analytics-Driven Coaching Responses
-**Plan 03-03:** NOT STARTED - Practice Plan Generation
-**Current:** Phase 03-01 COMPLETE (1/3 plans complete)
+**Plan 03-02:** COMPLETE - Practice Planner + Weakness Mapper
+**Plan 03-03:** NOT STARTED - Conformal Prediction Integration
+**Plan 03-04:** NOT STARTED - Analytics-Driven Coaching
+**Current:** Phase 03-02 COMPLETE (2/4 plans complete)
 
 ### Status
-Phase 03-01 COMPLETE. Extended DistancePredictor with MAPIE conformal prediction intervals (95% confidence) and dataset-size-aware XGBoost regularization (3 tiers). Distance predictions now return {predicted_value, lower_bound, upper_bound, confidence_level, interval_width, has_intervals}. Ready for Phase 03-02.
+Phase 03-02 COMPLETE. Built WeaknessMapper detecting 8 weakness types (dispersion, shot shape, smash, distance, launch) using Phase 2 analytics and PracticePlanner with 10+ curated drills. Practice plans are time-bounded (15-30 min) with severity-based drill selection. Ready for Phase 03-03.
 
 ### Progress
 ```
-[████████████████                                ] 33%
+[████████████████████████                        ] 50%
 ```
-1/3 Phase 03 plans complete (2 tasks, 2 files created, 3 files modified, 12 tests added)
+2/4 Phase 03 plans complete (4 tasks, 4 files created, 3 files modified, 36 tests added)
 
 ---
 
@@ -53,10 +54,11 @@ Phase 03-01 COMPLETE. Extended DistancePredictor with MAPIE conformal prediction
 | 02-03 | 7m 52s | 2 | 3 | 25 | 2026-02-10 |
 | 02-04 | 4m 48s | 2 | 1 | 0 | 2026-02-10 |
 | 03-01 | 4m 57s | 2 | 5 | 12 | 2026-02-10 |
+| 03-02 | 5m 0s | 2 | 4 | 24 | 2026-02-10 |
 
 ### Velocity
-- Plans completed: 9
-- Tasks completed: 21
+- Plans completed: 10
+- Tasks completed: 23
 - Time in current phase: 1 session
 - Average time per plan: ~5.4 minutes
 
@@ -110,6 +112,11 @@ Phase 03-01 COMPLETE. Extended DistancePredictor with MAPIE conformal prediction
 36. **2026-02-10 (03-01):** Save models as dict {'base_model': XGBRegressor, 'mapie_model': CrossConformalRegressor} for backward compatibility
 37. **2026-02-10 (03-01):** predict_with_intervals() returns dict with has_intervals flag and optional message for graceful degradation
 38. **2026-02-10 (03-01):** Update existing train() to use get_small_dataset_params() for consistent tuning
+39. **2026-02-10 (03-02):** WeaknessMapper uses analytics.utils for consistency with Phase 2
+40. **2026-02-10 (03-02):** Drill library stored in-code (not JSON) for offline-first simplicity
+41. **2026-02-10 (03-02):** Minimum 5 shots required for weakness detection (statistical reliability)
+42. **2026-02-10 (03-02):** Sentinel values (0, 99999) cleaned before all weakness calculations
+43. **2026-02-10 (03-02):** Greedy drill selection prioritizes highest severity weaknesses first
 
 ### Active Todos
 - [x] Execute plan 01-01 (ML Import Refactoring) — COMPLETE
@@ -121,13 +128,15 @@ Phase 03-01 COMPLETE. Extended DistancePredictor with MAPIE conformal prediction
 - [x] Execute plan 02-03 (Session Quality & Component Package) — COMPLETE
 - [x] Execute plan 02-04 (Dashboard Analytics Integration - gap closure) — COMPLETE
 - [x] Execute plan 03-01 (MAPIE Prediction Intervals & XGBoost Tuning) — COMPLETE
-- [ ] Execute plan 03-02 (Analytics-Driven Coaching Responses)
-- [ ] Execute plan 03-03 (Practice Plan Generation)
+- [x] Execute plan 03-02 (Practice Planner + Weakness Mapper) — COMPLETE
+- [ ] Execute plan 03-03 (Conformal Prediction Integration)
+- [ ] Execute plan 03-04 (Analytics-Driven Coaching)
 
 ### Blockers
 None.
 
 ### Recent Changes
+- 2026-02-10: **Plan 03-02 COMPLETE** - Practice planner + weakness mapper (2 commits, 4 files, 24 tests) - Analytics-driven practice plans with 8 weakness types and 10+ drills
 - 2026-02-10: **Plan 03-01 COMPLETE** - MAPIE prediction intervals and XGBoost tuning (2 commits, 5 files, 12 tests) - Distance predictions now include 95% confidence intervals
 - 2026-02-10: **Phase 02 COMPLETE** - All 4 analytics plans executed successfully (8 tasks, 9 files created, 1 modified, 25 tests)
 - 2026-02-10: **Plan 02-04 COMPLETE** - Dashboard analytics integration (gap closure) - All 5 components accessible with club filtering (1 commit, 1 file)
@@ -147,7 +156,7 @@ None.
 ### For Next Session
 Continue Phase 3: `/gsd:progress`
 
-Phase 03-01 COMPLETE: MAPIE prediction intervals and XGBoost tuning. Distance predictions now include 95% confidence intervals with graceful degradation. XGBoost uses dataset-size-aware regularization (3 tiers). Ready for Phase 03-02: Analytics-driven coaching responses.
+Phase 03-02 COMPLETE: Practice planner with weakness detection. WeaknessMapper detects 8 weakness types using Phase 2 analytics. PracticePlanner generates time-bounded plans (15-30 min) with 10+ curated drills. Drill selection based on severity scores. Ready for Phase 03-03: Conformal prediction integration.
 
 ### Context to Preserve
 - Project uses existing XGBoost/scikit-learn stack; graceful degradation is architectural pattern
