@@ -154,6 +154,21 @@ def init_db():
         )
     ''')
 
+    # Create sync status table for tracking cloud sync health
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sync_status (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            last_sync_success TIMESTAMP,
+            last_sync_failure TIMESTAMP,
+            pending_shots INTEGER DEFAULT 0,
+            pending_sessions INTEGER DEFAULT 0,
+            last_error TEXT
+        )
+    ''')
+
+    # Initialize sync_status row if it doesn't exist
+    cursor.execute('INSERT OR IGNORE INTO sync_status (id) VALUES (1)')
+
     conn.commit()
     conn.close()
 
@@ -1957,6 +1972,160 @@ def update_session_date_for_shots(session_id: str, session_date: str):
             raise DatabaseError(f"Failed to update session date in Supabase: {e}", operation="update", table="shots")
 
     return updated
+
+
+# ============================================================================
+# SYNC STATUS TRACKING
+# ============================================================================
+
+def get_sync_status() -> dict:
+    """
+    Get current sync health status.
+
+    Returns:
+        Dict with:
+        - status: "synced" | "pending" | "error" | "offline"
+        - last_sync: datetime of last successful sync (or None)
+        - pending_count: number of items pending sync
+        - last_error: error message if status is "error" (or None)
+    """
+    from datetime import datetime
+
+    # If Supabase not configured, return offline status
+    if not supabase:
+        return {
+            "status": "offline",
+            "last_sync": None,
+            "pending_count": 0,
+            "last_error": None
+        }
+
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT last_sync_success, last_sync_failure, pending_shots,
+                   pending_sessions, last_error
+            FROM sync_status WHERE id = 1
+        ''')
+        row = cursor.fetchone()
+        conn.close()
+
+        if not row:
+            # No sync status yet
+            return {
+                "status": "synced",
+                "last_sync": None,
+                "pending_count": 0,
+                "last_error": None
+            }
+
+        last_success, last_failure, pending_shots, pending_sessions, last_error = row
+        pending_count = (pending_shots or 0) + (pending_sessions or 0)
+
+        # Determine status
+        if last_error and last_failure:
+            # Parse timestamps if they're strings
+            if isinstance(last_failure, str):
+                last_failure_dt = datetime.fromisoformat(last_failure)
+            else:
+                last_failure_dt = last_failure
+
+            if isinstance(last_success, str) and last_success:
+                last_success_dt = datetime.fromisoformat(last_success)
+            else:
+                last_success_dt = last_success
+
+            # If last failure is more recent than last success, we're in error state
+            if not last_success_dt or last_failure_dt > last_success_dt:
+                return {
+                    "status": "error",
+                    "last_sync": last_success_dt,
+                    "pending_count": pending_count,
+                    "last_error": last_error
+                }
+
+        # Check if we have pending items
+        if pending_count > 0:
+            return {
+                "status": "pending",
+                "last_sync": datetime.fromisoformat(last_success) if isinstance(last_success, str) else last_success,
+                "pending_count": pending_count,
+                "last_error": None
+            }
+
+        # All good
+        return {
+            "status": "synced",
+            "last_sync": datetime.fromisoformat(last_success) if isinstance(last_success, str) else last_success,
+            "pending_count": 0,
+            "last_error": None
+        }
+
+    except Exception as e:
+        logger.warning(
+            f"Failed to read sync status: {e}",
+            extra={
+                "operation": "select",
+                "table": "sync_status",
+                "error_type": type(e).__name__
+            }
+        )
+        # Return a safe default
+        return {
+            "status": "offline",
+            "last_sync": None,
+            "pending_count": 0,
+            "last_error": str(e)
+        }
+
+
+def update_sync_status(success: bool, error_msg: str = None, pending_count: int = 0):
+    """
+    Update sync status after a sync attempt.
+
+    Args:
+        success: Whether the sync succeeded
+        error_msg: Error message if sync failed
+        pending_count: Number of items still pending sync
+    """
+    from datetime import datetime
+
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        if success:
+            cursor.execute('''
+                UPDATE sync_status
+                SET last_sync_success = ?,
+                    pending_shots = 0,
+                    pending_sessions = 0,
+                    last_error = NULL
+                WHERE id = 1
+            ''', (datetime.utcnow().isoformat(),))
+        else:
+            cursor.execute('''
+                UPDATE sync_status
+                SET last_sync_failure = ?,
+                    pending_shots = pending_shots + ?,
+                    last_error = ?
+                WHERE id = 1
+            ''', (datetime.utcnow().isoformat(), pending_count, error_msg))
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        logger.warning(
+            f"Failed to update sync status: {e}",
+            extra={
+                "operation": "update",
+                "table": "sync_status",
+                "error_type": type(e).__name__
+            }
+        )
 
 
 # ============================================================================
