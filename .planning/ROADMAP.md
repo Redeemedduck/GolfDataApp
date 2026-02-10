@@ -72,6 +72,14 @@ Plans:
 
 **Requirements:** COACH-01, COACH-02, COACH-03, MONTR-02 (partial — retraining UI, full monitoring in Phase 4)
 
+**Plans:** 4 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — MAPIE prediction intervals + XGBoost small-dataset tuning
+- [ ] 03-02-PLAN.md — Practice plan generation with weakness detection and drill library
+- [ ] 03-03-PLAN.md — Analytics-driven LocalCoach with practice plan + interval integration
+- [ ] 03-04-PLAN.md — Retraining UI and prediction interval visualization components
+
 **Success Criteria:**
 1. Local coach generates responses using analytics data (e.g., "Your 7-iron dispersion is 18 yards; focus on setup consistency"); responses reference actual stats, not templates
 2. User receives 15-30 min personalized practice plan based on detected weaknesses (e.g., "Your driver carries 15 yards left; drill: alignment sticks, 20 reps")
