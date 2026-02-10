@@ -275,5 +275,41 @@ class TestSwingFlawDetector(unittest.TestCase):
         self.assertIn('recommendations', analysis)
 
 
+class TestMLImportFallback(unittest.TestCase):
+    """Test ML import failure scenarios and graceful degradation."""
+
+    def test_ml_available_flag_exists(self):
+        """Verify ML_AVAILABLE flag is accessible."""
+        import ml
+        self.assertIsInstance(ml.ML_AVAILABLE, bool)
+
+    def test_ml_missing_deps_is_list(self):
+        """Verify ML_MISSING_DEPS is a list."""
+        import ml
+        self.assertIsInstance(ml.ML_MISSING_DEPS, list)
+
+    @unittest.skipIf(HAS_DEPS, "ML dependencies are installed, testing unavailable scenario")
+    def test_ml_unavailable_when_deps_missing(self):
+        """When dependencies are missing, ML_AVAILABLE should be False."""
+        import ml
+        self.assertFalse(ml.ML_AVAILABLE)
+        self.assertGreater(len(ml.ML_MISSING_DEPS), 0)
+
+    def test_ml_exports_none_when_unavailable(self):
+        """When ML unavailable, exported classes should be None."""
+        import ml
+        if not ml.ML_AVAILABLE:
+            # At least one of these should be None
+            exports = [
+                ml.DistancePredictor,
+                ml.ShotShapeClassifier,
+                ml.SwingFlawDetector,
+            ]
+            self.assertTrue(
+                any(exp is None for exp in exports),
+                "When ML_AVAILABLE is False, at least one export should be None"
+            )
+
+
 if __name__ == '__main__':
     unittest.main()
