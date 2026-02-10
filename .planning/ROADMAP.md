@@ -58,7 +58,7 @@ Plans:
 - [x] 02-01-PLAN.md -- Analytics utilities, dispersion chart (ANLYT-01), distance table (ANLYT-02)
 - [x] 02-02-PLAN.md -- Miss tendency analysis (ANLYT-03), progress tracker (ANLYT-04)
 - [x] 02-03-PLAN.md -- Session quality score (ANLYT-05), component exports, analytics tests
-- [ ] 02-04-PLAN.md -- Gap closure: integrate all 5 analytics components into Dashboard page
+- [x] 02-04-PLAN.md -- Gap closure: integrate all 5 analytics components into Dashboard page
 
 **Why this phase:** Analytics engine is self-contained with zero dependencies on existing ML models. Delivers immediate user value while de-risking architecture changes. All features can be built in parallel.
 
@@ -75,10 +75,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — MAPIE prediction intervals + XGBoost small-dataset tuning
-- [ ] 03-02-PLAN.md — Practice plan generation with weakness detection and drill library
-- [ ] 03-03-PLAN.md — Analytics-driven LocalCoach with practice plan + interval integration
-- [ ] 03-04-PLAN.md — Retraining UI and prediction interval visualization components
+- [x] 03-01-PLAN.md — MAPIE prediction intervals + XGBoost small-dataset tuning
+- [x] 03-02-PLAN.md — Practice plan generation with weakness detection and drill library
+- [x] 03-03-PLAN.md — Analytics-driven LocalCoach with practice plan + interval integration
+- [x] 03-04-PLAN.md — Retraining UI and prediction interval visualization components
 
 **Success Criteria:**
 1. Local coach generates responses using analytics data (e.g., "Your 7-iron dispersion is 18 yards; focus on setup consistency"); responses reference actual stats, not templates
@@ -113,10 +113,10 @@ Plans:
 |-------|--------|--------------|------------|
 | 1 - Foundation & Stability | Complete (2026-02-10) | 4 | 100% |
 | 2 - Analytics Engine | Complete (2026-02-10) | 5 | 100% |
-| 3 - ML Enhancement & Coaching | Not Started | 4 | 0% |
+| 3 - ML Enhancement & Coaching | Complete (2026-02-10) | 4 | 100% |
 | 4 - Monitoring & Model Health | Not Started | 2 | 0% |
 
-**Overall:** 9/14 requirements complete (64%)
+**Overall:** 13/14 requirements complete (93%)
 
 ---
 
@@ -129,4 +129,4 @@ Plans:
 ---
 
 *Roadmap created: 2026-02-10*
-*Last updated: 2026-02-10*
+*Last updated: 2026-02-10 (Phase 3 complete)*
