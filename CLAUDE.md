@@ -257,6 +257,3 @@ python automation_runner.py reclassify-dates --backfill
 - `report_page`: Scraped from report page header
 - `manual`: Manually entered
 
-## Active Handoff
-
-> **Read `.claude/context-handoff.md` before starting work.** It contains the current task queue from the most recent Cowork session (2026-02-11). Tasks: git commit data quality framework, run Supabase migration, sync quality flags. Remove this section once the handoff is complete.
