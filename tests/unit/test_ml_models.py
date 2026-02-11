@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 # Add project root to path
@@ -283,9 +284,13 @@ class TestModelVersioning(unittest.TestCase):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.model_path = Path(self.temp_dir) / 'test_model.joblib'
+        # Patch TRUSTED_MODEL_DIR so load_model accepts temp paths
+        self._patcher = unittest.mock.patch('ml.train_models.TRUSTED_MODEL_DIR', Path(self.temp_dir))
+        self._patcher.start()
 
     def tearDown(self):
         """Clean up test files."""
+        self._patcher.stop()
         import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)

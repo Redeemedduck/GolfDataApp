@@ -116,7 +116,7 @@ class LocalCoach:
         'consistency': r'\bconsisten\b|\bvariabl\b|\binconsisten\b',
         'gapping': r'\bgap\b|\bdistance\s*gap\b|\byardage\b',
         'profile': r'\bprofile\b|\boverall\b|\bsummary\b',
-        'practice_plan': r'\bpractice\s*plan\b|\bdrill\b|\bwhat.*work\s*on\b|\bpractice\b.*\bplan\b',
+        'practice_plan': r'\bpractice\s*plan\b|\bdrills?\b|\bwhat.*work\s*on\b|\bpractice\b.*\bplan\b',
     }
 
     def __init__(self):
