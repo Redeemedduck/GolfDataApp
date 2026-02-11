@@ -151,10 +151,12 @@ def render_progress_tracker(df: pd.DataFrame, metric: str = 'carry') -> None:
     # Use session_date if available, fall back to date_added
     if 'session_date' in session_groups.columns and session_groups['session_date'].notna().any():
         session_groups['display_date'] = pd.to_datetime(
-            session_groups['session_date'].fillna(session_groups.get('date_added', pd.NaT))
+            session_groups['session_date'].fillna(session_groups.get('date_added', pd.NaT)),
+            format='mixed',
+            dayfirst=False,
         )
     else:
-        session_groups['display_date'] = pd.to_datetime(session_groups['date_added'])
+        session_groups['display_date'] = pd.to_datetime(session_groups['date_added'], format='mixed', dayfirst=False)
 
     # Sort by date
     session_groups = session_groups.sort_values('display_date')

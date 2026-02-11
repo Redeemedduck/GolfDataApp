@@ -84,19 +84,30 @@ def render_dispersion_chart(df: pd.DataFrame, selected_club: str = None) -> None
         colorbar_title = None
         colorscale = None
 
-    # Build hover template
+    # Build hover template with customdata for extra fields
+    import numpy as np
+
+    customdata_cols = []
     hover_parts = ["<b>%{text}</b><br>"]
     hover_parts.append("Carry: %{y:.1f} yds<br>")
     hover_parts.append("Side: %{x:.1f} yds<br>")
 
+    idx = 0
     if 'ball_speed' in df_filtered.columns:
-        hover_parts.append("Ball Speed: " + df_filtered['ball_speed'].astype(str) + " mph<br>")
+        customdata_cols.append(df_filtered['ball_speed'].values)
+        hover_parts.append(f"Ball Speed: %{{customdata[{idx}]:.1f}} mph<br>")
+        idx += 1
     if 'launch_angle' in df_filtered.columns:
-        hover_parts.append("Launch: " + df_filtered['launch_angle'].astype(str) + "°<br>")
+        customdata_cols.append(df_filtered['launch_angle'].values)
+        hover_parts.append(f"Launch: %{{customdata[{idx}]:.1f}}\u00b0<br>")
+        idx += 1
     if 'smash' in df_filtered.columns:
-        hover_parts.append("Smash: " + df_filtered['smash'].astype(str))
+        customdata_cols.append(df_filtered['smash'].values)
+        hover_parts.append(f"Smash: %{{customdata[{idx}]:.2f}}")
+        idx += 1
 
     hover_template = "".join(hover_parts) + "<extra></extra>"
+    customdata = np.column_stack(customdata_cols) if customdata_cols else None
 
     # Add scatter trace
     fig.add_trace(go.Scatter(
@@ -113,6 +124,7 @@ def render_dispersion_chart(df: pd.DataFrame, selected_club: str = None) -> None
             opacity=0.7
         ),
         text=df_filtered['club'] if 'club' in df_filtered.columns else None,
+        customdata=customdata,
         hovertemplate=hover_template,
         name='Shots'
     ))

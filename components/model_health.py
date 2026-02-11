@@ -130,6 +130,13 @@ def render_model_health_dashboard() -> None:
             st.warning(f"Drift detection unavailable: {e}")
 
     # Drift Alert
+    # recent_drift_sessions is a DataFrame from get_drift_history()
+    has_recent_drift = False
+    if hasattr(recent_drift_sessions, 'empty'):
+        has_recent_drift = not recent_drift_sessions.empty and recent_drift_sessions['has_drift'].any()
+    elif recent_drift_sessions:
+        has_recent_drift = any(s.get('has_drift', False) for s in recent_drift_sessions)
+
     if consecutive_drift >= 3:
         st.error(
             f"⚠️ **Model Drift Detected**\n\n"
@@ -138,11 +145,11 @@ def render_model_health_dashboard() -> None:
         )
 
         # Show MAE details
-        if recent_drift_sessions:
-            latest = recent_drift_sessions[0]
-            baseline_mae = latest.get('baseline_mae', 0)
-            session_mae = latest.get('session_mae', 0)
-            drift_pct = latest.get('drift_percentage', 0)
+        if hasattr(recent_drift_sessions, 'iloc') and not recent_drift_sessions.empty:
+            latest = recent_drift_sessions.iloc[0]
+            baseline_mae = latest.get('baseline_mae', 0) or 0
+            session_mae = latest.get('session_mae', 0) or 0
+            drift_pct = latest.get('drift_pct', 0) or 0
             st.caption(
                 f"Latest session MAE: {session_mae:.1f} yd "
                 f"(baseline: {baseline_mae:.1f} yd, +{drift_pct:.0f}%)"
@@ -152,7 +159,7 @@ def render_model_health_dashboard() -> None:
         if st.button("🔄 Retrain Model Now", type="primary", key="health_retrain"):
             _trigger_retraining(model_metadata)
 
-    elif any(s.get('has_drift', False) for s in recent_drift_sessions):
+    elif has_recent_drift:
         st.warning(
             "⚡ **Elevated Error Detected**\n\n"
             "Some recent sessions show higher prediction error than baseline. "
