@@ -14,7 +14,7 @@ from utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-def check_and_trigger_retraining(session_id: str, auto_retrain: bool = False) -> Optional[dict]:
+def check_and_trigger_retraining(session_id: str, auto_retrain: bool = False, db_path: Optional[str] = None) -> Optional[dict]:
     """
     Check for drift and optionally trigger automated retraining.
     Called from update_session_metrics() after each session completes.
@@ -22,11 +22,12 @@ def check_and_trigger_retraining(session_id: str, auto_retrain: bool = False) ->
     Args:
         session_id: Session that just completed
         auto_retrain: If True, automatically retrain on 3+ consecutive drift (default: False, alert only)
+        db_path: Optional database path (defaults to golf_db.SQLITE_DB_PATH)
 
     Returns:
         Dict with drift status and retraining result (if triggered), or None if no drift
     """
-    detector = DriftDetector()
+    detector = DriftDetector(db_path=db_path)
     drift_status = detector.check_session_drift(session_id)
 
     if not drift_status.get('has_drift'):
