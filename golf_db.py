@@ -198,6 +198,41 @@ def init_db():
     # Create index on session_date for trend queries
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_session_stats_date ON session_stats(session_date)')
 
+    # Create model_predictions table for ML monitoring
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS model_predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shot_id TEXT NOT NULL,
+            club TEXT,
+            predicted_value REAL,
+            actual_value REAL,
+            absolute_error REAL,
+            model_version TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (shot_id) REFERENCES shots(shot_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_predictions_shot ON model_predictions(shot_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_predictions_timestamp ON model_predictions(timestamp)')
+
+    # Create model_performance table for drift detection
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS model_performance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            session_mae REAL,
+            baseline_mae REAL,
+            has_drift INTEGER DEFAULT 0,
+            drift_pct REAL,
+            consecutive_drift INTEGER DEFAULT 0,
+            model_version TEXT,
+            recommendation TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_performance_session ON model_performance(session_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_performance_timestamp ON model_performance(timestamp)')
+
     conn.commit()
     conn.close()
 
@@ -2239,7 +2274,7 @@ def update_all_session_metrics() -> int:
         return 0
 
 
-def get_sync_status() -> dict:
+def get_sync_health() -> dict:
     """
     Get current sync health status.
 
