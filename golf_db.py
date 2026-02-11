@@ -31,6 +31,33 @@ else:
     supabase = None
     print("Warning: Supabase credentials not found. Cloud sync disabled.")
 
+# Monitoring imports (lazy, non-blocking)
+_performance_tracker = None
+_distance_predictor = None
+
+def _get_performance_tracker():
+    global _performance_tracker
+    if _performance_tracker is None:
+        try:
+            from ml.monitoring import PerformanceTracker
+            _performance_tracker = PerformanceTracker()
+        except ImportError:
+            pass
+    return _performance_tracker
+
+def _get_distance_predictor():
+    global _distance_predictor
+    if _distance_predictor is None:
+        try:
+            from ml.train_models import DistancePredictor, DISTANCE_MODEL_PATH
+            from pathlib import Path
+            if Path(DISTANCE_MODEL_PATH).exists():
+                _distance_predictor = DistancePredictor()
+                _distance_predictor.load()
+        except (ImportError, Exception):
+            pass
+    return _distance_predictor
+
 # --- Helper Functions ---
 def clean_value(val, default=0.0):
     """Handle sentinel values (99999) and None."""
@@ -553,6 +580,32 @@ def save_shot(data):
             }
         )
         raise DatabaseError(f"Failed to save shot to SQLite: {e}", operation="insert", table="shots")
+
+    # Log prediction for drift monitoring (non-blocking)
+    try:
+        tracker = _get_performance_tracker()
+        predictor = _get_distance_predictor()
+        carry = payload.get('carry', 0)
+        ball_speed = payload.get('ball_speed', 0)
+        if tracker and predictor and predictor.is_loaded() and carry and carry > 0 and carry != 99999 and ball_speed and ball_speed > 0:
+            prediction = predictor.predict(
+                ball_speed=ball_speed,
+                launch_angle=payload.get('launch_angle', 12.0),
+                back_spin=payload.get('back_spin', 2500),
+                club_speed=payload.get('club_speed'),
+                attack_angle=payload.get('attack_angle'),
+                dynamic_loft=payload.get('dynamic_loft'),
+            )
+            model_version = predictor.metadata.version if predictor.metadata else "unknown"
+            tracker.log_prediction(
+                shot_id=payload['shot_id'],
+                club=payload.get('club', ''),
+                predicted_carry=prediction.predicted_value,
+                actual_carry=carry,
+                model_version=model_version,
+            )
+    except Exception as e:
+        logger.debug(f"Prediction logging skipped: {e}")
 
     # 2. Save to Supabase (if available)
     if supabase:
@@ -2185,6 +2238,25 @@ def update_session_metrics(session_id: str) -> None:
 
         conn.commit()
         conn.close()
+
+        # Check for model drift and optionally trigger retraining (non-blocking)
+        try:
+            from ml.monitoring.drift_detector import check_and_trigger_retraining
+            drift_result = check_and_trigger_retraining(session_id, auto_retrain=False)
+            if drift_result:
+                logger.warning(
+                    "Model drift detected",
+                    extra={
+                        "session_id": session_id,
+                        "session_mae": drift_result.get('session_mae'),
+                        "baseline_mae": drift_result.get('baseline_mae'),
+                        "drift_pct": drift_result.get('drift_pct'),
+                        "consecutive": drift_result.get('consecutive_drift_sessions'),
+                        "recommendation": drift_result.get('recommendation'),
+                    }
+                )
+        except Exception as e:
+            logger.debug(f"Drift check skipped: {e}")
 
         logger.info(
             f"Updated session metrics",

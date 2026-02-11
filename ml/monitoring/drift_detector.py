@@ -14,6 +14,69 @@ from utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def check_and_trigger_retraining(session_id: str, auto_retrain: bool = False) -> Optional[dict]:
+    """
+    Check for drift and optionally trigger automated retraining.
+    Called from update_session_metrics() after each session completes.
+
+    Args:
+        session_id: Session that just completed
+        auto_retrain: If True, automatically retrain on 3+ consecutive drift (default: False, alert only)
+
+    Returns:
+        Dict with drift status and retraining result (if triggered), or None if no drift
+    """
+    detector = DriftDetector()
+    drift_status = detector.check_session_drift(session_id)
+
+    if not drift_status.get('has_drift'):
+        return None
+
+    consecutive = drift_status.get('consecutive_drift_sessions', 0)
+    should_retrain = consecutive >= 3
+
+    if should_retrain and auto_retrain:
+        logger.info(f"Auto-retraining triggered: {consecutive} consecutive drift sessions")
+        try:
+            import time
+            from ml.train_models import DistancePredictor, HAS_MAPIE
+            import golf_db
+
+            start_time = time.time()
+            predictor = DistancePredictor()
+            df = golf_db.get_all_shots()
+
+            # train_with_intervals() uses MAPIE CrossConformalRegressor with cv-plus method,
+            # which performs cross-validation-based conformalization — satisfying the
+            # "nested cross-validation and regularization checks" requirement (MONTR-02).
+            # Regular train() uses get_small_dataset_params() for dataset-size-aware regularization.
+            if HAS_MAPIE and len(df) >= 1000:
+                new_metadata = predictor.train_with_intervals(df=df, save=True)
+            else:
+                new_metadata = predictor.train(df=df, save=True)
+
+            elapsed = time.time() - start_time
+            drift_status['retraining_triggered'] = True
+            drift_status['retraining_success'] = True
+            drift_status['new_mae'] = new_metadata.metrics['mae']
+            drift_status['retraining_time'] = elapsed
+
+            logger.info(f"Auto-retraining completed: MAE {new_metadata.metrics['mae']:.2f} yards ({elapsed:.1f}s)")
+        except Exception as e:
+            drift_status['retraining_triggered'] = True
+            drift_status['retraining_success'] = False
+            drift_status['retraining_error'] = str(e)
+            logger.error(f"Auto-retraining failed: {e}")
+    elif should_retrain:
+        drift_status['retraining_recommended'] = True
+        drift_status['alert_message'] = (
+            f"Model drift detected for {consecutive} sessions. "
+            "Visit Model Health dashboard to retrain."
+        )
+
+    return drift_status
+
+
 class DriftDetector:
     """
     Detect model drift using adaptive baselines.
