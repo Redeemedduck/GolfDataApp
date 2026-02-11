@@ -50,6 +50,15 @@ python automation_runner.py reclassify-dates --manual 43285 2026-01-15
 python automation_runner.py sync-database --dry-run
 python automation_runner.py sync-database
 python automation_runner.py sync-database --direction from-supabase
+
+# Data quality validation
+python3 .claude/skills/golf-data-quality/scripts/validate_golf_data.py
+
+# Sync quality flags to Supabase (run migration SQL first)
+python sync_quality_flags.py --dry-run
+python sync_quality_flags.py
+python sync_quality_flags.py --flags-only
+python sync_quality_flags.py --warmup-only
 ```
 
 ## Architecture Overview
@@ -80,6 +89,7 @@ Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
 | `services/ai/` | AI provider registry (decorator pattern for pluggable backends) |
 | `components/` | Reusable Streamlit UI components (all follow `render_*()` pattern) |
 | `exceptions.py` | Exception hierarchy: `GolfDataAppError` base with `DatabaseError`, `ValidationError`, `RateLimitError`, `AuthenticationError`, etc. — all carry context dicts |
+| `sync_quality_flags.py` | Pushes `shot_quality_flags` data and `is_warmup` values from SQLite to Supabase |
 | `golf_scraper.py` | Legacy scraper (pre-Playwright, still functional) |
 
 ### Hybrid Database Pattern
@@ -126,7 +136,8 @@ Key behaviors:
 - Token bucket rate limiting (6 req/min default via `rate_limiter.py`)
 - Encrypted cookie persistence (`credential_manager.py`)
 - Resumable backfill with `sessions_discovered` and `backfill_runs` tables
-- Club name normalization via `naming_conventions.py` (e.g., "7i" → "7 Iron")
+- Club name normalization via `naming_conventions.py` (e.g., "7i" → "7 Iron", "Iron7 | Medium" → "7 Iron", "M 56" → "SW", "9 Iron Magnolia" → "9 Iron")
+- Session context parsing via `SessionContextParser` (e.g., "Warmup 50" → warmup + GW, "Dst Compressor 8" → drill + 8 Iron)
 - Exponential backoff on retries (10s → 30s → 90s)
 
 ## Environment Variables
@@ -144,17 +155,42 @@ Key behaviors:
 
 | Table | Purpose | Supabase Sync |
 |-------|---------|---------------|
-| `shots` | Main data (30+ fields per shot) | Yes — full upsert |
+| `shots` | Main data (35+ fields per shot, including `is_warmup`) | Yes — full upsert |
 | `shots_archive` | Soft-deleted shots (recovery) | Yes — archived on session delete |
 | `change_log` | Audit trail for modifications | No — local only |
 | `tag_catalog` | Shot tag definitions | Yes — upsert/delete |
+| `shot_quality_flags` | Data quality flags (severity + category per shot) | Yes — via `sync_quality_flags.py` |
 | `sessions_discovered` | Automation: discovered sessions + import status + `date_source` | Yes — service role |
 | `automation_runs` | Automation: high-level run tracking | Yes — service role |
 | `backfill_runs` | Automation: backfill progress checkpoints | Yes — service role |
 
+| View | Purpose |
+|------|---------|
+| `shots_clean` | All shots excluding CRITICAL/HIGH quality flags (89.7% of data) |
+| `shots_strict` | All shots excluding CRITICAL/HIGH/MEDIUM flags (33.9% of data) |
+| `session_summary` | Aggregated per-session, per-club metrics |
+
 Canonical Supabase schema: `supabase_schema.sql` (all tables, indexes, RLS policies, views).
+Supabase quality migration: `supabase_quality_migration.sql` (adds `shot_quality_flags`, views, `is_warmup`).
 
 Key date distinction: `session_date` = when the practice occurred, `date_added` = when data was imported.
+
+### Data Quality Infrastructure
+
+The `shot_quality_flags` table stores validation results from the data quality validator (`.claude/skills/golf-data-quality/scripts/validate_golf_data.py`). Each flag has:
+
+- `shot_id` — links to the `shots` table
+- `category` — one of 12 check categories (e.g., `physics_violations`, `warmup_detection`, `smash_factor`)
+- `severity` — `CRITICAL`, `HIGH`, `MEDIUM`, or `LOW`
+- `reason` — human-readable explanation
+
+The `is_warmup` column on `shots` (INTEGER, 0 or 1) tags shots from warmup sessions. Combined with `shots_clean`, the canonical analytics query is:
+
+```sql
+SELECT * FROM shots_clean WHERE is_warmup = 0
+```
+
+This returns the "analytics-ready" dataset: clean data with no warmup contamination.
 
 ## Key Conventions
 
@@ -220,3 +256,7 @@ python automation_runner.py reclassify-dates --backfill
 - `link_text`: Parsed from session link text
 - `report_page`: Scraped from report page header
 - `manual`: Manually entered
+
+## Active Handoff
+
+> **Read `.claude/context-handoff.md` before starting work.** It contains the current task queue from the most recent Cowork session (2026-02-11). Tasks: git commit data quality framework, run Supabase migration, sync quality flags. Remove this section once the handoff is complete.

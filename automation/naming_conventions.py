@@ -71,49 +71,106 @@ class ClubNameNormalizer:
     ]
 
     # Pattern mappings: regex -> standard name
-    # Order matters - more specific patterns should come first
+    # Order matters - more specific patterns should come first.
+    #
+    # These patterns handle multiple naming conventions found in the Uneekor portal:
+    # 1. Standard abbreviations: "7i", "DR", "PW"
+    # 2. Full names: "7 Iron", "Driver", "Pitching Wedge"
+    # 3. Reversed word order: "Iron 7", "Wood 3", "Wedge Pitching"
+    # 4. Bare numbers: "7", "9" (contextual - just the iron number)
+    # 5. M-prefixed variants: "M 7", "M 56", "M 7 Iron" (Uneekor "M" prefix)
+    # 6. System-generated: "IRON7 | MEDIUM", "DRIVER | PREMIUM" (Uneekor auto-names)
+    # 7. Driving iron variant: "3 Driving Iron" → "3 Iron"
     CLUB_PATTERNS = [
-        # Driver variations
+        # ── Uneekor system-generated format ("CLUB | DIFFICULTY") ──
+        # These come from the Uneekor portal when sessions use auto-naming.
+        # The "|" separator is followed by a difficulty like MEDIUM or PREMIUM.
+        (r'^driver\s*\|\s*(?:medium|premium|easy|hard)$', 'Driver'),
+        (r'^iron(\d)\s*\|\s*(?:medium|premium|easy|hard)$', '_IRON_NUM'),
+        (r'^hybrid(\d)\s*\|\s*(?:medium|premium|easy|hard)$', '_HYBRID_NUM'),
+        (r'^wood(\d)\s*\|\s*(?:medium|premium|easy|hard)$', '_WOOD_NUM'),
+        (r'^wedge\s*pitching\s*\|\s*(?:medium|premium|easy|hard)$', 'PW'),
+        (r'^wedge\s*sand\s*\|\s*(?:medium|premium|easy|hard)$', 'SW'),
+        (r'^wedge\s*lob\s*\|\s*(?:medium|premium|easy|hard)$', 'LW'),
+        (r'^wedge\s*gap\s*\|\s*(?:medium|premium|easy|hard)$', 'GW'),
+        (r'^wedge\s*(\d{2})\s*\|\s*(?:medium|premium|easy|hard)$', '_DEGREE_WEDGE'),
+
+        # ── Driver variations ──
         (r'^(dr|driver|1w|1 wood|1wood|d)$', 'Driver'),
 
-        # Woods
-        (r'^(2w|2 wood|2wood|fairway 2)$', '2 Wood'),
-        (r'^(3w|3 wood|3wood|fairway 3|3wd)$', '3 Wood'),
-        (r'^(4w|4 wood|4wood|fairway 4)$', '4 Wood'),
-        (r'^(5w|5 wood|5wood|fairway 5|5wd)$', '5 Wood'),
-        (r'^(7w|7 wood|7wood|fairway 7)$', '7 Wood'),
-        (r'^(9w|9 wood|9wood|fairway 9)$', '9 Wood'),
+        # ── Woods (both "3 Wood" and "Wood 3" formats) ──
+        (r'^(2w|2 wood|2wood|wood 2|fairway 2)$', '2 Wood'),
+        (r'^(3w|3 wood|3wood|wood 3|fairway 3|3wd|3 driving iron)$', '3 Wood'),
+        (r'^(4w|4 wood|4wood|wood 4|fairway 4)$', '4 Wood'),
+        (r'^(5w|5 wood|5wood|wood 5|fairway 5|5wd)$', '5 Wood'),
+        (r'^(7w|7 wood|7wood|wood 7|fairway 7)$', '7 Wood'),
+        (r'^(9w|9 wood|9wood|wood 9|fairway 9)$', '9 Wood'),
 
-        # Hybrids
-        (r'^(2h|2 hybrid|hybrid 2|2hy|2 hy|rescue 2)$', '2 Hybrid'),
-        (r'^(3h|3 hybrid|hybrid 3|3hy|3 hy|rescue 3)$', '3 Hybrid'),
-        (r'^(4h|4 hybrid|hybrid 4|4hy|4 hy|rescue 4)$', '4 Hybrid'),
-        (r'^(5h|5 hybrid|hybrid 5|5hy|5 hy|rescue 5)$', '5 Hybrid'),
-        (r'^(6h|6 hybrid|hybrid 6|6hy|6 hy|rescue 6)$', '6 Hybrid'),
-        (r'^(7h|7 hybrid|hybrid 7|7hy|7 hy|rescue 7)$', '7 Hybrid'),
+        # ── Hybrids (both "3 Hybrid" and "Hybrid 3" formats) ──
+        (r'^(2h|2 hybrid|hybrid 2|hybrid2|2hy|2 hy|rescue 2)$', '2 Hybrid'),
+        (r'^(3h|3 hybrid|hybrid 3|hybrid3|3hy|3 hy|rescue 3)$', '3 Hybrid'),
+        (r'^(4h|4 hybrid|hybrid 4|hybrid4|4hy|4 hy|rescue 4)$', '4 Hybrid'),
+        (r'^(5h|5 hybrid|hybrid 5|hybrid5|5hy|5 hy|rescue 5)$', '5 Hybrid'),
+        (r'^(6h|6 hybrid|hybrid 6|hybrid6|6hy|6 hy|rescue 6)$', '6 Hybrid'),
+        (r'^(7h|7 hybrid|hybrid 7|hybrid7|7hy|7 hy|rescue 7)$', '7 Hybrid'),
 
-        # Irons
-        (r'^(1i|1 iron|iron 1|1-iron|one iron)$', '1 Iron'),
-        (r'^(2i|2 iron|iron 2|2-iron|two iron)$', '2 Iron'),
-        (r'^(3i|3 iron|iron 3|3-iron|three iron)$', '3 Iron'),
-        (r'^(4i|4 iron|iron 4|4-iron|four iron)$', '4 Iron'),
-        (r'^(5i|5 iron|iron 5|5-iron|five iron)$', '5 Iron'),
-        (r'^(6i|6 iron|iron 6|6-iron|six iron)$', '6 Iron'),
-        (r'^(7i|7 iron|iron 7|7-iron|seven iron)$', '7 Iron'),
-        (r'^(8i|8 iron|iron 8|8-iron|eight iron)$', '8 Iron'),
-        (r'^(9i|9 iron|iron 9|9-iron|nine iron)$', '9 Iron'),
+        # ── Irons with trailing context ──
+        # Handles: "8 Iron Magnolia", "9 Iron Shoulders Right", "7 Iron Shoulders Right"
+        # These are club-specific sessions named "club + context" where the context
+        # is a course name, drill variant, or stance instruction. We strip the context
+        # and keep the club. Placed BEFORE the strict iron patterns so they match first.
+        (r'^(\d)\s*iron\s+(?:magnolia|shoulders?\s*right|shoulders?\s*left|estes|torrey|candlestone|broadmoor|scottsdale|streamsong).*$', '_IRON_NUM'),
+        (r'^iron\s*(\d)\s+(?:magnolia|shoulders?\s*right|shoulders?\s*left|estes|torrey|candlestone|broadmoor|scottsdale|streamsong).*$', '_IRON_NUM'),
 
-        # Wedges - specific lofts
-        (r'^(pw|p wedge|pitching wedge|pitching|p\.w\.|46\s*deg|46\s*\u00b0)$', 'PW'),
-        (r'^(gw|g wedge|gap wedge|gap|g\.w\.|50\s*deg|50\s*\u00b0|52\s*deg|52\s*\u00b0)$', 'GW'),
-        (r'^(aw|a wedge|approach wedge|approach|a\.w\.)$', 'AW'),
-        (r'^(sw|s wedge|sand wedge|sand|s\.w\.|54\s*deg|54\s*\u00b0|56\s*deg|56\s*\u00b0)$', 'SW'),
-        (r'^(lw|l wedge|lob wedge|lob|l\.w\.|58\s*deg|58\s*\u00b0|60\s*deg|60\s*\u00b0|62\s*deg|62\s*\u00b0)$', 'LW'),
+        # ── Irons ──
+        # Handles: "1 Iron", "Iron 1", "1i", "1-Iron", "M 1 Iron", "M 1"
+        # The "M" prefix appears in Uneekor data and likely stands for "Manual" or
+        # a club mapping prefix. We strip it and normalize to standard format.
+        (r'^(?:m\s+)?(?:1i|1 iron|iron 1|1-iron|one iron|m\s*1)$', '1 Iron'),
+        (r'^(?:m\s+)?(?:2i|2 iron|iron 2|2-iron|two iron|m\s*2)$', '2 Iron'),
+        (r'^(?:m\s+)?(?:3i|3 iron|iron 3|3-iron|three iron|m\s*3|3 driving iron)$', '3 Iron'),
+        (r'^(?:m\s+)?(?:4i|4 iron|iron 4|4-iron|four iron|m\s*4)$', '4 Iron'),
+        (r'^(?:m\s+)?(?:5i|5 iron|iron 5|5-iron|five iron|m\s*5)$', '5 Iron'),
+        (r'^(?:m\s+)?(?:6i|6 iron|iron 6|6-iron|six iron|m\s*6)$', '6 Iron'),
+        (r'^(?:m\s+)?(?:7i|7 iron|iron 7|7-iron|seven iron|m\s*7)$', '7 Iron'),
+        (r'^(?:m\s+)?(?:8i|8 iron|iron 8|8-iron|eight iron|m\s*8)$', '8 Iron'),
+        (r'^(?:m\s+)?(?:9i|9 iron|iron 9|9-iron|nine iron|m\s*9)$', '9 Iron'),
 
-        # Generic wedge with degree
+        # ── Bare single-digit numbers ──
+        # In the Uneekor portal, session sub-names like "6", "7", "8", "9"
+        # almost always refer to the iron of that number. This is a common
+        # shorthand when the user just types the club number.
+        (r'^1$', '1 Iron'),
+        (r'^2$', '2 Iron'),
+        (r'^3$', '3 Iron'),
+        (r'^4$', '4 Iron'),
+        (r'^5$', '5 Iron'),
+        (r'^6$', '6 Iron'),
+        (r'^7$', '7 Iron'),
+        (r'^8$', '8 Iron'),
+        (r'^9$', '9 Iron'),
+
+        # ── Wedges - specific lofts ──
+        # Handles: "PW", "Pitching Wedge", "Wedge Pitching" (reversed Uneekor format),
+        # degree values, and M-prefixed variants like "M 56"
+        (r'^(pw|p wedge|pitching wedge|pitching|wedge pitching|p\.w\.|46\s*deg|46\s*\u00b0)$', 'PW'),
+        (r'^(gw|g wedge|gap wedge|gap|wedge gap|g\.w\.|50\s*deg|50\s*\u00b0|52\s*deg|52\s*\u00b0)$', 'GW'),
+        (r'^(aw|a wedge|approach wedge|approach|wedge approach|a\.w\.)$', 'AW'),
+        (r'^(?:m\s+)?(?:sw|s wedge|sand wedge|sand|wedge sand|s\.w\.|54\s*deg|54\s*\u00b0|56\s*deg|56\s*\u00b0|56|m\s*56)$', 'SW'),
+        (r'^(?:m\s+)?(?:lw|l wedge|lob wedge|lob|wedge lob|l\.w\.|58\s*deg|58\s*\u00b0|60\s*deg|60\s*\u00b0|60|62\s*deg|62\s*\u00b0)$', 'LW'),
+
+        # ── "Wedge NN" format (Uneekor uses "Wedge 56", "Wedge 50") ──
+        (r'^wedge\s*(\d{2})$', '_DEGREE_WEDGE'),
+
+        # ── Bare two-digit numbers that are likely wedge lofts ──
+        # Numbers 44-62 when used alone are almost certainly wedge loft degrees.
+        # "50" → GW, "56" → SW, etc. We also handle M-prefixed like "M 56".
+        (r'^(?:m\s+)?(\d{2})$', '_DEGREE_WEDGE_BARE'),
+
+        # ── Generic wedge with degree symbol or word ──
         (r'^(\d{2})\s*(deg|degree|\u00b0).*$', '_DEGREE_WEDGE'),
 
-        # Putter
+        # ── Putter ──
         (r'^(putter|putt|putting)$', 'Putter'),
     ]
 
@@ -189,8 +246,11 @@ class ClubNameNormalizer:
         for pattern, name in self._compiled_patterns:
             match = pattern.match(cleaned)
             if match:
+                # ── Special handlers for dynamic club name generation ──
+                # Some patterns capture a number and need to build the club
+                # name dynamically (e.g., "IRON7 | MEDIUM" → "7 Iron").
                 if name == '_DEGREE_WEDGE':
-                    # Special handling for degree-based wedge
+                    # "Wedge 56" or "50 deg" → look up degree in mapping
                     try:
                         degree = int(match.group(1))
                         normalized = self.DEGREE_TO_WEDGE.get(degree, f'{degree} Wedge')
@@ -201,6 +261,59 @@ class ClubNameNormalizer:
                             matched_pattern='degree_wedge'
                         )
                     except (ValueError, IndexError):
+                        continue
+                elif name == '_DEGREE_WEDGE_BARE':
+                    # Bare two-digit number: "56", "50", "M 56"
+                    # Only treat as wedge if it falls in the 44-62 range
+                    try:
+                        degree = int(match.group(1))
+                        if degree in self.DEGREE_TO_WEDGE:
+                            normalized = self.DEGREE_TO_WEDGE[degree]
+                            return NormalizationResult(
+                                original=original,
+                                normalized=normalized,
+                                confidence=0.85,
+                                matched_pattern='bare_degree_wedge'
+                            )
+                        # Not a known wedge degree, skip this pattern
+                        continue
+                    except (ValueError, IndexError):
+                        continue
+                elif name == '_IRON_NUM':
+                    # "IRON7 | MEDIUM" → captured group is the number
+                    try:
+                        num = match.group(1)
+                        return NormalizationResult(
+                            original=original,
+                            normalized=f'{num} Iron',
+                            confidence=0.95,
+                            matched_pattern='uneekor_system_iron'
+                        )
+                    except IndexError:
+                        continue
+                elif name == '_HYBRID_NUM':
+                    # "HYBRID3 | MEDIUM" → captured group is the number
+                    try:
+                        num = match.group(1)
+                        return NormalizationResult(
+                            original=original,
+                            normalized=f'{num} Hybrid',
+                            confidence=0.95,
+                            matched_pattern='uneekor_system_hybrid'
+                        )
+                    except IndexError:
+                        continue
+                elif name == '_WOOD_NUM':
+                    # "WOOD3 | MEDIUM" → captured group is the number
+                    try:
+                        num = match.group(1)
+                        return NormalizationResult(
+                            original=original,
+                            normalized=f'{num} Wood',
+                            confidence=0.95,
+                            matched_pattern='uneekor_system_wood'
+                        )
+                    except IndexError:
                         continue
                 else:
                     return NormalizationResult(
@@ -509,34 +622,101 @@ class SessionContextParser:
     """
 
     # Session type patterns (order matters - more specific first)
+    # These detect whether a session name represents a round, warmup, drill,
+    # or practice rather than a simple club name. Identified from actual
+    # Uneekor portal data (125 sessions, Dec 2025-Feb 2026).
     SESSION_TYPE_PATTERNS = [
-        # Simulated Golf Tour patterns
+        # ── Simulated Golf Tour patterns ──
+        # "Sgt Rd1", "Sgt Wailaie Rd1 Cont", "Sgt Shadowridge Rd2"
         (r'\bSgt\b.*\bRd\s*(\d)', 'sim_round', 'Sim Golf Tour Round'),
         (r'\bSgt\b', 'sim_round', 'Sim Golf Tour'),
-        # Practice modes
-        (r'\bWarmup\b|\bWmup\b', 'warmup', 'Warmup'),
-        (r'\bBag\s*Mapping\b', 'bag_mapping', 'Bag Mapping'),
+        (r'\bDpt\b', 'sim_round', 'Sim Golf Tour'),  # "dpt scottsdale sgt1"
+        (r'\bSimtour\b', 'sim_round', 'Sim Golf Tour'),
+
+        # ── Warmup/warm-up sessions ──
+        # "Warmup", "Warmup 50", "Warmup Pw", "Dst Warmup", "Wmup", "Wm"
+        (r'\bWarmup\b|\bWmup\b|\bWm\b', 'warmup', 'Warmup'),
+
+        # ── Training drills ──
+        # "Dst Compressor 8", "8 Iron Dst Trainer", "Dst Trainer"
         (r'\bDst\b.*\b(Trainer|Compressor)\b', 'drill', 'Distance Trainer'),
         (r'\bDst\b', 'drill', 'Distance Work'),
         (r'\bDrill\b', 'drill', 'Drill'),
-        (r'\bPar\s*3\b', 'practice', 'Par 3 Practice'),
-        # Course play
-        (r'\bSilvertip\b|\bShadow\s*Ridge\b|\bKapalua\b|\bWailaie\b|\bPlantation\b|\bSony\s*Open\b|\bNewport\b', 'sim_round', 'Course Play'),
+        (r'\bTowel\b', 'drill', 'Towel Drill'),
+        # "3/4 Speed Towel Drill", "75% Swing 50 Degree", "1/2 Swing"
+        (r'\b\d+/\d+\s*(speed|swing)\b', 'drill', 'Partial Swing Drill'),
+        (r'\b\d+%\s*swing\b', 'drill', 'Partial Swing Drill'),
+        (r'\bPath\s*Focus\b', 'drill', 'Path Focus Drill'),
+        (r'\bShoulders?\s*Right\b', 'drill', 'Alignment Drill'),
+        (r'\bTempo\b', 'drill', 'Tempo Drill'),
+        (r'\bForward\s*Impact\b', 'drill', 'Impact Drill'),
+
+        # ── Bag mapping (full-bag distance calibration) ──
+        (r'\bBag\s*Mapping\b', 'bag_mapping', 'Bag Mapping'),
+
+        # ── Challenges ──
+        (r'\bChallenge\b', 'practice', 'Challenge'),
+
+        # ── Par 3 practice ──
+        (r'\bPar\s*3\b|\bPar3\b', 'practice', 'Par 3 Practice'),
+
+        # ── Course/round play ──
+        # Actual course names found in the portal data.
+        # These sessions contain shots from a simulated round on a real course.
+        (r'\bSilvertip\b', 'sim_round', 'Course Play'),
+        (r'\bShadow\s*Ridge\b', 'sim_round', 'Course Play'),
+        (r'\bKapalua\b', 'sim_round', 'Course Play'),
+        (r'\bWailaie\b', 'sim_round', 'Course Play'),
+        (r'\bPlantation\b', 'sim_round', 'Course Play'),
+        (r'\bSony\s*Open\b', 'sim_round', 'Course Play'),
+        (r'\bNewport\b', 'sim_round', 'Course Play'),
+        (r'\bBroadmo(?:a|o)r\b', 'sim_round', 'Course Play'),
+        (r'\bCandlestone\b', 'sim_round', 'Course Play'),
+        (r'\bEstes\s*Park\b', 'sim_round', 'Course Play'),
+        (r'\bStreamsong\b', 'sim_round', 'Course Play'),
+        (r'\bTorrey\b', 'sim_round', 'Course Play'),
+        (r'\bScottsdale\b', 'sim_round', 'Course Play'),
+        (r'\bMagnolia\b', 'sim_round', 'Course Play'),
+
+        # ── Tourney/tournament ──
+        (r'\bTourney\b|\bTournament\b', 'sim_round', 'Tournament'),
     ]
 
-    # Club extraction patterns (look for club names embedded in context)
+    # Club extraction patterns (look for club names embedded in context strings)
+    # These patterns find club references inside compound session names like
+    # "Warmup 50 Degree", "8 Iron Dst Trainer", "9 Iron Magnolia", etc.
+    # The extracted club is then normalized via ClubNameNormalizer.
     CLUB_EXTRACTION_PATTERNS = [
-        # "Warmup PW", "Warmup 50 Degree"
-        (r'\b(PW|GW|AW|SW|LW)\b', None),  # Wedge abbreviations
-        (r'\b(\d{1,2})\s*(?:Iron|i)\b', '{0} Iron'),  # "8 Iron", "8i"
-        (r'\b(\d{1,2})\s*(?:deg(?:ree)?|\u00b0)', 'degree'),  # "50 degree", "50°"
-        (r'\bWedge\s*(\d{2})\b', 'degree'),  # "Wedge 50"
-        (r'\bWedge\s*(Pitching|Sand|Lob|Gap|Approach)\b', 'wedge_type'),  # "Wedge Pitching"
+        # Wedge abbreviations: "Warmup PW", "Warmup GW"
+        (r'\b(PW|GW|AW|SW|LW)\b', None),
+        # "8 Iron", "8i", "8 iron magnolia", "9 iron shoulders right"
+        (r'\b(\d{1,2})\s*(?:Iron|i)\b', '{0} Iron'),
+        # "Iron 8" (reversed format used in Uneekor session names)
+        (r'\bIron\s*(\d{1,2})\b', '{0} Iron'),
+        # "50 degree", "50°", "50 deg"
+        (r'\b(\d{1,2})\s*(?:deg(?:ree)?|\u00b0)', 'degree'),
+        # "Wedge 50", "Wedge 56" (Uneekor format)
+        (r'\bWedge\s*(\d{2})\b', 'degree'),
+        # "Wedge Pitching", "Wedge Sand" (reversed Uneekor format)
+        (r'\bWedge\s*(Pitching|Sand|Lob|Gap|Approach)\b', 'wedge_type'),
+        # Standalone "50" or "56" in warmup context → wedge loft degree
+        # Matches both "Warmup 50" (keyword before number) and "50 Warmup"
+        # (number before keyword). Common in session names like "50 Warmup",
+        # "Warmup 56", "Dst 50", etc.
+        (r'(?:warmup|dst|wmup|wm)\s+(\d{2})\b', 'degree'),
+        (r'\b(\d{2})\s+(?:warmup|dst|wmup|wm)\b', 'degree'),
+        # "Driver", "Putter" standalone or embedded
         (r'\b(Driver|Putter)\b', None),
-        (r'\b(\d)\s*(?:Wood|W)\b', '{0} Wood'),  # "3 Wood", "3W"
-        (r'\b(\d)\s*(?:Hybrid|H)\b', '{0} Hybrid'),  # "4 Hybrid", "4H"
-        # "Dst Compressor 8" or "Compressor 8" -> 8 Iron
+        # "3 Wood", "3W", "Wood 3"
+        (r'\b(\d)\s*(?:Wood|W)\b', '{0} Wood'),
+        (r'\bWood\s*(\d)\b', '{0} Wood'),
+        # "4 Hybrid", "4H", "Hybrid 4"
+        (r'\b(\d)\s*(?:Hybrid|H)\b', '{0} Hybrid'),
+        (r'\bHybrid\s*(\d)\b', '{0} Hybrid'),
+        # "Dst Compressor 8" or "Compressor 8" → 8 Iron
         (r'(?:Dst\s*)?Compressor\s*(\d)\b', '{0} Iron'),
+        # "8 Dst Warmup", "8 Dst Trainer" → 8 Iron (number before Dst)
+        (r'\b(\d)\s+(?:Dst|dst)\b', '{0} Iron'),
     ]
 
     # Wedge type to abbreviation

@@ -49,3 +49,7 @@ firebase-debug.log
 
 # Git worktrees
 .worktrees/
+
+# Data quality reports (regenerated on each run)
+data_quality_report.csv
+data_quality_summary.json

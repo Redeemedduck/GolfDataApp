@@ -4,6 +4,108 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-11: Data Quality Framework, Club Normalization, and Warmup Tagging
+
+### Overview
+Built a comprehensive data quality validation system spanning 12 check categories, 4 severity
+levels, SQLite infrastructure (table + views), Supabase migration SQL, and warmup shot tagging.
+Also significantly expanded club name normalization in `naming_conventions.py` to handle
+Uneekor system-generated formats, M-prefixed variants, iron+context compound names, and
+bare number shorthands.
+
+### New Feature: Data Quality Validation System
+- **`shot_quality_flags` table** (SQLite) — Stores 3,506 quality flags linking shot_id → category + severity + reason
+- **`shots_clean` view** — 1,920 shots (89.7%) with CRITICAL/HIGH flags excluded; safe for general analytics
+- **`shots_strict` view** — 726 shots (33.9%) with CRITICAL/HIGH/MEDIUM excluded; maximum purity for ML and club gapping
+- **`is_warmup` column** on `shots` table — 468 warmup shots tagged (INTEGER, 0 or 1) for dashboard toggle
+- **12 validation categories**: sentinel values, physics violations, smash factor bounds, total vs carry consistency, duplicate detection, club normalization, warmup detection, mishit detection, multi-club sessions, fatigue detection, extreme spin rates, launch angle outliers
+- **4 severity levels**: CRITICAL (exclude always), HIGH (exclude unless manually verified), MEDIUM (review first), LOW (informational)
+
+### New Files
+- **`sync_quality_flags.py`** — CLI script to push quality flags and is_warmup values from SQLite to Supabase. Supports `--dry-run`, `--flags-only`, `--warmup-only`.
+- **`supabase_quality_migration.sql`** — DDL migration for Supabase: adds `is_warmup` column, creates `shot_quality_flags` table with indexes and RLS, creates `shots_clean` and `shots_strict` views.
+- **`data_quality_report.csv`** — Full export of all 3,506 flags with shot metrics (generated, not tracked in git)
+- **`data_quality_summary.json`** — Machine-readable summary of flag counts by severity and category (generated, not tracked in git)
+
+### New Skill: golf-data-quality
+- **Location**: `.claude/skills/golf-data-quality/`
+- **SKILL.md** — Trigger definitions, usage instructions, severity level guide, threshold customization
+- **references/validation_rules.md** — Complete physics-based rule definitions for all 12 categories with per-club-type threshold tables
+- **scripts/validate_golf_data.py** (961 lines) — Main validation engine with configurable thresholds, CSV/JSON output, console summary
+
+### Club Normalization Improvements (automation/naming_conventions.py)
+- **Uneekor system-generated format**: `IRON7 | MEDIUM`, `DRIVER | PREMIUM`, `Wedge 56 | Premium` → canonical names
+- **M-prefixed variants**: `M 7` → 7 Iron, `M 56` → SW, `M 7 Iron` → 7 Iron
+- **Iron+context compound names**: `9 Iron Magnolia` → 9 Iron, `7 Iron Shoulders Right` → 7 Iron, `8 Iron Magnolia` → 8 Iron
+- **Reversed iron format**: `Iron 7` → 7 Iron (in addition to `7 Iron`)
+- **Bare single-digit numbers**: `7` → 7 Iron, `9` → 9 Iron, `6` → 6 Iron
+- **Bare degree numbers**: `56` → SW, `50` → GW (via DEGREE_TO_WEDGE mapping)
+- **Reversed warmup+number**: `50 Warmup` → GW warmup context (SessionContextParser)
+- **Reversed word-order wood/hybrid**: `Wood 3`, `Hybrid 4` → canonical forms
+- **Driving iron**: `3 Driving Iron` → 3 Wood (by convention)
+- **Extended comments**: All pattern groups now have section headers and rationale explaining why each pattern exists
+
+### Database Changes (golf_stats.db)
+- Added `is_warmup INTEGER DEFAULT 0` column to `shots` table
+- Created `shot_quality_flags` table (3,506 rows) with indexes on shot_id, severity, category, session_id
+- Created `shots_clean` SQL view
+- Created `shots_strict` SQL view
+
+### Data Quality Results (as of 2026-02-11)
+| Metric | Value |
+|--------|-------|
+| Total shots | 2,141 |
+| Total flags | 3,506 across 1,971 unique shots |
+| CRITICAL flags | 2 |
+| HIGH flags | 237 |
+| MEDIUM flags | 1,464 |
+| LOW flags | 1,803 |
+| Zero-flag ("clean") shots | 170 (7.9%) |
+| shots_clean view | 1,920 (89.7%) |
+| shots_strict view | 726 (33.9%) |
+| Analytics-ready (clean + no warmup) | 1,468 (68.6%) |
+
+### Key Findings
+- **Single player confirmed** — Driver club_speed consistently 107–115 mph across all 46 sessions, confirming all data is Duck's
+- **1 CRITICAL shot** — Session "Sgt Rd1" had a carry of 109,359.9 yards (sentinel leak); excluded by `shots_clean`
+- **False-positive duplicate detection** — 2 flagged "duplicates" were actually different shots that coincidentally shared carry + ball_speed values (20+ other columns differed); flags removed
+- **Club normalization coverage** — 944 shots (44.1%) resolve to a specific club via normalizer or context parser; 1,172 shots (54.7%) have session type identified but club is ambiguous (sim rounds, warmups); only 25 shots (1.2%) fully unresolved
+
+### Supabase Sync Status
+- SQLite and Supabase both have 2,141 shots (verified in sync)
+- `shot_quality_flags` table does NOT yet exist in Supabase — run `supabase_quality_migration.sql` in SQL Editor first
+- `is_warmup` column does NOT yet exist in Supabase — same migration adds it
+- After migration: run `python sync_quality_flags.py` to push flags and warmup tags
+
+### Usage
+```bash
+# Run the data quality validator
+python3 .claude/skills/golf-data-quality/scripts/validate_golf_data.py
+
+# Sync quality flags to Supabase (after running migration SQL)
+python sync_quality_flags.py --dry-run    # Preview
+python sync_quality_flags.py              # Full sync
+
+# Query clean data in SQLite
+sqlite3 golf_stats.db "SELECT club, AVG(carry) FROM shots_clean WHERE is_warmup = 0 GROUP BY club"
+```
+
+### Files Modified
+- `automation/naming_conventions.py` — Major expansion of CLUB_PATTERNS, CLUB_EXTRACTION_PATTERNS, added section headers and comments
+- `golf_stats.db` — New column, table, and views (see Database Changes above)
+- `CHANGELOG.md` — This entry
+- `CLAUDE.md` — Updated schema table, added data quality section, new commands
+- `supabase_schema.sql` — Added shot_quality_flags table, shots_clean/shots_strict views, is_warmup column
+
+### Files Created
+- `sync_quality_flags.py`
+- `supabase_quality_migration.sql`
+- `.claude/skills/golf-data-quality/SKILL.md`
+- `.claude/skills/golf-data-quality/references/validation_rules.md`
+- `.claude/skills/golf-data-quality/scripts/validate_golf_data.py`
+
+---
+
 ## 2026-02-03: Code Quality Fixes, Date Extraction, and Supabase Sync
 
 ### Security Fix (P1)
