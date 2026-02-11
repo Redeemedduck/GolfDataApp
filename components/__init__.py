@@ -20,6 +20,7 @@ from .progress_tracker import render_progress_tracker
 from .session_quality import render_session_quality
 from .prediction_interval import render_prediction_interval
 from .retraining_ui import render_retraining_ui
+from .model_health import render_model_health_dashboard
 
 __all__ = [
     'render_session_selector',
@@ -38,4 +39,5 @@ __all__ = [
     'render_session_quality',
     'render_prediction_interval',
     'render_retraining_ui',
+    'render_model_health_dashboard',
 ]
