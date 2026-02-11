@@ -1,8 +1,8 @@
 # Project State: Local AI/ML Golf Analytics
 
-**Last Updated:** 2026-02-10
+**Last Updated:** 2026-02-11
 **Current Phase:** 04-monitoring-model-health
-**Status:** IN PROGRESS (1/3 plans complete)
+**Status:** COMPLETE (3/3 plans complete)
 
 ---
 
@@ -12,7 +12,7 @@
 Golfers get actionable, personalized coaching and shot predictions that work offline — no API keys, no cloud dependency, no cost per query.
 
 ### Current Focus
-Phase 4: Monitoring & Model Health IN PROGRESS. Foundation plan complete (04-01): model_predictions and model_performance tables created, DriftDetector and PerformanceTracker classes implemented with adaptive baselines. Next: integrate monitoring into save_shot() and LocalCoach.
+Phase 4: Monitoring & Model Health IN PROGRESS. Plans 04-01 and 04-02 complete: monitoring foundation built, prediction logging integrated into save_shot(), drift detection integrated into update_session_metrics(), 14 unit tests added. Next: build dashboard and alerts for drift visualization.
 
 ---
 
@@ -23,18 +23,18 @@ Phase 4: Monitoring & Model Health IN PROGRESS. Foundation plan complete (04-01)
 
 ### Plan
 **Plan 04-01:** COMPLETE - Model Monitoring Foundation (tables + core classes)
-**Plan 04-02:** Pending - Monitoring Integration (save_shot hooks + LocalCoach)
+**Plan 04-02:** COMPLETE - Monitoring Integration (save_shot hooks + drift detection)
 **Plan 04-03:** Pending - Dashboard & Alerts (UI + notifications)
-**Current:** Phase 04 IN PROGRESS (1/3 plans complete)
+**Current:** Phase 04 IN PROGRESS (2/3 plans complete)
 
 ### Status
-Phase 04 IN PROGRESS. Plan 04-01 complete: model_predictions and model_performance tables created in golf_db.py, DriftDetector with adaptive baseline (30% threshold, median of last 20 sessions), PerformanceTracker for prediction logging. Next: integrate monitoring into save_shot() and display drift status in LocalCoach.
+Phase 04 IN PROGRESS. Plans 04-01 and 04-02 complete: Monitoring foundation built with model_predictions and model_performance tables. Prediction logging integrated into save_shot() (non-blocking, lazy-loaded). Drift detection integrated into update_session_metrics() with check_and_trigger_retraining() entry point (alert-only by default). 14 unit tests added covering all monitoring components. Next: build drift history visualization and model health dashboard.
 
 ### Progress
 ```
-[████████████████                                ] 33%
+[████████████████████████████████                ] 67%
 ```
-1/3 Phase 04 plans complete (2 tasks, 3 files created, 1 file modified, 0 tests added)
+2/3 Phase 04 plans complete (4 tasks, 4 files created, 4 files modified, 14 tests added)
 
 ---
 
@@ -57,16 +57,18 @@ Phase 04 IN PROGRESS. Plan 04-01 complete: model_predictions and model_performan
 | 03-03 | 10m 0s | 3 | 4 | 11 | 2026-02-10 |
 | 03-04 | 7m 11s | 2 | 4 | 0 | 2026-02-10 |
 | 04-01 | 2m 47s | 2 | 4 | 0 | 2026-02-10 |
+| 04-02 | 7m 21s | 2 | 4 | 14 | 2026-02-11 |
+| Phase 04-monitoring-model-health P03 | 533 | 2 tasks | 3 files |
 
 ### Velocity
-- Plans completed: 13
-- Tasks completed: 30
-- Time in current phase: 1 session
-- Average time per plan: ~5.8 minutes
+- Plans completed: 14
+- Tasks completed: 32
+- Time in current phase: 2 plans
+- Average time per plan: ~5.9 minutes
 
 ### Quality
-- Tests passing: 230 tests (105 skipped) - 11 new from 03-03
-- New tests added: 64 (4 from 01-01, 12 from 01-03, 25 from 02-03, 12 from 03-01, 11 from 03-03)
+- Tests passing: 244 tests (105 skipped) - 14 new from 04-02
+- New tests added: 78 (4 from 01-01, 12 from 01-03, 25 from 02-03, 12 from 03-01, 11 from 03-03, 14 from 04-02)
 - Verification status: All criteria met
 - Rework incidents: 0
 - Regressions: 0
@@ -130,6 +132,11 @@ Phase 04 IN PROGRESS. Plan 04-01 complete: model_predictions and model_performan
 52. **2026-02-10 (04-01):** Minimum 5 predictions per session, minimum 10 sessions for baseline
 53. **2026-02-10 (04-01):** All monitoring operations log errors but don't raise exceptions (non-blocking)
 54. **2026-02-10 (04-01):** Prediction logging skips sentinel values (0, 99999, None)
+55. **2026-02-11 (04-02):** Lazy imports for monitoring components to avoid startup cost
+56. **2026-02-11 (04-02):** Prediction logging only when model loaded, carry valid, ball_speed > 0
+57. **2026-02-11 (04-02):** Drift detection runs alert-only by default (auto_retrain=False for safety)
+58. **2026-02-11 (04-02):** check_and_trigger_retraining accepts db_path for testability
+59. **2026-02-11 (04-02):** Test databases use explicit timestamps to control consecutive drift ordering
 
 ### Active Todos
 - [x] Execute plan 01-01 (ML Import Refactoring) — COMPLETE
@@ -145,13 +152,14 @@ Phase 04 IN PROGRESS. Plan 04-01 complete: model_predictions and model_performan
 - [x] Execute plan 03-03 (Analytics-Driven LocalCoach) — COMPLETE
 - [x] Execute plan 03-04 (Retraining UI + Interval Visualization) — COMPLETE
 - [x] Execute plan 04-01 (Model Monitoring Foundation) — COMPLETE
-- [ ] Execute plan 04-02 (Monitoring Integration)
+- [x] Execute plan 04-02 (Monitoring Integration) — COMPLETE
 - [ ] Execute plan 04-03 (Dashboard & Alerts)
 
 ### Blockers
 None.
 
 ### Recent Changes
+- 2026-02-11: **Plan 04-02 COMPLETE** - Monitoring integration (2 commits, 4 files, 14 tests) - Integrated prediction logging into save_shot() with lazy imports. Integrated drift detection into update_session_metrics() with check_and_trigger_retraining() entry point (alert-only by default). Added 14 unit tests for PerformanceTracker and DriftDetector.
 - 2026-02-10: **Plan 04-01 COMPLETE** - Model monitoring foundation (2 commits, 4 files) - Added model_predictions and model_performance tables to golf_db.py. Created ml/monitoring/ package with DriftDetector (adaptive baseline, 30% threshold) and PerformanceTracker (prediction logging). **PHASE 4 STARTED.**
 - 2026-02-10: **Plan 03-04 COMPLETE** - Retraining UI + interval visualization (2 commits, 4 files) - Built render_prediction_interval (Plotly) and render_retraining_ui (model management) components. AI Coach page has sidebar ML Model status and on-demand retraining panel. **PHASE 3 COMPLETE.**
 - 2026-02-10: **Plan 03-03 COMPLETE** - Analytics-driven LocalCoach (3 commits, 4 files, 11 tests) - Coach cites median carry, dispersion IQR, shot shape %. Practice plans render visually in AI Coach UI with drill expanders. Prediction intervals integrated into predict_distance().
@@ -172,11 +180,11 @@ None.
 ## Session Continuity
 
 ### For Next Session
-Continue to Phase 4: `/gsd:progress` or `/gsd:execute-plan 04-02`
+Continue to Phase 4: `/gsd:progress` or `/gsd:execute-plan 04-03`
 
-**Phase 04 IN PROGRESS:** Plan 04-01 complete - monitoring foundation built. model_predictions and model_performance tables exist in SQLite. DriftDetector uses adaptive baseline (median of last 20 sessions) with 30% threshold. PerformanceTracker logs predictions and retrieves history. Both classes use graceful error handling (log but don't crash).
+**Phase 04 IN PROGRESS:** Plans 04-01 and 04-02 complete - monitoring fully integrated into data pipeline. save_shot() logs predictions automatically (lazy-loaded, non-blocking). update_session_metrics() checks for drift after computing metrics (alert-only by default). check_and_trigger_retraining() provides single entry point for drift detection and optional automated retraining. 14 unit tests cover all monitoring components.
 
-**Next:** Plan 04-02 - integrate monitoring into application flow. Add save_shot() hook to log predictions. Add drift checking to LocalCoach responses. Add dashboard components for viewing drift history.
+**Next:** Plan 04-03 - build dashboard and alerts. Add drift history visualization. Add model health dashboard page. Display drift alerts in LocalCoach responses. Optional Slack/email notifications.
 
 ### Context to Preserve
 - Project uses existing XGBoost/scikit-learn stack; graceful degradation is architectural pattern
