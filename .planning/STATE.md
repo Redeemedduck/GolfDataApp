@@ -1,8 +1,8 @@
 # Project State: Local AI/ML Golf Analytics
 
 **Last Updated:** 2026-02-10
-**Current Phase:** 03-ml-enhancement-coaching
-**Status:** COMPLETE (4/4 plans complete)
+**Current Phase:** 04-monitoring-model-health
+**Status:** IN PROGRESS (1/3 plans complete)
 
 ---
 
@@ -12,30 +12,29 @@
 Golfers get actionable, personalized coaching and shot predictions that work offline — no API keys, no cloud dependency, no cost per query.
 
 ### Current Focus
-Phase 3: ML Enhancement & Coaching COMPLETE. All 4 plans executed: MAPIE intervals, practice planner, analytics-driven coach, retraining UI. Users can train models on-demand from UI, see prediction intervals with Plotly visualization, get personalized practice plans. Ready for Phase 4: Integration & Verification.
+Phase 4: Monitoring & Model Health IN PROGRESS. Foundation plan complete (04-01): model_predictions and model_performance tables created, DriftDetector and PerformanceTracker classes implemented with adaptive baselines. Next: integrate monitoring into save_shot() and LocalCoach.
 
 ---
 
 ## Current Position
 
 ### Phase
-**Phase 03:** ML Enhancement & Coaching
+**Phase 04:** Monitoring & Model Health
 
 ### Plan
-**Plan 03-01:** COMPLETE - MAPIE Prediction Intervals & XGBoost Tuning
-**Plan 03-02:** COMPLETE - Practice Planner + Weakness Mapper
-**Plan 03-03:** COMPLETE - Analytics-Driven LocalCoach
-**Plan 03-04:** COMPLETE - Retraining UI + Interval Visualization
-**Current:** Phase 03 COMPLETE (4/4 plans complete)
+**Plan 04-01:** COMPLETE - Model Monitoring Foundation (tables + core classes)
+**Plan 04-02:** Pending - Monitoring Integration (save_shot hooks + LocalCoach)
+**Plan 04-03:** Pending - Dashboard & Alerts (UI + notifications)
+**Current:** Phase 04 IN PROGRESS (1/3 plans complete)
 
 ### Status
-Phase 03 COMPLETE. All 4 ML enhancement plans executed successfully. DistancePredictor has MAPIE intervals (95% confidence). PracticePlanner generates personalized drills. LocalCoach cites analytics (median carry, dispersion IQR, shot shape %). AI Coach page has retraining UI with model management and interval visualization. Ready for Phase 4: Integration & Verification.
+Phase 04 IN PROGRESS. Plan 04-01 complete: model_predictions and model_performance tables created in golf_db.py, DriftDetector with adaptive baseline (30% threshold, median of last 20 sessions), PerformanceTracker for prediction logging. Next: integrate monitoring into save_shot() and display drift status in LocalCoach.
 
 ### Progress
 ```
-[████████████████████████████████████████████████] 100%
+[████████████████                                ] 33%
 ```
-4/4 Phase 03 plans complete (9 tasks, 6 files created, 9 files modified, 47 tests added)
+1/3 Phase 04 plans complete (2 tasks, 3 files created, 1 file modified, 0 tests added)
 
 ---
 
@@ -57,12 +56,13 @@ Phase 03 COMPLETE. All 4 ML enhancement plans executed successfully. DistancePre
 | 03-02 | 5m 0s | 2 | 4 | 24 | 2026-02-10 |
 | 03-03 | 10m 0s | 3 | 4 | 11 | 2026-02-10 |
 | 03-04 | 7m 11s | 2 | 4 | 0 | 2026-02-10 |
+| 04-01 | 2m 47s | 2 | 4 | 0 | 2026-02-10 |
 
 ### Velocity
-- Plans completed: 12
-- Tasks completed: 28
+- Plans completed: 13
+- Tasks completed: 30
 - Time in current phase: 1 session
-- Average time per plan: ~6.0 minutes
+- Average time per plan: ~5.8 minutes
 
 ### Quality
 - Tests passing: 230 tests (105 skipped) - 11 new from 03-03
@@ -124,6 +124,12 @@ Phase 03 COMPLETE. All 4 ML enhancement plans executed successfully. DistancePre
 46. **2026-02-10 (03-03):** Practice plan detection via response['data']['plan'] key in AI Coach page
 47. **2026-02-10 (03-03):** Visual drill rendering uses st.expander for each drill (name, duration, reps, instructions)
 48. **2026-02-10 (03-03):** Prediction intervals cite confidence level in user-friendly message format
+49. **2026-02-10 (04-01):** Use 30% adaptive threshold (not fixed yard threshold) to reduce false alarms
+50. **2026-02-10 (04-01):** Use median baseline (not mean) for robustness to outlier sessions
+51. **2026-02-10 (04-01):** Require 3 consecutive drift sessions before 'urgent retrain' recommendation
+52. **2026-02-10 (04-01):** Minimum 5 predictions per session, minimum 10 sessions for baseline
+53. **2026-02-10 (04-01):** All monitoring operations log errors but don't raise exceptions (non-blocking)
+54. **2026-02-10 (04-01):** Prediction logging skips sentinel values (0, 99999, None)
 
 ### Active Todos
 - [x] Execute plan 01-01 (ML Import Refactoring) — COMPLETE
@@ -138,12 +144,15 @@ Phase 03 COMPLETE. All 4 ML enhancement plans executed successfully. DistancePre
 - [x] Execute plan 03-02 (Practice Planner + Weakness Mapper) — COMPLETE
 - [x] Execute plan 03-03 (Analytics-Driven LocalCoach) — COMPLETE
 - [x] Execute plan 03-04 (Retraining UI + Interval Visualization) — COMPLETE
-- [ ] Continue to Phase 04: Integration & Verification
+- [x] Execute plan 04-01 (Model Monitoring Foundation) — COMPLETE
+- [ ] Execute plan 04-02 (Monitoring Integration)
+- [ ] Execute plan 04-03 (Dashboard & Alerts)
 
 ### Blockers
 None.
 
 ### Recent Changes
+- 2026-02-10: **Plan 04-01 COMPLETE** - Model monitoring foundation (2 commits, 4 files) - Added model_predictions and model_performance tables to golf_db.py. Created ml/monitoring/ package with DriftDetector (adaptive baseline, 30% threshold) and PerformanceTracker (prediction logging). **PHASE 4 STARTED.**
 - 2026-02-10: **Plan 03-04 COMPLETE** - Retraining UI + interval visualization (2 commits, 4 files) - Built render_prediction_interval (Plotly) and render_retraining_ui (model management) components. AI Coach page has sidebar ML Model status and on-demand retraining panel. **PHASE 3 COMPLETE.**
 - 2026-02-10: **Plan 03-03 COMPLETE** - Analytics-driven LocalCoach (3 commits, 4 files, 11 tests) - Coach cites median carry, dispersion IQR, shot shape %. Practice plans render visually in AI Coach UI with drill expanders. Prediction intervals integrated into predict_distance().
 - 2026-02-10: **Plan 03-02 COMPLETE** - Practice planner + weakness mapper (2 commits, 4 files, 24 tests) - Analytics-driven practice plans with 8 weakness types and 10+ drills
@@ -163,11 +172,11 @@ None.
 ## Session Continuity
 
 ### For Next Session
-Continue to Phase 4: `/gsd:progress`
+Continue to Phase 4: `/gsd:progress` or `/gsd:execute-plan 04-02`
 
-**Phase 03 COMPLETE:** All 4 ML enhancement plans executed successfully. DistancePredictor has MAPIE prediction intervals (95% confidence). PracticePlanner generates personalized drills based on weakness detection. LocalCoach cites analytics (median carry, dispersion IQR, shot shape %). AI Coach page has retraining UI with sidebar model status, on-demand management panel, and Plotly interval visualization.
+**Phase 04 IN PROGRESS:** Plan 04-01 complete - monitoring foundation built. model_predictions and model_performance tables exist in SQLite. DriftDetector uses adaptive baseline (median of last 20 sessions) with 30% threshold. PerformanceTracker logs predictions and retrieves history. Both classes use graceful error handling (log but don't crash).
 
-Ready for Phase 04: Integration & Verification.
+**Next:** Plan 04-02 - integrate monitoring into application flow. Add save_shot() hook to log predictions. Add drift checking to LocalCoach responses. Add dashboard components for viewing drift history.
 
 ### Context to Preserve
 - Project uses existing XGBoost/scikit-learn stack; graceful degradation is architectural pattern
