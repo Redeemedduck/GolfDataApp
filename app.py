@@ -26,6 +26,10 @@ def get_unique_sessions_cached(read_mode="auto"):
 def get_session_data_cached(session_id=None, read_mode="auto"):
     return golf_db.get_session_data(session_id, read_mode=read_mode)
 
+@st.cache_data(show_spinner=False)
+def get_filtered_shots_cached(quality='clean', exclude_warmup=True, read_mode="auto"):
+    return golf_db.get_filtered_shots(quality=quality, exclude_warmup=exclude_warmup, read_mode=read_mode)
+
 # Main landing page
 st.title("⛳ My Golf Data Lab")
 st.subheader("High-Altitude Golf Analysis Platform")
@@ -42,17 +46,19 @@ col1, col2, col3 = st.columns(3)
 
 read_mode = st.session_state.get("read_mode", "auto")
 all_shots = get_session_data_cached(read_mode=read_mode)
+filtered_shots = get_filtered_shots_cached(read_mode=read_mode)
 all_sessions = get_unique_sessions_cached(read_mode=read_mode)
 
 with col1:
     st.metric("Total Sessions", len(all_sessions) if all_sessions else 0)
 
 with col2:
-    st.metric("Total Shots", len(all_shots))
+    st.metric("Analytics-Ready Shots", len(filtered_shots),
+              help=f"{len(all_shots)} total — excludes warmup & flagged shots")
 
 with col3:
-    if 'club' in all_shots.columns:
-        unique_clubs = all_shots['club'].nunique()
+    if 'club' in filtered_shots.columns:
+        unique_clubs = filtered_shots['club'].nunique()
         st.metric("Unique Clubs", unique_clubs)
     else:
         st.metric("Unique Clubs", 0)

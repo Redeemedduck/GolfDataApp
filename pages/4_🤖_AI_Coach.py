@@ -53,6 +53,11 @@ def get_sessions_cached(read_mode="auto"):
 def get_session_data_cached(session_id=None, read_mode="auto"):
     return golf_db.get_session_data(session_id, read_mode=read_mode)
 
+@st.cache_data(show_spinner=False)
+def get_filtered_shots_cached(session_id=None, quality='clean', exclude_warmup=True, read_mode="auto"):
+    return golf_db.get_filtered_shots(session_id=session_id, quality=quality,
+                                       exclude_warmup=exclude_warmup, read_mode=read_mode)
+
 # Sidebar configuration
 with st.sidebar:
     st.header("⚙️ Coach Settings")
@@ -84,6 +89,19 @@ with st.sidebar:
         st.caption(f"Supabase shots: {counts['supabase']}")
         if sync_status["drift_exceeds"]:
             st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
+
+    st.divider()
+    st.header("🔬 Data Quality")
+    exclude_warmup = st.checkbox("Exclude warmup shots", value=True, key="coach_exclude_warmup")
+    quality_labels = {"Clean": "clean", "Strict": "strict", "None (raw)": "none"}
+    quality_selection = st.selectbox(
+        "Quality filter",
+        list(quality_labels.keys()),
+        index=0,
+        help="Clean: removes CRITICAL/HIGH flags. Strict: also removes MEDIUM. None: all shots.",
+        key="coach_quality_filter"
+    )
+    quality_level = quality_labels[quality_selection]
 
     st.header("🧠 AI Provider")
     providers = list_providers()
@@ -162,9 +180,11 @@ with st.sidebar:
     )
 
     focus_df = (
-        get_session_data_cached(focus_session_id, read_mode=st.session_state.read_mode)
+        get_filtered_shots_cached(session_id=focus_session_id, quality=quality_level,
+                                  exclude_warmup=exclude_warmup, read_mode=st.session_state.read_mode)
         if focus_session_id
-        else get_all_shots_cached(read_mode=st.session_state.read_mode)
+        else get_filtered_shots_cached(quality=quality_level, exclude_warmup=exclude_warmup,
+                                       read_mode=st.session_state.read_mode)
     )
     club_options = sorted(focus_df['club'].dropna().unique().tolist()) if not focus_df.empty else []
     focus_club = st.selectbox(
@@ -190,9 +210,11 @@ with st.sidebar:
     # Show data stats
     st.divider()
     st.subheader("📊 Your Data")
-    df = get_all_shots_cached(read_mode=st.session_state.read_mode)
+    df = get_filtered_shots_cached(quality=quality_level, exclude_warmup=exclude_warmup,
+                                   read_mode=st.session_state.read_mode)
+    total_shots = golf_db.get_total_shot_count()
     if not df.empty:
-        st.metric("Total Shots", len(df))
+        st.metric("Analytics Shots", f"{len(df)} / {total_shots}")
         st.metric("Sessions", df['session_id'].nunique())
         st.metric("Clubs", df['club'].nunique())
     else:

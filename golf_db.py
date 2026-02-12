@@ -703,6 +703,113 @@ def get_all_shots(read_mode=None):
     """Get all shots from the local SQLite database, with Supabase fallback."""
     return get_session_data(read_mode=read_mode)
 
+
+# Quality filter mapping: level name -> SQL view/table name
+_QUALITY_SOURCES = {
+    'clean': 'shots_clean',
+    'strict': 'shots_strict',
+    'none': 'shots',
+}
+
+def get_filtered_shots(session_id=None, quality='clean', exclude_warmup=True, read_mode=None):
+    """Get shots filtered by data quality level and warmup status.
+
+    Args:
+        session_id: Optional session to filter to.
+        quality: Quality level - 'clean' (no CRITICAL/HIGH flags),
+                 'strict' (no CRITICAL/HIGH/MEDIUM), or 'none' (all shots).
+        exclude_warmup: If True, exclude shots where is_warmup = 1.
+        read_mode: Override for the global read mode.
+
+    Returns:
+        pd.DataFrame of filtered shots.
+    """
+    source = _QUALITY_SOURCES.get(quality, 'shots_clean')
+
+    mode = _normalize_read_mode(read_mode or READ_MODE)
+
+    # --- SQLite path ---
+    def fetch_from_sqlite():
+        try:
+            if not os.path.exists(SQLITE_DB_PATH):
+                return pd.DataFrame()
+            conn = sqlite3.connect(SQLITE_DB_PATH)
+            conditions = []
+            params = []
+            if session_id:
+                conditions.append("session_id = ?")
+                params.append(session_id)
+            if exclude_warmup:
+                conditions.append("is_warmup = 0")
+            where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+            query = f"SELECT * FROM {source}{where}"
+            local_df = pd.read_sql_query(query, conn, params=params)
+            conn.close()
+            return local_df
+        except Exception as e:
+            logger.warning(f"SQLite filtered read failed: {e}")
+            return pd.DataFrame()
+
+    # --- Supabase path ---
+    def fetch_from_supabase():
+        if not supabase:
+            return pd.DataFrame()
+        try:
+            query = supabase.table(source).select('*')
+            if session_id:
+                query = query.eq('session_id', session_id)
+            if exclude_warmup:
+                query = query.eq('is_warmup', 0)
+            all_rows = []
+            offset = 0
+            page_size = 1000
+            while True:
+                response = query.range(offset, offset + page_size - 1).execute()
+                data = response.data or []
+                if not data:
+                    break
+                all_rows.extend(data)
+                if len(data) < page_size:
+                    break
+                offset += page_size
+            if not all_rows:
+                return pd.DataFrame()
+            df = pd.DataFrame(all_rows)
+            if 'date_added' in df.columns:
+                df['date_added'] = pd.to_datetime(df['date_added'])
+            return df
+        except Exception as e:
+            logger.warning(f"Supabase filtered read failed: {e}")
+            return pd.DataFrame()
+
+    if mode == "supabase":
+        cloud_df = fetch_from_supabase()
+        return cloud_df if not cloud_df.empty else fetch_from_sqlite()
+    if mode == "sqlite":
+        return fetch_from_sqlite()
+
+    # auto mode
+    local_df = fetch_from_sqlite()
+    if not local_df.empty:
+        return local_df
+    if supabase:
+        return fetch_from_supabase()
+    return local_df
+
+
+def get_total_shot_count():
+    """Get total unfiltered shot count (for 'X of Y' display)."""
+    try:
+        if os.path.exists(SQLITE_DB_PATH):
+            conn = sqlite3.connect(SQLITE_DB_PATH)
+            count = pd.read_sql_query("SELECT COUNT(*) as cnt FROM shots", conn).iloc[0]['cnt']
+            conn.close()
+            return int(count)
+    except Exception:
+        pass
+    return 0
+
+
 def get_unique_sessions(read_mode=None):
     """Get unique sessions from local SQLite, optionally merged with Supabase."""
     local_df = pd.DataFrame()

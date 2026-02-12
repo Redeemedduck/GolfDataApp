@@ -42,6 +42,11 @@ def get_unique_sessions_cached(read_mode="auto"):
 def get_session_data_cached(session_id=None, read_mode="auto"):
     return golf_db.get_session_data(session_id, read_mode=read_mode)
 
+@st.cache_data(show_spinner=False)
+def get_filtered_shots_cached(session_id=None, quality='clean', exclude_warmup=True, read_mode="auto"):
+    return golf_db.get_filtered_shots(session_id=session_id, quality=quality,
+                                       exclude_warmup=exclude_warmup, read_mode=read_mode)
+
 # Sidebar: Session selector
 with st.sidebar:
     st.header("🔗 Navigation")
@@ -80,10 +85,24 @@ with st.sidebar:
         if sync_status["drift_exceeds"]:
             st.warning(f"⚠️ SQLite/Supabase drift: {sync_status['drift']} shots")
 
+    st.divider()
+    st.header("🔬 Data Quality")
+    exclude_warmup = st.checkbox("Exclude warmup shots", value=True, key="dash_exclude_warmup")
+    quality_labels = {"Clean": "clean", "Strict": "strict", "None (raw)": "none"}
+    quality_selection = st.selectbox(
+        "Quality filter",
+        list(quality_labels.keys()),
+        index=0,
+        help="Clean: removes CRITICAL/HIGH flags. Strict: also removes MEDIUM. None: all shots.",
+        key="dash_quality_filter"
+    )
+    quality_level = quality_labels[quality_selection]
+
     read_mode = st.session_state.get("read_mode", "auto")
     selected_session_id, df, selected_clubs = render_session_selector(
         lambda: get_unique_sessions_cached(read_mode=read_mode),
-        lambda session_id: get_session_data_cached(session_id, read_mode=read_mode)
+        lambda sid: get_filtered_shots_cached(session_id=sid, quality=quality_level,
+                                              exclude_warmup=exclude_warmup, read_mode=read_mode)
     )
 
 # Stop if no data
@@ -96,10 +115,11 @@ if df.empty:
 st.title("⛳ My Golf Data Lab - Advanced Analytics")
 st.subheader(f"Session: {selected_session_id}")
 
-st.markdown("""
-**Phase 3 Enhanced**: Professional-grade visualizations including impact heatmaps, performance trends,
-multi-metric radar charts, and comprehensive export options.
-""")
+total_shots = golf_db.get_total_shot_count()
+filter_desc = f"quality={quality_selection.lower()}"
+if exclude_warmup:
+    filter_desc += ", no warmup"
+st.caption(f"Showing {len(df)} of {total_shots} total shots ({filter_desc})")
 
 st.divider()
 
@@ -280,7 +300,8 @@ with tab3:
         # Prepare session data for trend analysis
         session_trends = []
         for session in all_sessions:
-            session_data = get_session_data_cached(session['session_id'], read_mode=read_mode)
+            session_data = get_filtered_shots_cached(session_id=session['session_id'], quality=quality_level,
+                                                     exclude_warmup=exclude_warmup, read_mode=read_mode)
 
             if not session_data.empty and selected_metric in session_data.columns:
                 avg_value = session_data[selected_metric].mean()
@@ -303,7 +324,8 @@ with tab3:
         st.subheader("Club-Specific Trends")
 
         # Get all unique clubs across all sessions
-        all_shots = get_session_data_cached(read_mode=read_mode)
+        all_shots = get_filtered_shots_cached(quality=quality_level, exclude_warmup=exclude_warmup,
+                                              read_mode=read_mode)
         if 'club' in all_shots.columns:
             all_clubs = all_shots['club'].unique().tolist()
 
@@ -316,7 +338,8 @@ with tab3:
             # Get trends for selected club only
             club_trends = []
             for session in all_sessions:
-                session_data = get_session_data_cached(session['session_id'], read_mode=read_mode)
+                session_data = get_filtered_shots_cached(session_id=session['session_id'], quality=quality_level,
+                                                         exclude_warmup=exclude_warmup, read_mode=read_mode)
                 club_data = session_data[session_data['club'] == selected_club]
 
                 if not club_data.empty and selected_metric in club_data.columns:
@@ -335,7 +358,8 @@ with tab3:
 
         st.divider()
         st.subheader("Statistical Progress Analysis")
-        all_shots_for_progress = get_session_data_cached(read_mode=read_mode)
+        all_shots_for_progress = get_filtered_shots_cached(quality=quality_level, exclude_warmup=exclude_warmup,
+                                                           read_mode=read_mode)
         if not all_shots_for_progress.empty:
             progress_metric = st.selectbox(
                 "Track Metric",
@@ -527,7 +551,8 @@ with tab6:
         st.caption("**Export All Sessions**")
         st.markdown("Download your complete golf data history across all sessions.")
 
-        all_shots = golf_db.get_session_data()
+        all_shots = get_filtered_shots_cached(quality=quality_level, exclude_warmup=exclude_warmup,
+                                              read_mode=read_mode)
 
         if not all_shots.empty:
             from components.export_tools import export_to_csv
