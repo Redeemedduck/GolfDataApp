@@ -4,6 +4,37 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-11: Wire Data Quality Filtering into Streamlit App
+
+### Added
+- **`golf_db.get_filtered_shots()`** — Quality-aware read function that queries `shots_clean`, `shots_strict`, or raw `shots` view with optional `is_warmup = 0` filtering. Supports both SQLite and Supabase paths with pagination.
+- **`golf_db.get_total_shot_count()`** — Returns unfiltered shot count for "X of Y" display.
+- **Dashboard sidebar controls** — "Exclude warmup shots" checkbox (default: on) and quality filter selectbox (Clean/Strict/None). All tabs use filtered data.
+- **AI Coach sidebar controls** — Same quality filter toggles. Sidebar stats show "Analytics Shots: 1468 / 2141".
+- **Landing page** — "Analytics-Ready Shots" metric replaces "Total Shots", with tooltip showing total.
+- **Gitignore cleanup** — Added rules for `.fuse_hidden*`, `.playwright-mcp/`, `screenshots/`, `models/`, `.mcp.json`, generated reports. Eliminates 85 untracked files.
+
+### Key Numbers
+| Filter | Shot Count |
+|--------|-----------|
+| Raw (all shots) | 2,141 |
+| Clean + no warmup (default) | 1,468 |
+| Clean + with warmup | 1,920 |
+| Strict + no warmup | 726 |
+
+### Files Modified
+- `golf_db.py` — Added `get_filtered_shots()`, `get_total_shot_count()`, `_QUALITY_SOURCES` mapping
+- `app.py` — Landing page uses filtered stats
+- `pages/2_📊_Dashboard.py` — Sidebar toggles, all data paths use `get_filtered_shots_cached()`
+- `pages/4_🤖_AI_Coach.py` — Same sidebar toggles, filtered data for focus session and stats
+- `.gitignore` — Added 7 new ignore rules
+
+### Not Modified (intentional)
+- `pages/3_🗄️_Database_Manager.py` — Needs full visibility for CRUD
+- `components/` — Stateless; receive DataFrames, don't fetch
+
+---
+
 ## 2026-02-11: Data Quality Framework, Club Normalization, and Warmup Tagging
 
 ### Overview

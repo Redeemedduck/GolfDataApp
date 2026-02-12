@@ -103,6 +103,26 @@ Read modes (`get_read_mode()`/`set_read_mode()`): `"auto"` (SQLite first, Supaba
 
 SQLite uses **WAL mode** for concurrent reads/writes. Schema migrations in `init_db()` use `PRAGMA table_info` to detect and add missing columns dynamically.
 
+### Data Quality Filtering
+
+`get_filtered_shots()` is the primary read function for analytics pages. It queries SQL views based on quality level and optionally excludes warmup shots:
+
+```python
+# Default: clean data, no warmup (1,468 of 2,141 shots)
+df = golf_db.get_filtered_shots(quality='clean', exclude_warmup=True)
+
+# Strict: also removes MEDIUM flags (726 shots)
+df = golf_db.get_filtered_shots(quality='strict', exclude_warmup=True)
+
+# Raw: all shots, no filtering
+df = golf_db.get_filtered_shots(quality='none', exclude_warmup=False)
+
+# Per-session
+df = golf_db.get_filtered_shots(session_id='abc123', quality='clean')
+```
+
+Dashboard and AI Coach pages expose sidebar toggles for quality level and warmup exclusion. Database Manager intentionally uses unfiltered `get_session_data()` for full CRUD visibility.
+
 ### AI Provider System
 
 Providers self-register via `@register_provider` decorator in `services/ai/registry.py`. Each provider defines `PROVIDER_ID` and `DISPLAY_NAME` class attributes. Providers are auto-imported when `services/ai/providers/` is loaded.
