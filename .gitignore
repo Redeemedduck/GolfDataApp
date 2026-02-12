@@ -41,8 +41,8 @@ debug_page_source.html
 *.db-shm
 *.db-wal
 
-# Trained ML models (too large for git)
-/models/trained_*.pkl
+# Trained ML models (binary, regenerated via ml.train_models)
+models/
 
 # Firebase debug
 firebase-debug.log
@@ -53,3 +53,23 @@ firebase-debug.log
 # Data quality reports (regenerated on each run)
 data_quality_report.csv
 data_quality_summary.json
+
+# FUSE filesystem artifacts
+.fuse_hidden*
+
+# MCP local config and screenshots
+.mcp.json
+.playwright-mcp/
+
+# Local screenshots
+screenshots/
+
+# Generated reports
+golf_dashboard.html
+golf_data_profile.pdf
+
+# Scratch notes
+portal_exploration_notes.md
+
+# Agent state (regenerated)
+.planning/agent-history.json
