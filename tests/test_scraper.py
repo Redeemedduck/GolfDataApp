@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -42,6 +43,11 @@ class TestScraper(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
+
+    def test_build_session_id_prefers_date(self):
+        session_id = golf_scraper.build_session_id('123', datetime(2026, 2, 1))
+        self.assertEqual(session_id, '2026-02-01')
+
     @mock.patch("golf_scraper.request_with_retries")
     def test_run_scraper_imports_shot(self, mock_request):
         sessions_data = [
@@ -65,10 +71,11 @@ class TestScraper(unittest.TestCase):
         result = golf_scraper.run_scraper(
             "https://myuneekor.com/report?id=123&key=abc",
             lambda _: None,
+            session_date=datetime(2026, 2, 2),
         )
         self.assertEqual(result.get('status'), 'success')
 
-        df = golf_db.get_session_data("123")
+        df = golf_db.get_session_data("2026-02-02")
         self.assertEqual(len(df), 1)
 
 
