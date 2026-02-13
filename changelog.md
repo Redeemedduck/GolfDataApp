@@ -4,6 +4,37 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-13: Session Classification Engine & Bug Fixes
+
+### New Feature: Session Classification Engine
+- **`automation/naming_conventions.py`**: Added `SessionClassifier` with `ClassificationResult` dataclass — classifies sessions into 5 categories: `practice`, `sim_round`, `drill`, `warmup`, `fitting`
+- Uses 7 weighted scoring factors: club diversity, shot volume, club type mix, iron sequence detection, wedge-only, single club + high volume, low club count + repetition
+- Confidence scores (0.0–1.0) with signal metadata for each classification
+- **`golf_db.py`**: Added `classify_all_sessions()` — batch classifies all sessions and stores results in `session_category` column on `shots` table and `session_stats` table
+- **`golf_db.py`**: Added `get_shots_by_category()` — query shots filtered or excluded by category
+
+### Enhanced Club Normalization
+- **`automation/naming_conventions.py`**: Added ~30 new patterns to `ClubNameNormalizer` for simulator-specific club names (e.g., "PW_47" → "Pitching Wedge", "5H" → "5 Hybrid")
+
+### Enhanced Local Coach
+- **`local_coach.py`**: Added `session_breakdown` intent — responds to queries about session types, round breakdowns, and category distribution
+- **`local_coach.py`**: Added `_handle_session_breakdown()` with category-level aggregation and human-readable summaries
+
+### Bug Fixes (from code review)
+- **`automation/naming_conventions.py`**: Fixed fitting classification unreachable — fitting check (`num_unique == 1, total >= 50`) now precedes drill check (`num_unique <= 2, total >= 20`)
+- **`golf_db.py`**: Fixed NULL `session_category` leaking through `get_shots_by_category()` exclude filter — added `notna()` guard
+- **`golf_db.py`**: Wrapped `classify_all_sessions()` in `try/finally` for connection safety
+- **`local_coach.py`**: Reordered intent patterns so `session_breakdown` (specific) is checked before `session_analysis` (general)
+
+### Tests
+- Added `tests/unit/test_session_classifier.py` — 75 tests covering all classification paths, edge cases, confidence ranges, and integration with club normalization
+- 277 tests passing
+
+### Stats
+- 7 files changed (+2,074 / -54 lines)
+
+---
+
 ## 2026-02-06: UI Simplification & Mobile Optimization
 
 ### Dashboard: 5 Tabs to 3

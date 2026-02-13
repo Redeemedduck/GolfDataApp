@@ -21,6 +21,7 @@ python -m unittest tests.unit.test_credential_manager
 python -m unittest tests.unit.test_naming_conventions
 python -m unittest tests.unit.test_rate_limiter_config
 python -m unittest tests.unit.test_data_foundation
+python -m unittest tests.unit.test_session_classifier
 python -m unittest tests.integration.test_automation_flow
 python -m unittest tests.integration.test_date_reclassification
 
@@ -184,6 +185,7 @@ Key date distinction: `session_date` = when the practice occurred, `date_added` 
 - Deletions are **soft deletes** — records go to `shots_archive` for recovery
 - The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py` (returns `None`, not `0.0`)
 - Club names are normalized through `automation/naming_conventions.py` (`ClubNameNormalizer`)
+- Sessions are classified by `SessionClassifier` into 5 categories: `practice`, `sim_round`, `drill`, `warmup`, `fitting` — stored in `session_category` column on `shots` and `session_stats`
 - Sessions are auto-tagged based on characteristics (`AutoTagger`: Driver Focus, Short Game, etc.)
 - Session display names are generated via `SessionNamer.generate_display_name()` — format: `"2026-01-25 Mixed Practice (47 shots)"`
 - Session types detected by club distribution (`SessionNamer.detect_session_type()`): Driver Focus, Iron Work, Short Game, Woods Focus, Mixed Practice, Warmup
