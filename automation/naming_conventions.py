@@ -115,6 +115,13 @@ class ClubNameNormalizer:
 
         # Putter
         (r'^(putter|putt|putting)$', 'Putter'),
+
+        # Uneekor default format: 'IRON7 | MEDIUM', 'DRIVER | PREMIUM'
+        (r'^driver\s*\|.*$', 'Driver'),
+        (r'^iron(\d)\s*\|.*$', '_UNEEKOR_IRON'),
+        (r'^wood(\d)\s*\|.*$', '_UNEEKOR_WOOD'),
+        (r'^hybrid(\d)\s*\|.*$', '_UNEEKOR_HYBRID'),
+        (r'^wedge(\d{2})\s*\|.*$', '_UNEEKOR_WEDGE'),
     ]
 
     # Degree to wedge mapping for generic wedge detection
@@ -199,6 +206,29 @@ class ClubNameNormalizer:
                             normalized=normalized,
                             confidence=0.9,
                             matched_pattern='degree_wedge'
+                        )
+                    except (ValueError, IndexError):
+                        continue
+                elif name.startswith('_UNEEKOR_'):
+                    try:
+                        num = match.group(1)
+                        club_type = name.replace('_UNEEKOR_', '').capitalize()
+                        if club_type == 'Iron':
+                            normalized = f'{num} Iron'
+                        elif club_type == 'Wood':
+                            normalized = f'{num} Wood'
+                        elif club_type == 'Hybrid':
+                            normalized = f'{num} Hybrid'
+                        elif club_type == 'Wedge':
+                            degree = int(num)
+                            normalized = self.DEGREE_TO_WEDGE.get(degree, f'{num} Wedge')
+                        else:
+                            normalized = f'{num} {club_type}'
+                        return NormalizationResult(
+                            original=original,
+                            normalized=normalized,
+                            confidence=0.95,
+                            matched_pattern='uneekor_format'
                         )
                     except (ValueError, IndexError):
                         continue

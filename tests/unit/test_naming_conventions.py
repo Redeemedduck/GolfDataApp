@@ -73,6 +73,36 @@ class TestClubNameNormalizer(unittest.TestCase):
         result = self.normalizer.normalize("putt")
         self.assertEqual(result.normalized, "Putter")
 
+    def test_uneekor_format_iron7_medium(self):
+        result = self.normalizer.normalize('Iron7 | Medium')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_iron6_medium(self):
+        result = self.normalizer.normalize('Iron6 | Medium')
+        self.assertEqual(result.normalized, '6 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_uppercase(self):
+        result = self.normalizer.normalize('IRON7 | MEDIUM')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_driver(self):
+        result = self.normalizer.normalize('DRIVER | MEDIUM')
+        self.assertEqual(result.normalized, 'Driver')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_wood3_premium(self):
+        result = self.normalizer.normalize('WOOD3 | PREMIUM')
+        self.assertEqual(result.normalized, '3 Wood')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_hybrid4(self):
+        result = self.normalizer.normalize('HYBRID4 | MEDIUM')
+        self.assertEqual(result.normalized, '4 Hybrid')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
     # --- Degree-based wedges ---
 
     def test_degree_56_to_sw(self):
