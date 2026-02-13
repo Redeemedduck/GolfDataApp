@@ -42,6 +42,8 @@ col1, col2 = st.columns([2, 1])
 with col1:
     st.subheader("Import from Uneekor URL")
 
+    session_date_input = st.date_input("Session Date", help="Use the actual session date. Session IDs will use this date (YYYY-MM-DD).")
+
     uneekor_url = st.text_input(
         "Paste Uneekor Report URL",
         placeholder="https://myuneekor.com/report?id=12345&key=abc123...",
@@ -59,7 +61,9 @@ with col1:
                 status_text.text(msg)
 
             # Run scraper
-            result = golf_scraper.run_scraper(uneekor_url, update_progress)
+            from datetime import datetime
+            selected_session_date = datetime.combine(session_date_input, datetime.min.time()) if session_date_input else None
+            result = golf_scraper.run_scraper(uneekor_url, update_progress, session_date=selected_session_date)
             st.cache_data.clear()
 
             progress_bar.empty()
@@ -72,8 +76,8 @@ with col1:
                 st.info("Go to the **Dashboard** page to view your data.")
             else:
                 st.error(f"❌ Import failed: {result.get('message', 'Unknown error')}")
-            report_id, _ = golf_scraper.extract_url_params(uneekor_url)
-            invalid_shots_df = golf_db.validate_shot_data(session_id=report_id)
+            session_scope = result.get("session_id")
+            invalid_shots_df = golf_db.validate_shot_data(session_id=session_scope)
             if not invalid_shots_df.empty:
                 st.warning(
                     f"⚠️ Found {len(invalid_shots_df)} shots missing critical fields in this import."

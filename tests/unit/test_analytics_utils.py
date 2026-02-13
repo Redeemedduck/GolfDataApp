@@ -11,7 +11,8 @@ from analytics.utils import (
     check_min_samples,
     normalize_score,
     normalize_inverse,
-    calculate_distance_stats
+    calculate_distance_stats,
+    analyze_big3_impact_rules
 )
 
 
@@ -266,6 +267,28 @@ class TestCalculateDistanceStats(unittest.TestCase):
         # Driver median should be much higher than 7 Iron
         self.assertGreater(driver_stats['median'], iron_stats['median'])
 
+
+
+
+class TestAnalyzeBig3ImpactRules(unittest.TestCase):
+    def test_big3_scores(self):
+        df = pd.DataFrame({
+            'optix_x': [1, 20, 0],
+            'optix_y': [2, 0, 0],
+            'face_angle': [1.0, 5.0, 2.0],
+            'smash': [1.35, 1.10, 1.40]
+        })
+
+        result = analyze_big3_impact_rules(df)
+
+        self.assertEqual(result['shots_analyzed'], 3)
+        self.assertEqual(result['all_three_pass_count'], 2)
+        self.assertEqual(result['rules']['center_contact']['pass_count'], 2)
+
+    def test_big3_empty(self):
+        result = analyze_big3_impact_rules(pd.DataFrame())
+        self.assertEqual(result['shots_analyzed'], 0)
+        self.assertEqual(result['all_three_pass_pct'], 0.0)
 
 if __name__ == '__main__':
     unittest.main()

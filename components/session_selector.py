@@ -27,16 +27,25 @@ def render_session_selector(
         if s.get('session_type')
     })
 
+    def _display_date(session):
+        date_val = session.get('session_date') or session.get('date_added')
+        if hasattr(date_val, 'strftime'):
+            return date_val.strftime('%Y-%m-%d')
+        if isinstance(date_val, str) and len(date_val) >= 10:
+            return date_val[:10]
+        return 'Unknown'
+
     def _format_session_label(session):
-        label = f"{session['session_id']} ({session.get('date_added', 'Unknown')})"
+        label = f"{_display_date(session)} • {session['session_id']}"
         if session.get('session_type'):
             label = f"{label} [{session['session_type']}]"
         return label
 
-    session_options = [
-        _format_session_label(s)
+    session_map = {
+        _format_session_label(s): s['session_id']
         for s in unique_sessions
-    ] if unique_sessions else []
+    } if unique_sessions else {}
+    session_options = list(session_map.keys())
 
     if not session_options:
         st.info("No data yet. Import a report to get started!")
@@ -74,7 +83,7 @@ def render_session_selector(
         session_options,
         label_visibility="collapsed"
     )
-    selected_session_id = selected_session_str.split(" ")[0]
+    selected_session_id = session_map[selected_session_str]
     df = get_session_data(selected_session_id)
 
     if df.empty:
