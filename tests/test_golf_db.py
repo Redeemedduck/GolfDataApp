@@ -41,6 +41,72 @@ class TestGolfDB(unittest.TestCase):
         self.assertEqual(len(df), 1)
         self.assertEqual(df.iloc[0]["shot_id"], "s1")
 
+    def test_save_shot_normalizes_club(self):
+        """save_shot() should normalize club names and preserve original."""
+        shot_data = {
+            "id": "test_norm_001",
+            "session": "session_norm",
+            "club": "Warmup Pw",
+            "carry_distance": 120,
+        }
+        golf_db.save_shot(shot_data)
+
+        conn = sqlite3.connect(golf_db.SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT club, original_club_value FROM shots WHERE shot_id = ?",
+            ("test_norm_001",),
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        self.assertEqual(row[0], "PW")
+        self.assertEqual(row[1], "Warmup Pw")
+
+    def test_save_shot_preserves_standard_club(self):
+        """save_shot() should not alter already-standard club names."""
+        shot_data = {
+            "id": "test_norm_002",
+            "session": "session_norm",
+            "club": "7 Iron",
+            "carry_distance": 165,
+        }
+        golf_db.save_shot(shot_data)
+
+        conn = sqlite3.connect(golf_db.SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT club, original_club_value FROM shots WHERE shot_id = ?",
+            ("test_norm_002",),
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        self.assertEqual(row[0], "7 Iron")
+        self.assertEqual(row[1], "7 Iron")
+
+    def test_save_shot_unknown_session_name(self):
+        """save_shot() should set club=None for unresolvable session names."""
+        shot_data = {
+            "id": "test_norm_003",
+            "session": "session_norm",
+            "club": "Sgt Rd1",
+            "carry_distance": 250,
+        }
+        golf_db.save_shot(shot_data)
+
+        conn = sqlite3.connect(golf_db.SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT club, original_club_value FROM shots WHERE shot_id = ?",
+            ("test_norm_003",),
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        self.assertIsNone(row[0])
+        self.assertEqual(row[1], "Sgt Rd1")
+
     def test_recalculate_metrics_updates_smash(self):
         shot = {
             "shot_id": "s2",
