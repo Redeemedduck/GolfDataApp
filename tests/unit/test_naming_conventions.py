@@ -103,6 +103,41 @@ class TestClubNameNormalizer(unittest.TestCase):
         self.assertEqual(result.normalized, '4 Hybrid')
         self.assertGreaterEqual(result.confidence, 0.9)
 
+    def test_wedge_pitching_reversed(self):
+        result = self.normalizer.normalize('Wedge Pitching')
+        self.assertEqual(result.normalized, 'PW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_wedge_sand_reversed(self):
+        result = self.normalizer.normalize('Wedge Sand')
+        self.assertEqual(result.normalized, 'SW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_wedge_50_degree_number(self):
+        result = self.normalizer.normalize('Wedge 50')
+        self.assertEqual(result.normalized, 'GW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_wedge_56_degree_number(self):
+        result = self.normalizer.normalize('Wedge 56')
+        self.assertEqual(result.normalized, 'SW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_iron7_no_space(self):
+        result = self.normalizer.normalize('Iron7')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_iron6_no_space(self):
+        result = self.normalizer.normalize('Iron6')
+        self.assertEqual(result.normalized, '6 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_iron9_no_space(self):
+        result = self.normalizer.normalize('Iron9')
+        self.assertEqual(result.normalized, '9 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
     # --- Degree-based wedges ---
 
     def test_degree_56_to_sw(self):

@@ -116,6 +116,19 @@ class ClubNameNormalizer:
         # Putter
         (r'^(putter|putt|putting)$', 'Putter'),
 
+        # Reversed forms: 'Wedge Pitching' -> PW, 'Wedge 50' -> GW
+        (r'^wedge\s*(pitching|p)$', 'PW'),
+        (r'^wedge\s*(gap|g)$', 'GW'),
+        (r'^wedge\s*(sand|s)$', 'SW'),
+        (r'^wedge\s*(lob|l)$', 'LW'),
+        (r'^wedge\s*(approach|a)$', 'AW'),
+        (r'^wedge\s*(\d{2})$', '_WEDGE_DEGREE_NUM'),
+
+        # No-space iron: 'Iron7' -> '7 Iron'
+        (r'^iron(\d)$', '_IRON_NOSPACE'),
+        (r'^wood(\d)$', '_WOOD_NOSPACE'),
+        (r'^hybrid(\d)$', '_HYBRID_NOSPACE'),
+
         # Uneekor default format: 'IRON7 | MEDIUM', 'DRIVER | PREMIUM'
         (r'^driver\s*\|.*$', 'Driver'),
         (r'^iron(\d)\s*\|.*$', '_UNEEKOR_IRON'),
@@ -232,6 +245,27 @@ class ClubNameNormalizer:
                         )
                     except (ValueError, IndexError):
                         continue
+                elif name == '_WEDGE_DEGREE_NUM':
+                    try:
+                        degree = int(match.group(1))
+                        normalized = self.DEGREE_TO_WEDGE.get(degree, f'{degree} Wedge')
+                        return NormalizationResult(
+                            original=original,
+                            normalized=normalized,
+                            confidence=0.9,
+                            matched_pattern='wedge_degree_num'
+                        )
+                    except (ValueError, IndexError):
+                        continue
+                elif name in ('_IRON_NOSPACE', '_WOOD_NOSPACE', '_HYBRID_NOSPACE'):
+                    num = match.group(1)
+                    club_type = name.replace('_', '').replace('NOSPACE', '').capitalize()
+                    return NormalizationResult(
+                        original=original,
+                        normalized=f'{num} {club_type}',
+                        confidence=0.95,
+                        matched_pattern='nospace_format'
+                    )
                 else:
                     return NormalizationResult(
                         original=original,
