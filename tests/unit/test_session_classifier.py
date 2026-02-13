@@ -230,11 +230,11 @@ class TestSessionClassifier(unittest.TestCase):
 
     # --- Practice detection ---
 
-    def test_practice_driver_focus(self):
-        """Block practice with driver should be practice, not round."""
+    def test_fitting_single_driver_high_volume(self):
+        """50 Driver shots should classify as fitting, not drill or round."""
         clubs = ['Driver'] * 50
         result = self.classifier.classify(clubs)
-        self.assertIn(result.category, ('drill', 'fitting'))
+        self.assertEqual(result.category, 'fitting')
         self.assertNotEqual(result.category, 'sim_round')
 
     def test_practice_iron_blocks(self):
@@ -290,7 +290,7 @@ class TestSessionClassifier(unittest.TestCase):
         """1 club with 50+ shots = fitting."""
         clubs = ['Driver'] * 60
         result = self.classifier.classify(clubs)
-        self.assertIn(result.category, ('drill', 'fitting'))
+        self.assertEqual(result.category, 'fitting')
 
     # --- Empty/edge cases ---
 

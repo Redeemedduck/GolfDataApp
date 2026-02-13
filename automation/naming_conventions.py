@@ -1012,6 +1012,14 @@ class SessionClassifier:
                 signals={'reason': 'low_shot_count', 'total': total},
             )
 
+        # --- Fitting detection: 1 club, very high volume ---
+        if num_unique == 1 and total >= 50:
+            return ClassificationResult(
+                category='fitting',
+                confidence=0.8,
+                signals={'reason': 'single_club_high_volume', 'club': list(unique_clubs)[0], 'total': total},
+            )
+
         # --- Drill: 1-2 clubs with significant repetition ---
         if num_unique <= 2 and total >= 20:
             return ClassificationResult(
@@ -1032,14 +1040,6 @@ class SessionClassifier:
                 category='sim_round',
                 confidence=confidence,
                 signals=signals,
-            )
-
-        # --- Fitting detection: 1 club, very high volume ---
-        if num_unique == 1 and total >= 50:
-            return ClassificationResult(
-                category='fitting',
-                confidence=0.8,
-                signals={'reason': 'single_club_high_volume', 'club': list(unique_clubs)[0], 'total': total},
             )
 
         # --- Default: practice ---

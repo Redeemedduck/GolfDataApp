@@ -676,7 +676,10 @@ def get_shots_by_category(category=None, exclude_categories=None, read_mode=None
         df = df[df['session_category'] == category]
 
     if exclude_categories:
-        df = df[~df['session_category'].isin(exclude_categories)]
+        df = df[
+            df['session_category'].notna() &
+            ~df['session_category'].isin(exclude_categories)
+        ]
 
     return df
 
@@ -723,60 +726,62 @@ def classify_all_sessions():
 
     classifier = SessionClassifier()
     conn = sqlite3.connect(SQLITE_DB_PATH)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute("SELECT DISTINCT session_id FROM shots")
-    session_ids = [row[0] for row in cursor.fetchall()]
+        cursor.execute("SELECT DISTINCT session_id FROM shots")
+        session_ids = [row[0] for row in cursor.fetchall()]
 
-    categories = {}
-    classified = 0
+        categories = {}
+        classified = 0
 
-    for sid in session_ids:
+        for sid in session_ids:
+            cursor.execute(
+                "SELECT club FROM shots WHERE session_id = ? AND club IS NOT NULL ORDER BY rowid",
+                (sid,)
+            )
+            club_sequence = [r[0] for r in cursor.fetchall()]
+            if not club_sequence:
+                continue
+
+            # Get context hint from session_type
+            cursor.execute(
+                "SELECT session_type FROM shots WHERE session_id = ? AND session_type IS NOT NULL LIMIT 1",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            context_hint = row[0] if row else None
+
+            result = classifier.classify(club_sequence, context_hint=context_hint)
+
+            # Update shots table
+            cursor.execute(
+                "UPDATE shots SET session_category = ? WHERE session_id = ?",
+                (result.category, sid)
+            )
+
+            # Update session_stats if it exists
+            cursor.execute(
+                "UPDATE session_stats SET session_category = ?, classification_confidence = ? WHERE session_id = ?",
+                (result.category, result.confidence, sid)
+            )
+
+            categories[result.category] = categories.get(result.category, 0) + 1
+            classified += 1
+
+        conn.commit()
+
+        # Log the classification run
         cursor.execute(
-            "SELECT club FROM shots WHERE session_id = ? AND club IS NOT NULL ORDER BY rowid",
-            (sid,)
+            "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
+            ("CLASSIFY_SESSIONS", "shots", "all",
+             f"Classified {classified} sessions: {categories}")
         )
-        club_sequence = [r[0] for r in cursor.fetchall()]
-        if not club_sequence:
-            continue
+        conn.commit()
 
-        # Get context hint from session_type
-        cursor.execute(
-            "SELECT session_type FROM shots WHERE session_id = ? AND session_type IS NOT NULL LIMIT 1",
-            (sid,)
-        )
-        row = cursor.fetchone()
-        context_hint = row[0] if row else None
-
-        result = classifier.classify(club_sequence, context_hint=context_hint)
-
-        # Update shots table
-        cursor.execute(
-            "UPDATE shots SET session_category = ? WHERE session_id = ?",
-            (result.category, sid)
-        )
-
-        # Update session_stats if it exists
-        cursor.execute(
-            "UPDATE session_stats SET session_category = ?, classification_confidence = ? WHERE session_id = ?",
-            (result.category, result.confidence, sid)
-        )
-
-        categories[result.category] = categories.get(result.category, 0) + 1
-        classified += 1
-
-    conn.commit()
-
-    # Log the classification run
-    cursor.execute(
-        "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
-        ("CLASSIFY_SESSIONS", "shots", "all",
-         f"Classified {classified} sessions: {categories}")
-    )
-    conn.commit()
-    conn.close()
-
-    return {'classified': classified, 'categories': categories}
+        return {'classified': classified, 'categories': categories}
+    finally:
+        conn.close()
 
 def get_unique_sessions(read_mode=None):
     """Get unique sessions from local SQLite, optionally merged with Supabase."""
