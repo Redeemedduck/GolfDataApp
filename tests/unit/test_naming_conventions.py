@@ -201,6 +201,56 @@ class TestConvenienceFunctions(unittest.TestCase):
         self.assertEqual(normalize_clubs(["dr", "pw"]), ["Driver", "PW"])
 
 
+class TestNormalizationPipeline(unittest.TestCase):
+    """Tests for the two-tier normalization pipeline."""
+
+    def _normalize(self, raw_value):
+        from automation.naming_conventions import normalize_with_context
+        return normalize_with_context(raw_value)
+
+    # Standard clubs should pass through normalizer directly
+    def test_standard_club_7_iron(self):
+        result = self._normalize('7 Iron')
+        self.assertEqual(result['club'], '7 Iron')
+        self.assertIsNone(result['session_type'])
+
+    def test_standard_club_driver(self):
+        result = self._normalize('Driver')
+        self.assertEqual(result['club'], 'Driver')
+
+    # Session names with embedded clubs should use SessionContextParser
+    def test_warmup_pw_extracts_club(self):
+        result = self._normalize('Warmup Pw')
+        self.assertEqual(result['club'], 'PW')
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_dst_compressor_8_extracts_club(self):
+        result = self._normalize('Dst Compressor 8')
+        self.assertEqual(result['club'], '8 Iron')
+        self.assertEqual(result['session_type'], 'drill')
+
+    def test_warmup_50_no_extractable_club(self):
+        result = self._normalize('Warmup 50')
+        self.assertIsNone(result['club'])
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_8_iron_dst_trainer(self):
+        result = self._normalize('8 Iron Dst Trainer')
+        self.assertEqual(result['club'], '8 Iron')
+        self.assertEqual(result['session_type'], 'drill')
+
+    # Pure session names with no extractable club
+    def test_sgt_rd1_no_club(self):
+        result = self._normalize('Sgt Rd1')
+        self.assertIsNone(result['club'])
+        self.assertEqual(result['session_type'], 'sim_round')
+
+    def test_warmup_no_club(self):
+        result = self._normalize('Warmup')
+        self.assertIsNone(result['club'])
+        self.assertEqual(result['session_type'], 'warmup')
+
+
 class TestSessionNamer(unittest.TestCase):
     """Tests for SessionNamer."""
 

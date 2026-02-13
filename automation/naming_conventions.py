@@ -876,6 +876,52 @@ def normalize_club(club_name: str) -> str:
     return get_normalizer().normalize(club_name).normalized
 
 
+def normalize_with_context(raw_value: str) -> Dict[str, Union[Optional[str], float]]:
+    """
+    Two-tier normalization: club normalizer first, session-context parser fallback.
+
+    Returns a consistent schema regardless of which tier handled the input:
+    {
+        'club': Optional[str],
+        'session_type': Optional[str],
+        'original': str,
+        'confidence': float,
+    }
+    """
+    if not raw_value:
+        return {
+            'club': None,
+            'session_type': None,
+            'original': raw_value,
+            'confidence': 0.0,
+        }
+
+    normalizer_result = get_normalizer().normalize(raw_value)
+
+    # High-confidence club names should pass through directly.
+    if normalizer_result.confidence >= 0.9:
+        return {
+            'club': normalizer_result.normalized,
+            'session_type': None,
+            'original': raw_value,
+            'confidence': normalizer_result.confidence,
+        }
+
+    context = get_context_parser().parse(raw_value)
+    extracted_club = context.get('club')
+    session_type = context.get('session_type')
+
+    # Context parse confidence is heuristic because parser output has no score.
+    confidence = 0.8 if extracted_club else (0.4 if session_type else 0.1)
+
+    return {
+        'club': extracted_club,
+        'session_type': session_type,
+        'original': raw_value,
+        'confidence': confidence,
+    }
+
+
 def normalize_clubs(club_names: List[str]) -> List[str]:
     """Convenience function to normalize multiple club names."""
     return get_normalizer().normalize_all(club_names)
