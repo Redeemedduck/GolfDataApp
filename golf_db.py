@@ -161,6 +161,7 @@ def init_db():
         'session_date': 'TIMESTAMP',
         'face_to_path': 'REAL',
         'strike_distance': 'REAL',
+        'session_category': 'TEXT',
     }
     
     for col, col_type in required_columns.items():
@@ -227,6 +228,7 @@ def init_db():
             session_id TEXT PRIMARY KEY,
             session_date TEXT,
             session_type TEXT,
+            session_category TEXT,
             shot_count INTEGER DEFAULT 0,
             clubs_used TEXT,
             avg_carry REAL,
@@ -242,9 +244,21 @@ def init_db():
             avg_face_to_path REAL,
             avg_strike_distance REAL,
             std_strike_distance REAL,
+            classification_confidence REAL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Migration: add session_category to session_stats if missing
+    cursor.execute("PRAGMA table_info(session_stats)")
+    stats_columns = [row[1] for row in cursor.fetchall()]
+    stats_migrations = {
+        'session_category': 'TEXT',
+        'classification_confidence': 'REAL',
+    }
+    for col, col_type in stats_migrations.items():
+        if col not in stats_columns:
+            cursor.execute(f"ALTER TABLE session_stats ADD COLUMN {col} {col_type}")
 
     conn.commit()
     conn.close()
@@ -637,6 +651,137 @@ def get_session_data(session_id=None, read_mode=None):
 def get_all_shots(read_mode=None):
     """Get all shots from the local SQLite database, with Supabase fallback."""
     return get_session_data(read_mode=read_mode)
+
+
+def get_shots_by_category(category=None, exclude_categories=None, read_mode=None):
+    """Get shots filtered by session_category.
+
+    Args:
+        category: Include only this category (e.g., 'practice', 'sim_round').
+                  None = all categories.
+        exclude_categories: List of categories to exclude (e.g., ['sim_round', 'warmup']).
+        read_mode: Read mode override.
+
+    Returns:
+        DataFrame of matching shots.
+    """
+    df = get_all_shots(read_mode=read_mode)
+    if df.empty:
+        return df
+
+    if 'session_category' not in df.columns:
+        return df
+
+    if category:
+        df = df[df['session_category'] == category]
+
+    if exclude_categories:
+        df = df[
+            df['session_category'].notna() &
+            ~df['session_category'].isin(exclude_categories)
+        ]
+
+    return df
+
+
+def get_practice_shots(read_mode=None):
+    """Get only practice shots, excluding sim rounds and warmups.
+
+    This is the primary analytics-ready dataset, siloing out round data
+    and warmup shots to ensure practice metrics are not skewed by
+    game-like or warmup behavior.
+
+    Returns:
+        DataFrame of practice-only shots.
+    """
+    return get_shots_by_category(
+        exclude_categories=['sim_round', 'warmup'],
+        read_mode=read_mode,
+    )
+
+
+def get_round_shots(read_mode=None):
+    """Get only sim round shots.
+
+    Returns:
+        DataFrame of sim round shots for round-specific analytics.
+    """
+    return get_shots_by_category(category='sim_round', read_mode=read_mode)
+
+
+def classify_all_sessions():
+    """Run classification on all sessions and update session_category.
+
+    This is a batch operation that reclassifies every session using the
+    SessionClassifier. Useful after importing new data or changing
+    classification logic.
+
+    Returns:
+        Dict with counts: {'classified': N, 'categories': {...}}
+    """
+    try:
+        from automation.naming_conventions import SessionClassifier
+    except ImportError:
+        return {'classified': 0, 'error': 'SessionClassifier not available'}
+
+    classifier = SessionClassifier()
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT DISTINCT session_id FROM shots")
+        session_ids = [row[0] for row in cursor.fetchall()]
+
+        categories = {}
+        classified = 0
+
+        for sid in session_ids:
+            cursor.execute(
+                "SELECT club FROM shots WHERE session_id = ? AND club IS NOT NULL ORDER BY rowid",
+                (sid,)
+            )
+            club_sequence = [r[0] for r in cursor.fetchall()]
+            if not club_sequence:
+                continue
+
+            # Get context hint from session_type
+            cursor.execute(
+                "SELECT session_type FROM shots WHERE session_id = ? AND session_type IS NOT NULL LIMIT 1",
+                (sid,)
+            )
+            row = cursor.fetchone()
+            context_hint = row[0] if row else None
+
+            result = classifier.classify(club_sequence, context_hint=context_hint)
+
+            # Update shots table
+            cursor.execute(
+                "UPDATE shots SET session_category = ? WHERE session_id = ?",
+                (result.category, sid)
+            )
+
+            # Update session_stats if it exists
+            cursor.execute(
+                "UPDATE session_stats SET session_category = ?, classification_confidence = ? WHERE session_id = ?",
+                (result.category, result.confidence, sid)
+            )
+
+            categories[result.category] = categories.get(result.category, 0) + 1
+            classified += 1
+
+        conn.commit()
+
+        # Log the classification run
+        cursor.execute(
+            "INSERT INTO change_log (operation, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
+            ("CLASSIFY_SESSIONS", "shots", "all",
+             f"Classified {classified} sessions: {categories}")
+        )
+        conn.commit()
+
+        return {'classified': classified, 'categories': categories}
+    finally:
+        conn.close()
 
 def get_unique_sessions(read_mode=None):
     """Get unique sessions from local SQLite, optionally merged with Supabase."""
@@ -1680,12 +1825,21 @@ def backfill_derived_columns():
 def compute_session_stats(session_id=None):
     """Compute and cache aggregated stats for sessions.
 
+    Includes automatic session classification (practice, sim_round, drill,
+    warmup, fitting) based on club distribution and shot sequencing.
+
     Args:
         session_id: Optional — recompute one session. None = recompute all.
 
     Returns:
         Number of sessions updated.
     """
+    # Lazy import to avoid circular dependency at module level
+    try:
+        from automation.naming_conventions import SessionClassifier
+    except ImportError:
+        SessionClassifier = None
+
     updated = 0
     try:
         conn = sqlite3.connect(SQLITE_DB_PATH)
@@ -1696,6 +1850,8 @@ def compute_session_stats(session_id=None):
         else:
             cursor.execute("SELECT DISTINCT session_id FROM shots")
             session_ids = [row[0] for row in cursor.fetchall()]
+
+        classifier = SessionClassifier() if SessionClassifier else None
 
         for sid in session_ids:
             cursor.execute('''
@@ -1731,20 +1887,43 @@ def compute_session_stats(session_id=None):
                 std_path = math.sqrt(row[11]) if row[11] is not None else None
                 std_strike = math.sqrt(row[14]) if row[14] is not None else None
 
+                # Classify the session
+                session_category = None
+                classification_confidence = None
+                if classifier:
+                    # Get shot-level club sequence for this session
+                    cursor.execute(
+                        "SELECT club FROM shots WHERE session_id = ? AND club IS NOT NULL ORDER BY rowid",
+                        (sid,)
+                    )
+                    club_sequence = [r[0] for r in cursor.fetchall()]
+                    if club_sequence:
+                        result = classifier.classify(club_sequence, context_hint=row[16])
+                        session_category = result.category
+                        classification_confidence = result.confidence
+
+                        # Propagate category to shots table
+                        cursor.execute(
+                            "UPDATE shots SET session_category = ? WHERE session_id = ?",
+                            (session_category, sid)
+                        )
+
                 cursor.execute('''
                     INSERT OR REPLACE INTO session_stats
-                    (session_id, session_date, session_type, shot_count, clubs_used,
+                    (session_id, session_date, session_type, session_category,
+                     shot_count, clubs_used,
                      avg_carry, avg_total, avg_ball_speed, avg_club_speed, avg_smash,
                      best_carry, avg_face_angle, std_face_angle, avg_club_path,
                      std_club_path, avg_face_to_path, avg_strike_distance,
-                     std_strike_distance, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                     std_strike_distance, classification_confidence, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ''', (
-                    sid, row[15], row[16], row[0], row[1],
+                    sid, row[15], row[16], session_category,
+                    row[0], row[1],
                     row[2], row[3], row[4], row[5], row[6],
                     row[7], row[8], std_face, row[10],
                     std_path, row[12], row[13],
-                    std_strike,
+                    std_strike, classification_confidence,
                 ))
                 updated += 1
 
@@ -1921,6 +2100,9 @@ def batch_update_session_names():
     Uses SessionNamer.generate_display_name() to create names in the format:
         "{YYYY-MM-DD} {SessionType} ({shot_count} shots)"
 
+    Session types now include 'Sim Round' detection via the SessionClassifier,
+    which analyzes club distribution and shot sequencing patterns.
+
     Reads club data from the shots table and dates from sessions_discovered.
 
     Returns:
@@ -1942,10 +2124,11 @@ def batch_update_session_names():
 
     updated = 0
     for report_id, session_date in sessions:
-        # Get clubs for this session from shots table
+        # Get clubs for this session from shots table (ordered by rowid for sequence)
         cursor.execute('''
             SELECT club FROM shots
             WHERE session_id = ? AND club IS NOT NULL
+            ORDER BY rowid
         ''', (report_id,))
         clubs = [row[0] for row in cursor.fetchall()]
 

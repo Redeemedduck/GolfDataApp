@@ -33,6 +33,16 @@ try:
 except ImportError:
     HAS_ML = False
 
+# Classification imports - optional (should always be available since it's local)
+try:
+    from automation.naming_conventions import (
+        SessionClassifier, classify_session, classify_session_df,
+        ClassificationResult,
+    )
+    HAS_CLASSIFIER = True
+except ImportError:
+    HAS_CLASSIFIER = False
+
 
 @dataclass
 class CoachResponse:
@@ -68,6 +78,7 @@ class LocalCoach:
         'driver_stats': r'\b(driver|1w|1-wood)\b.*|.*(how|what).*\b(driver|1w|1-wood)\b',
         'iron_stats': r'\b(\d+)\s*iron\b|\b(\d+i)\b',
         'club_comparison': r'\bcompare\b|\bvs\b|\bbetween\b',
+        'session_breakdown': r'\b(round|sim\s*round|practice\s*round|indoor\s*round)\b|\bsession\s*type\b|\bcategor\b',
         'session_analysis': r'\bsession\b|\btoday\b|\blast\b.*\bpractice\b',
         'trend_analysis': r'\btrend\b|\bprogress\b|\bimproving\b|\bgetting\b',
         'swing_issue': r'\bslice\b|\bhook\b|\bfade\b|\bdraw\b|\bshank\b|\btopping\b',
@@ -151,6 +162,7 @@ class LocalCoach:
             'iron_stats': lambda e: self._handle_club_stats(f"{e} Iron" if e else None),
             'club_comparison': self._handle_comparison,
             'session_analysis': self._handle_session_analysis,
+            'session_breakdown': self._handle_session_breakdown,
             'trend_analysis': self._handle_trends,
             'swing_issue': self._handle_swing_issue,
             'consistency': self._handle_consistency,
@@ -420,6 +432,82 @@ class LocalCoach:
             confidence=0.85
         )
 
+    def _handle_session_breakdown(self, _: Any) -> CoachResponse:
+        """Handle session category breakdown queries."""
+        if not HAS_CLASSIFIER:
+            return CoachResponse(
+                message="Session classification is not available.",
+                confidence=0.7
+            )
+
+        df = golf_db.get_all_shots()
+        if df.empty:
+            return CoachResponse(
+                message="No shot data available to analyze session types.",
+                confidence=0.9
+            )
+
+        # Classify sessions if not already done
+        if 'session_category' not in df.columns or df['session_category'].isna().all():
+            golf_db.classify_all_sessions()
+            df = golf_db.get_all_shots()
+
+        if 'session_category' not in df.columns or df['session_category'].isna().all():
+            return CoachResponse(
+                message="Unable to classify sessions. Try running session classification first.",
+                confidence=0.7
+            )
+
+        # Build breakdown
+        sessions_by_cat = df.groupby(['session_id', 'session_category']).size().reset_index(name='shots')
+        cat_summary = sessions_by_cat.groupby('session_category').agg(
+            session_count=('session_id', 'nunique'),
+            total_shots=('shots', 'sum'),
+        ).sort_values('session_count', ascending=False)
+
+        total_sessions = sessions_by_cat['session_id'].nunique()
+        total_shots = len(df)
+
+        parts = ["Session Breakdown by Category:"]
+        parts.append(f"  Total: {total_sessions} sessions, {total_shots} shots\n")
+
+        category_labels = {
+            'practice': 'Practice',
+            'sim_round': 'Sim Round (Indoor Golf)',
+            'drill': 'Drill',
+            'warmup': 'Warmup',
+            'fitting': 'Fitting',
+        }
+
+        for cat, row in cat_summary.iterrows():
+            label = category_labels.get(cat, cat.replace('_', ' ').title())
+            pct = row['session_count'] / total_sessions * 100
+            parts.append(f"  - {label}: {row['session_count']} sessions ({pct:.0f}%), "
+                        f"{row['total_shots']} shots")
+
+        # Analytics note about data siloing
+        practice_count = cat_summary.loc['practice', 'total_shots'] if 'practice' in cat_summary.index else 0
+        round_count = cat_summary.loc['sim_round', 'total_shots'] if 'sim_round' in cat_summary.index else 0
+
+        suggestions = []
+        if round_count > 0:
+            parts.append(f"\nSim round data ({round_count} shots) is separated from practice "
+                        f"analytics to prevent round-play patterns from skewing your practice metrics.")
+            suggestions.append("Ask about your 'practice stats' vs 'round stats' to see the difference")
+        if practice_count > 0:
+            suggestions.append(f"Your {practice_count} practice shots are used for skill analytics")
+
+        return CoachResponse(
+            message="\n".join(parts),
+            data={
+                'total_sessions': total_sessions,
+                'total_shots': total_shots,
+                'categories': cat_summary.to_dict('index'),
+            },
+            suggestions=suggestions or ["Import more sessions to build your practice profile"],
+            confidence=0.9
+        )
+
     def _handle_trends(self, _: Any) -> CoachResponse:
         """Handle trend analysis queries."""
         df = golf_db.get_all_shots()
@@ -560,6 +648,24 @@ class LocalCoach:
         parts.append(f"  - Sessions: {total_sessions}")
         parts.append(f"  - Clubs in bag: {clubs_used}")
 
+        # Session category breakdown if available
+        if 'session_category' in df.columns and df['session_category'].notna().any():
+            cat_counts = df.groupby('session_category')['session_id'].nunique()
+            if len(cat_counts) > 1:
+                parts.append("\nSession types:")
+                category_labels = {
+                    'practice': 'Practice', 'sim_round': 'Sim Round',
+                    'drill': 'Drill', 'warmup': 'Warmup', 'fitting': 'Fitting',
+                }
+                for cat, count in cat_counts.items():
+                    label = category_labels.get(cat, cat.replace('_', ' ').title())
+                    parts.append(f"  - {label}: {count} sessions")
+
+            # Show practice-only stats
+            practice_df = df[df['session_category'] == 'practice']
+            if not practice_df.empty and len(practice_df) < total_shots:
+                parts.append(f"\nAnalytics-ready (practice only): {len(practice_df)} shots")
+
         # Top clubs by usage
         top_clubs = df['club'].value_counts().head(3)
         parts.append("\nMost practiced clubs:")
@@ -583,12 +689,18 @@ class LocalCoach:
                    "  - Club statistics (\"How's my driver?\")\n"
                    "  - Club comparisons (\"Compare my irons\")\n"
                    "  - Session analysis (\"Analyze my last session\")\n"
+                   "  - Session breakdown (\"Show my session types\")\n"
                    "  - Trend analysis (\"Am I improving?\")\n"
                    "  - Shot shape analysis (\"Why do I slice?\")\n"
                    "  - Consistency metrics (\"How consistent am I?\")\n"
                    "  - Overall profile (\"Show my profile\")\n\n"
+                   "Sessions are automatically classified as Practice, Sim Round,\n"
+                   "Drill, or Warmup. Sim round data is separated from practice\n"
+                   "analytics for accurate performance tracking.\n\n"
                    "What would you like to know?",
-            suggestions=["Try asking about your driver distance", "Ask about your progress over time"],
+            suggestions=["Try asking about your driver distance",
+                        "Ask about your session types",
+                        "Ask about your progress over time"],
             confidence=0.9
         )
 
