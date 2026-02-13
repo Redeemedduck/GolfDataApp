@@ -105,6 +105,24 @@ class TestGolfDB(unittest.TestCase):
         self.assertEqual(merged_row["carry"], 250)
         self.assertEqual(len(merged), 3)
 
+
+    def test_get_total_shot_count_respects_session_scope(self):
+        golf_db.save_shot({"shot_id": "s1", "session_id": "sess1", "club": "Driver", "carry": 250})
+        golf_db.save_shot({"shot_id": "s2", "session_id": "sess2", "club": "7 Iron", "carry": 170})
+
+        self.assertEqual(golf_db.get_total_shot_count(), 2)
+        self.assertEqual(golf_db.get_total_shot_count(session_id="sess1"), 1)
+
+    def test_get_quality_summary_reports_funnel_counts(self):
+        golf_db.save_shot({"shot_id": "s1", "session_id": "sess1", "club": "Driver", "carry": 250, "is_warmup": 0})
+        golf_db.save_shot({"shot_id": "s2", "session_id": "sess1", "club": "Driver", "carry": 0, "is_warmup": 1})
+
+        summary = golf_db.get_quality_summary(session_id="sess1")
+
+        self.assertEqual(summary["total"], 2)
+        self.assertEqual(summary["warmup"], 1)
+        self.assertGreaterEqual(summary["clean"], summary["strict"])
+
     def test_update_shot_metadata_rejects_invalid_field(self):
         """SQL injection should be prevented by field allowlist."""
         shot = {

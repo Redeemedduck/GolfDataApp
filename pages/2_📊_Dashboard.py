@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 import golf_db
+from analytics.utils import analyze_big3_impact_rules
 from components import (
     render_session_selector,
     render_metrics_row,
@@ -46,6 +47,11 @@ def get_session_data_cached(session_id=None, read_mode="auto"):
 def get_filtered_shots_cached(session_id=None, quality='clean', exclude_warmup=True, read_mode="auto"):
     return golf_db.get_filtered_shots(session_id=session_id, quality=quality,
                                        exclude_warmup=exclude_warmup, read_mode=read_mode)
+
+
+@st.cache_data(show_spinner=False)
+def get_quality_summary_cached(session_id=None, read_mode="auto"):
+    return golf_db.get_quality_summary(session_id=session_id, read_mode=read_mode)
 
 # Sidebar: Session selector
 with st.sidebar:
@@ -105,6 +111,16 @@ with st.sidebar:
                                               exclude_warmup=exclude_warmup, read_mode=read_mode)
     )
 
+    quality_summary = get_quality_summary_cached(session_id=selected_session_id, read_mode=read_mode)
+    st.caption(
+        f"Quality funnel — Raw: {quality_summary['total']} | "
+        f"Clean: {quality_summary['clean']} ({quality_summary['clean_pct']}%) | "
+        f"Strict: {quality_summary['strict']} ({quality_summary['strict_pct']}%)"
+    )
+    st.caption(
+        f"Warmup tagged shots: {quality_summary['warmup']} ({quality_summary['warmup_pct']}%)"
+    )
+
 # Stop if no data
 if df.empty:
     st.info("No data to display. Please import a session first.")
@@ -115,11 +131,11 @@ if df.empty:
 st.title("⛳ My Golf Data Lab - Advanced Analytics")
 st.subheader(f"Session: {selected_session_id}")
 
-total_shots = golf_db.get_total_shot_count()
+total_shots = golf_db.get_total_shot_count(session_id=selected_session_id, read_mode=read_mode)
 filter_desc = f"quality={quality_selection.lower()}"
 if exclude_warmup:
     filter_desc += ", no warmup"
-st.caption(f"Showing {len(df)} of {total_shots} total shots ({filter_desc})")
+st.caption(f"Showing {len(df)} of {total_shots} session shots ({filter_desc})")
 
 st.divider()
 
@@ -396,6 +412,28 @@ with tab4:
     # Miss Tendency
     st.divider()
     render_miss_tendency(df, selected_club=analytics_club)
+
+    # Big 3 Impact Rules (Adam Young)
+    st.divider()
+    st.subheader("🎯 Big 3 Impact Rules")
+    st.caption("Centered contact + square face + efficient smash. Use this as a strike-quality benchmark.")
+
+    big3_df = df if analytics_club is None else df[df['club'] == analytics_club]
+    big3 = analyze_big3_impact_rules(big3_df)
+
+    b1, b2, b3, b4 = st.columns(4)
+    b1.metric("Shots Analyzed", big3['shots_analyzed'])
+    b2.metric("All 3 Rules", f"{big3['all_three_pass_pct']}%")
+    b3.metric("Center Contact", f"{big3['rules']['center_contact']['pass_pct']}%")
+    b4.metric("Face Control", f"{big3['rules']['face_control']['pass_pct']}%")
+    st.caption(f"Speed Efficiency pass rate: {big3['rules']['speed_efficiency']['pass_pct']}%")
+
+    with st.expander("Rule definitions"):
+        st.markdown("""
+        - **Center Contact**: Strike radius within ±12 units using Optix (`optix_x`,`optix_y`) or impact fallback.
+        - **Face Control**: `|face_angle| <= 2.5°` at impact.
+        - **Speed Efficiency**: `1.20 <= smash <= 1.55`.
+        """)
 
     # Session Quality
     st.divider()
