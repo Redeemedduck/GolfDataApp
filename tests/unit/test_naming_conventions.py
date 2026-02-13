@@ -138,6 +138,69 @@ class TestClubNameNormalizer(unittest.TestCase):
         self.assertEqual(result.normalized, '9 Iron')
         self.assertGreaterEqual(result.confidence, 0.9)
 
+    # --- Single-digit iron numbers ---
+
+    def test_single_digit_9(self):
+        result = self.normalizer.normalize('9')
+        self.assertEqual(result.normalized, '9 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_single_digit_7(self):
+        result = self.normalizer.normalize('7')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_single_digit_8(self):
+        result = self.normalizer.normalize('8')
+        self.assertEqual(result.normalized, '8 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_single_digit_6(self):
+        result = self.normalizer.normalize('6')
+        self.assertEqual(result.normalized, '6 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    # --- Bare degree numbers ---
+
+    def test_bare_degree_56(self):
+        result = self.normalizer.normalize('56')
+        self.assertEqual(result.normalized, 'SW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_bare_degree_50(self):
+        result = self.normalizer.normalize('50')
+        self.assertEqual(result.normalized, 'GW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_bare_degree_60(self):
+        result = self.normalizer.normalize('60')
+        self.assertEqual(result.normalized, 'LW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    # --- "M" prefix shorthand ---
+
+    def test_m_prefix_7(self):
+        result = self.normalizer.normalize('M 7')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_m_prefix_56(self):
+        result = self.normalizer.normalize('M 56')
+        self.assertEqual(result.normalized, 'SW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_m_prefix_7_iron(self):
+        result = self.normalizer.normalize('M 7 Iron')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    # --- Reversed wood with space ---
+
+    def test_wood_3_with_space(self):
+        result = self.normalizer.normalize('Wood 3')
+        self.assertEqual(result.normalized, '3 Wood')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
     # --- Degree-based wedges ---
 
     def test_degree_56_to_sw(self):
@@ -229,9 +292,24 @@ class TestNormalizationPipeline(unittest.TestCase):
         self.assertEqual(result['club'], '8 Iron')
         self.assertEqual(result['session_type'], 'drill')
 
-    def test_warmup_50_no_extractable_club(self):
+    def test_warmup_50_extracts_gw(self):
         result = self._normalize('Warmup 50')
-        self.assertIsNone(result['club'])
+        self.assertEqual(result['club'], 'GW')
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_warmup_8_dst_extracts_iron(self):
+        result = self._normalize('warmup 8 dst')
+        self.assertEqual(result['club'], '8 Iron')
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_50_warmup_extracts_gw(self):
+        result = self._normalize('50 Warmup')
+        self.assertEqual(result['club'], 'GW')
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_8_dst_warmup_extracts_iron(self):
+        result = self._normalize('8 Dst Warmup')
+        self.assertEqual(result['club'], '8 Iron')
         self.assertEqual(result['session_type'], 'warmup')
 
     def test_8_iron_dst_trainer(self):

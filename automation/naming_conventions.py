@@ -126,8 +126,17 @@ class ClubNameNormalizer:
 
         # No-space iron: 'Iron7' -> '7 Iron'
         (r'^iron(\d)$', '_IRON_NOSPACE'),
-        (r'^wood(\d)$', '_WOOD_NOSPACE'),
+        (r'^wood\s*(\d)$', '_WOOD_NOSPACE'),
         (r'^hybrid(\d)$', '_HYBRID_NOSPACE'),
+
+        # Standalone single digit: '9' -> '9 Iron' (common Uneekor shorthand)
+        (r'^([1-9])$', '_SINGLE_DIGIT_IRON'),
+
+        # Standalone bare degree: '56' -> SW, '50' -> GW
+        (r'^(\d{2})$', '_BARE_DEGREE'),
+
+        # "M" prefix shorthand: 'M 7' -> '7 Iron', 'M 56' -> SW
+        (r'^m\s+(\d{1,2})(?:\s+iron)?$', '_M_PREFIX'),
 
         # Uneekor default format: 'IRON7 | MEDIUM', 'DRIVER | PREMIUM'
         (r'^driver\s*\|.*$', 'Driver'),
@@ -266,6 +275,44 @@ class ClubNameNormalizer:
                         confidence=0.95,
                         matched_pattern='nospace_format'
                     )
+                elif name == '_SINGLE_DIGIT_IRON':
+                    num = match.group(1)
+                    return NormalizationResult(
+                        original=original,
+                        normalized=f'{num} Iron',
+                        confidence=0.9,
+                        matched_pattern='single_digit_iron'
+                    )
+                elif name == '_BARE_DEGREE':
+                    try:
+                        degree = int(match.group(1))
+                        if degree in self.DEGREE_TO_WEDGE:
+                            return NormalizationResult(
+                                original=original,
+                                normalized=self.DEGREE_TO_WEDGE[degree],
+                                confidence=0.9,
+                                matched_pattern='bare_degree'
+                            )
+                    except (ValueError, IndexError):
+                        pass
+                    continue
+                elif name == '_M_PREFIX':
+                    try:
+                        num = int(match.group(1))
+                        if num <= 9:
+                            normalized = f'{num} Iron'
+                        elif num in self.DEGREE_TO_WEDGE:
+                            normalized = self.DEGREE_TO_WEDGE[num]
+                        else:
+                            continue
+                        return NormalizationResult(
+                            original=original,
+                            normalized=normalized,
+                            confidence=0.9,
+                            matched_pattern='m_prefix'
+                        )
+                    except (ValueError, IndexError):
+                        continue
                 else:
                     return NormalizationResult(
                         original=original,
@@ -684,6 +731,12 @@ class SessionContextParser:
         (r'\b(\d)\s*(?:Hybrid|H)\b', '{0} Hybrid'),  # "4 Hybrid", "4H"
         # "Dst Compressor 8" or "Compressor 8" -> 8 Iron
         (r'(?:Dst\s*)?Compressor\s*(\d)\b', '{0} Iron'),
+        # Bare wedge degree near warmup context: "Warmup 50", "50 Warmup"
+        (r'(?:warmup|wmup|warm)\s+(50|52|54|56|58|60)\b', 'degree'),
+        (r'\b(50|52|54|56|58|60)\s+(?:warmup|wmup|warm)', 'degree'),
+        # Bare iron digit near warmup/drill context: "warmup 8 dst", "8 Dst Warmup"
+        (r'(?:warmup|wmup|dst|trainer|drill)\s+([6-9])\b', '{0} Iron'),
+        (r'\b([6-9])\s+(?:dst|warmup|wmup|trainer|drill)', '{0} Iron'),
     ]
 
     # Wedge type to abbreviation
