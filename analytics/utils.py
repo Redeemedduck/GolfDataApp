@@ -202,3 +202,70 @@ def calculate_distance_stats(df: pd.DataFrame, club: str) -> Optional[Dict]:
             stats['total_q75'] = total_values.quantile(0.75)
 
     return stats
+
+
+
+def analyze_big3_impact_rules(df: pd.DataFrame) -> Dict:
+    """Analyze Adam Young-style Big 3 impact rules for shot quality.
+
+    Big 3 heuristics used here:
+    1) Center Contact: impact strike location close to center.
+    2) Face Control: face angle near square at impact.
+    3) Speed Efficiency: smash factor in an efficient range.
+
+    Returns:
+        Dict with pass counts/percentages and per-rule breakdown.
+    """
+    if df.empty:
+        return {
+            'shots_analyzed': 0,
+            'all_three_pass_count': 0,
+            'all_three_pass_pct': 0.0,
+            'rules': {
+                'center_contact': {'pass_count': 0, 'pass_pct': 0.0},
+                'face_control': {'pass_count': 0, 'pass_pct': 0.0},
+                'speed_efficiency': {'pass_count': 0, 'pass_pct': 0.0},
+            }
+        }
+
+    work = df.copy()
+
+    # Rule 1: Center contact using Optix (preferred) or impact coordinates fallback.
+    x_col = 'optix_x' if 'optix_x' in work.columns else ('impact_x' if 'impact_x' in work.columns else None)
+    y_col = 'optix_y' if 'optix_y' in work.columns else ('impact_y' if 'impact_y' in work.columns else None)
+
+    if x_col and y_col:
+        strike_radius = (work[x_col].fillna(999).abs() ** 2 + work[y_col].fillna(999).abs() ** 2) ** 0.5
+        center_mask = strike_radius <= 12.0
+    else:
+        center_mask = pd.Series([False] * len(work), index=work.index)
+
+    # Rule 2: Face control near square.
+    if 'face_angle' in work.columns:
+        face_mask = work['face_angle'].fillna(999).abs() <= 2.5
+    else:
+        face_mask = pd.Series([False] * len(work), index=work.index)
+
+    # Rule 3: Speed efficiency via smash factor.
+    if 'smash' in work.columns:
+        speed_mask = work['smash'].fillna(0).between(1.20, 1.55, inclusive='both')
+    else:
+        speed_mask = pd.Series([False] * len(work), index=work.index)
+
+    analyzed = len(work)
+
+    def _pct(mask: pd.Series) -> float:
+        return round((int(mask.sum()) / analyzed) * 100, 1) if analyzed else 0.0
+
+    all_three = center_mask & face_mask & speed_mask
+
+    return {
+        'shots_analyzed': analyzed,
+        'all_three_pass_count': int(all_three.sum()),
+        'all_three_pass_pct': _pct(all_three),
+        'rules': {
+            'center_contact': {'pass_count': int(center_mask.sum()), 'pass_pct': _pct(center_mask)},
+            'face_control': {'pass_count': int(face_mask.sum()), 'pass_pct': _pct(face_mask)},
+            'speed_efficiency': {'pass_count': int(speed_mask.sum()), 'pass_pct': _pct(speed_mask)},
+        }
+    }

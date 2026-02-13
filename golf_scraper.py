@@ -56,6 +56,17 @@ def calculate_smash(ball_speed, club_speed):
         return round(ball_speed / club_speed, 2)
     return 0.0
 
+
+
+def build_session_id(report_id, session_date=None):
+    """Build canonical session ID.
+
+    Uses session date when available, falling back to report ID for backward compatibility.
+    """
+    if session_date:
+        return session_date.strftime('%Y-%m-%d')
+    return str(report_id)
+
 def run_scraper(url, progress_callback, session_date=None):
     """
     Main scraper function using Uneekor API
@@ -137,6 +148,8 @@ def run_scraper(url, progress_callback, session_date=None):
 
     total_shots_imported = 0
 
+    session_id_for_storage = build_session_id(report_id, session_date)
+
     # 3. Process each session (club)
     for session in sessions_data:
         club_name = session.get('name', 'Unknown')
@@ -179,7 +192,7 @@ def run_scraper(url, progress_callback, session_date=None):
                 # Prepare shot data for database
                 shot_data = {
                     'id': f"{report_id}_{session_id}_{shot.get('id')}",
-                    'session': report_id,
+                    'session': session_id_for_storage,
                     'session_date': session_date.isoformat() if session_date else None,
                     'club': club_name,
                     'carry_distance': carry_yards,
@@ -228,7 +241,8 @@ def run_scraper(url, progress_callback, session_date=None):
         'total_shots_imported': total_shots_imported,
         'club_sessions': len(sessions_data),
         'session_date': session_date.isoformat() if session_date else None,
-        'report_id': report_id
+        'report_id': report_id,
+        'session_id': session_id_for_storage
     }
 
 def upload_shot_images(report_id, key, session_id, shot_id):
