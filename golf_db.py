@@ -161,6 +161,7 @@ def init_db():
         'session_date': 'TIMESTAMP',
         'face_to_path': 'REAL',
         'strike_distance': 'REAL',
+        'original_club_value': 'TEXT',  # Raw club/session name from Uneekor
     }
     
     for col, col_type in required_columns.items():
@@ -545,7 +546,8 @@ def save_shot(data):
         'optix_y': clean_value(data.get('optix_y'), 0.0),
         'club_lie': clean_value(data.get('club_lie')),
         'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None,
-        'shot_tag': data.get('shot_tag')
+        'shot_tag': data.get('shot_tag'),
+        'original_club_value': data.get('original_club_value'),
     }
 
     # Compute derived columns
