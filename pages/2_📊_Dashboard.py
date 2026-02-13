@@ -47,6 +47,11 @@ def get_filtered_shots_cached(session_id=None, quality='clean', exclude_warmup=T
     return golf_db.get_filtered_shots(session_id=session_id, quality=quality,
                                        exclude_warmup=exclude_warmup, read_mode=read_mode)
 
+
+@st.cache_data(show_spinner=False)
+def get_quality_summary_cached(session_id=None, read_mode="auto"):
+    return golf_db.get_quality_summary(session_id=session_id, read_mode=read_mode)
+
 # Sidebar: Session selector
 with st.sidebar:
     st.header("🔗 Navigation")
@@ -105,6 +110,16 @@ with st.sidebar:
                                               exclude_warmup=exclude_warmup, read_mode=read_mode)
     )
 
+    quality_summary = get_quality_summary_cached(session_id=selected_session_id, read_mode=read_mode)
+    st.caption(
+        f"Quality funnel — Raw: {quality_summary['total']} | "
+        f"Clean: {quality_summary['clean']} ({quality_summary['clean_pct']}%) | "
+        f"Strict: {quality_summary['strict']} ({quality_summary['strict_pct']}%)"
+    )
+    st.caption(
+        f"Warmup tagged shots: {quality_summary['warmup']} ({quality_summary['warmup_pct']}%)"
+    )
+
 # Stop if no data
 if df.empty:
     st.info("No data to display. Please import a session first.")
@@ -115,11 +130,11 @@ if df.empty:
 st.title("⛳ My Golf Data Lab - Advanced Analytics")
 st.subheader(f"Session: {selected_session_id}")
 
-total_shots = golf_db.get_total_shot_count()
+total_shots = golf_db.get_total_shot_count(session_id=selected_session_id, read_mode=read_mode)
 filter_desc = f"quality={quality_selection.lower()}"
 if exclude_warmup:
     filter_desc += ", no warmup"
-st.caption(f"Showing {len(df)} of {total_shots} total shots ({filter_desc})")
+st.caption(f"Showing {len(df)} of {total_shots} session shots ({filter_desc})")
 
 st.divider()
 

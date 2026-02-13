@@ -122,7 +122,8 @@ def init_db():
             optix_x REAL,
             optix_y REAL,
             club_lie REAL,
-            lie_angle TEXT
+            lie_angle TEXT,
+            is_warmup INTEGER DEFAULT 0
         )
     ''')
 
@@ -137,7 +138,8 @@ def init_db():
         'lie_angle': 'TEXT',
         'shot_tag': 'TEXT',
         'session_type': 'TEXT',
-        'session_date': 'TIMESTAMP'
+        'session_date': 'TIMESTAMP',
+        'is_warmup': 'INTEGER DEFAULT 0'
     }
     
     for col, col_type in required_columns.items():
@@ -556,7 +558,8 @@ def save_shot(data):
         'optix_y': clean_value(data.get('optix_y')),
         'club_lie': clean_value(data.get('club_lie')),
         'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None,
-        'shot_tag': data.get('shot_tag')
+        'shot_tag': data.get('shot_tag'),
+        'is_warmup': int(data.get('is_warmup', 0) or 0)
     }
 
     # 1. Save to Local SQLite
@@ -797,17 +800,77 @@ def get_filtered_shots(session_id=None, quality='clean', exclude_warmup=True, re
     return local_df
 
 
-def get_total_shot_count():
-    """Get total unfiltered shot count (for 'X of Y' display)."""
+def get_total_shot_count(session_id=None, read_mode=None):
+    """Get total unfiltered shot count from the active read source.
+
+    Args:
+        session_id: Optional session scope.
+        read_mode: Override for global read mode.
+    """
+    mode = _normalize_read_mode(read_mode or READ_MODE)
+
+    if mode == "supabase" and supabase:
+        try:
+            query = supabase.table('shots').select('shot_id', count='exact')
+            if session_id:
+                query = query.eq('session_id', session_id)
+            response = query.execute()
+            if hasattr(response, "count") and response.count is not None:
+                return int(response.count)
+        except Exception:
+            pass
+
     try:
         if os.path.exists(SQLITE_DB_PATH):
             conn = sqlite3.connect(SQLITE_DB_PATH)
-            count = pd.read_sql_query("SELECT COUNT(*) as cnt FROM shots", conn).iloc[0]['cnt']
+            if session_id:
+                count = pd.read_sql_query(
+                    "SELECT COUNT(*) as cnt FROM shots WHERE session_id = ?",
+                    conn,
+                    params=[session_id],
+                ).iloc[0]['cnt']
+            else:
+                count = pd.read_sql_query("SELECT COUNT(*) as cnt FROM shots", conn).iloc[0]['cnt']
             conn.close()
             return int(count)
     except Exception:
         pass
+
+    if mode == "auto" and supabase:
+        try:
+            query = supabase.table('shots').select('shot_id', count='exact')
+            if session_id:
+                query = query.eq('session_id', session_id)
+            response = query.execute()
+            if hasattr(response, "count") and response.count is not None:
+                return int(response.count)
+        except Exception:
+            pass
+
     return 0
+
+
+def get_quality_summary(session_id=None, read_mode=None):
+    """Return quality funnel counts for transparency in the dashboard UI."""
+    all_df = get_filtered_shots(session_id=session_id, quality='none', exclude_warmup=False, read_mode=read_mode)
+    clean_df = get_filtered_shots(session_id=session_id, quality='clean', exclude_warmup=False, read_mode=read_mode)
+    strict_df = get_filtered_shots(session_id=session_id, quality='strict', exclude_warmup=False, read_mode=read_mode)
+
+    total = len(all_df)
+    warmup_count = int((all_df.get('is_warmup', pd.Series(dtype=int)) == 1).sum()) if total else 0
+
+    def pct(value):
+        return round((value / total) * 100, 1) if total else 0.0
+
+    return {
+        'total': total,
+        'clean': len(clean_df),
+        'strict': len(strict_df),
+        'warmup': warmup_count,
+        'clean_pct': pct(len(clean_df)),
+        'strict_pct': pct(len(strict_df)),
+        'warmup_pct': pct(warmup_count),
+    }
 
 
 def get_unique_sessions(read_mode=None):
