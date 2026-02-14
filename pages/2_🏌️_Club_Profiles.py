@@ -21,6 +21,7 @@ from components.big3_summary import render_big3_summary
 from utils.responsive import add_responsive_css
 from utils.bag_config import get_club_sort_key, get_adjacent_clubs
 from components.date_range_filter import render_date_range_filter, filter_by_date_range
+from components.goal_tracker import render_goal_tracker
 
 st.set_page_config(layout="wide", page_title="Club Profiles", page_icon="🏌️")
 add_responsive_css()
@@ -57,6 +58,9 @@ club_shots = all_shots[all_shots['club'] == selected_club].copy()
 
 # ─── Hero Card ────────────────────────────────────────────────
 render_club_hero(selected_club, club_shots)
+
+# ─── Smash Factor Goal ────────────────────────────────────────
+render_goal_tracker(club_shots, selected_club)
 
 st.divider()
 
