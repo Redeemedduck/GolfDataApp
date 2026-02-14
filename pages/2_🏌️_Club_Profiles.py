@@ -19,7 +19,7 @@ from components.club_hero import render_club_hero
 from components.club_trends import render_club_trends
 from components.big3_summary import render_big3_summary
 from utils.responsive import add_responsive_css
-from utils.bag_config import get_club_sort_key
+from utils.bag_config import get_club_sort_key, get_adjacent_clubs
 
 st.set_page_config(layout="wide", page_title="Club Profiles", page_icon="🏌️")
 add_responsive_css()
@@ -106,10 +106,12 @@ st.divider()
 # ─── Club Comparison Radar ────────────────────────────────────
 st.markdown("#### Compare with Other Clubs")
 other_clubs = [c for c in clubs if c != selected_club]
+suggested = [c for c in get_adjacent_clubs(selected_club) if c in other_clubs]
+default_compare = suggested[:2] if suggested else other_clubs[:2]
 compare_clubs = st.multiselect(
     "Compare with:",
     other_clubs,
-    default=other_clubs[:2],
+    default=default_compare,
     max_selections=3,
     key="radar_compare_clubs",
 )

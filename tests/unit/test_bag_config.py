@@ -3,6 +3,7 @@
 import unittest
 
 from utils.bag_config import (
+    get_adjacent_clubs,
     get_all_smash_targets,
     get_bag_order,
     get_club_sort_key,
@@ -43,6 +44,25 @@ class TestBagConfig(unittest.TestCase):
         self.assertFalse(is_in_bag("Sim Round"))
         self.assertFalse(is_in_bag("Other"))
         self.assertFalse(is_in_bag("Nonexistent"))
+
+
+class TestAdjacentClubs(unittest.TestCase):
+    """Verify adjacent club suggestions by bag order."""
+
+    def setUp(self):
+        reload()
+
+    def test_middle_club_returns_neighbors(self):
+        self.assertEqual(get_adjacent_clubs("7 Iron"), ["6 Iron", "8 Iron"])
+
+    def test_first_club_returns_next_only(self):
+        self.assertEqual(get_adjacent_clubs("Driver"), ["3 Wood (Cobra)"])
+
+    def test_last_club_returns_prev_only(self):
+        self.assertEqual(get_adjacent_clubs("Putter"), ["LW"])
+
+    def test_unknown_club_returns_empty(self):
+        self.assertEqual(get_adjacent_clubs("Unknown Club"), [])
 
 
 class TestSmashTargets(unittest.TestCase):

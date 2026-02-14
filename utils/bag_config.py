@@ -48,6 +48,22 @@ def get_club_sort_key(club_name: str) -> int:
         return len(order)  # Unknown clubs sort to end
 
 
+def get_adjacent_clubs(club_name: str) -> List[str]:
+    """Return adjacent clubs in bag order (previous and next)."""
+    order = get_bag_order()
+    try:
+        index = order.index(club_name)
+    except ValueError:
+        return []
+
+    adjacent: List[str] = []
+    if index > 0:
+        adjacent.append(order[index - 1])
+    if index < len(order) - 1:
+        adjacent.append(order[index + 1])
+    return adjacent
+
+
 def get_smash_target(club_name: str) -> Optional[float]:
     """Return the target smash factor for a club, or None if not in bag."""
     targets = _load().get('smash_targets', {})
