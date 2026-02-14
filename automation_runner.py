@@ -43,6 +43,7 @@ import os
 import sys
 import asyncio
 import argparse
+import sqlite3
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
@@ -60,6 +61,7 @@ from automation.browser_client import PlaywrightClient, BrowserConfig
 from automation.naming_conventions import get_normalizer
 from automation.uneekor_portal import UneekorPortalNavigator
 import golf_db
+import golf_scraper
 
 
 def cmd_login(args):
@@ -752,6 +754,99 @@ def cmd_normalize(args):
     return 1
 
 
+def reimport_all(db_path=None, dry_run=False):
+    import shutil
+    from datetime import datetime as dt
+
+    if db_path:
+        golf_db.SQLITE_DB_PATH = db_path
+
+    golf_db.init_db()
+
+    conn = sqlite3.connect(golf_db.SQLITE_DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT report_id, api_key FROM sessions_discovered')
+    sessions = cursor.fetchall()
+
+    if not sessions:
+        print('No sessions found in sessions_discovered.')
+        conn.close()
+        return {'success': True, 'sessions_processed': 0, 'shots_imported': 0, 'errors': []}
+
+    print(f'Found {len(sessions)} sessions to reimport.')
+
+    if dry_run:
+        print(f'[DRY RUN] Would clear shots, shots_archive, change_log, session_stats')
+        print(f'[DRY RUN] Would reimport {len(sessions)} sessions from Uneekor API')
+        conn.close()
+        return {'success': True, 'sessions_processed': len(sessions), 'shots_imported': 0, 'errors': []}
+
+    backup_path = f'{golf_db.SQLITE_DB_PATH}.bak-{dt.now().strftime("%Y%m%d-%H%M%S")}'
+    shutil.copy2(golf_db.SQLITE_DB_PATH, backup_path)
+    print(f'Database backed up to {backup_path}')
+
+    for table in ['shots', 'shots_archive', 'change_log', 'session_stats']:
+        try:
+            cursor.execute(f'DELETE FROM {table}')
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+    print('Cleared shots, shots_archive, change_log, session_stats')
+
+    total_shots = 0
+    sessions_ok = 0
+    errors = []
+
+    for report_id, api_key in sessions:
+        try:
+            result = golf_scraper.run_scraper(
+                f'https://my.uneekor.com/report?id={report_id}&key={api_key}',
+                lambda msg: None,
+            )
+
+            if result and result.get('status') == 'success':
+                shots = result.get('total_shots_imported', 0)
+                total_shots += shots
+                sessions_ok += 1
+                print(f'  [{sessions_ok}/{len(sessions)}] {report_id}: {shots} shots')
+            else:
+                err = result.get('message', 'Unknown error') if result else 'No result'
+                errors.append(f'{report_id}: {err}')
+                print(f'  [{sessions_ok}/{len(sessions)}] {report_id}: FAILED - {err}')
+
+        except Exception as e:
+            errors.append(f'{report_id}: {str(e)}')
+            print(f'  {report_id}: ERROR - {e}')
+
+        total_attempted = sessions_ok + len(errors)
+        if total_attempted >= 5 and len(errors) / total_attempted > 0.05:
+            print(f'ABORT: Failure rate {len(errors)}/{total_attempted} exceeds 5% threshold')
+            break
+
+    cursor.execute("UPDATE sessions_discovered SET import_status = 'reimported'")
+    conn.commit()
+    conn.close()
+
+    print(f'\nReimport complete: {sessions_ok} sessions, {total_shots} shots, {len(errors)} errors')
+    if errors:
+        print('Errors:')
+        for e in errors[:10]:
+            print(f'  {e}')
+
+    return {
+        'success': len(errors) == 0,
+        'sessions_processed': sessions_ok,
+        'shots_imported': total_shots,
+        'errors': errors,
+    }
+
+
+def cmd_reimport_all(args):
+    result = reimport_all(dry_run=args.dry_run)
+    return 0 if result['success'] else 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='GolfDataApp Automation Runner',
@@ -846,6 +941,10 @@ def main():
                                     help='Preview without making changes')
     reclassify_parser.add_argument('--debug', action='store_true',
                                     help='Show detailed extraction attempts')
+    reimport_parser = subparsers.add_parser('reimport-all',
+        help='Clear shots and reimport all sessions from Uneekor API')
+    reimport_parser.add_argument('--dry-run', action='store_true',
+        help='Preview without making changes')
 
     args = parser.parse_args()
 
@@ -863,6 +962,7 @@ def main():
         'normalize': cmd_normalize,
         'reclassify-dates': cmd_reclassify_dates,
         'sync-database': cmd_sync_database,
+        'reimport-all': cmd_reimport_all,
     }
 
     handler = handlers.get(args.command)
