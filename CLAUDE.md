@@ -11,6 +11,9 @@ streamlit run app.py
 # Run all tests (unittest runner; pytest also works)
 python -m unittest discover -s tests
 
+# Run agent tests only
+python -m unittest tests.unit.test_agent_tools tests.unit.test_agent_core tests.unit.test_claude_provider
+
 # Run a single test file
 python -m unittest tests.test_golf_db
 python -m unittest tests.unit.test_ml_models
@@ -26,7 +29,7 @@ python -m unittest tests.integration.test_date_reclassification
 
 # Syntax check all Python files (this is what CI runs as "lint")
 python -m py_compile app.py golf_db.py local_coach.py exceptions.py
-python -m py_compile automation/*.py ml/*.py utils/*.py
+python -m py_compile automation/*.py ml/*.py utils/*.py agent/*.py
 python -m py_compile services/ai/*.py services/ai/providers/*.py
 python -m py_compile components/*.py
 for f in pages/*.py; do python -m py_compile "$f"; done
@@ -55,6 +58,10 @@ python automation_runner.py reclassify-dates --manual 43285 2026-01-15
 python automation_runner.py sync-database --dry-run
 python automation_runner.py sync-database
 python automation_runner.py sync-database --direction from-supabase
+
+# Golf Agent (Claude Agent SDK)
+op run --env-file=.env.template -- python3 -m agent.cli              # Interactive chat
+op run --env-file=.env.template -- python3 -m agent.cli --single "How's my driver?"  # One-shot query
 ```
 
 ## Architecture Overview
@@ -69,8 +76,8 @@ Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
                                        |
                              ┌─────────┴─────────┐
                              v                   v
-                     local_coach.py      gemini_coach.py
-                     (Offline ML)        (Cloud AI)
+                     local_coach.py      gemini_coach.py      agent/
+                     (Offline ML)        (Cloud AI)           (Agent SDK)
 ```
 
 ### Core Modules
@@ -85,6 +92,7 @@ Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
 | `services/ai/` | AI provider registry (decorator pattern for pluggable backends) |
 | `components/` | Reusable Streamlit UI components (all follow `render_*()` pattern) |
 | `exceptions.py` | Exception hierarchy: `GolfDataAppError` base with `DatabaseError`, `ValidationError`, `RateLimitError`, `AuthenticationError`, etc. — all carry context dicts |
+| `agent/` | Claude Agent SDK golf coach: CLI (`python3 -m agent`), Streamlit provider, 8 MCP tools wrapping `golf_db` |
 | `golf_scraper.py` | Legacy scraper (pre-Playwright, still functional) |
 
 ### Hybrid Database Pattern
@@ -152,6 +160,7 @@ Key behaviors:
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
+| `ANTHROPIC_API_KEY` | For Agent SDK | Claude Agent SDK access |
 | `GEMINI_API_KEY` | For AI Coach | Gemini API access |
 | `SUPABASE_URL` | No | Cloud sync URL |
 | `SUPABASE_KEY` | No | Cloud sync key |
