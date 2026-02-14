@@ -18,11 +18,17 @@ from services.data_access import (
     clear_all_caches,
 )
 from utils.session_state import get_read_mode
-from utils.responsive import add_responsive_css
+from utils.responsive import add_responsive_css, render_compact_toggle
 from components import (
     render_session_selector,
     render_shared_sidebar,
     render_no_data_state,
+)
+from components.shared_sidebar import (
+    render_data_source,
+    render_sync_status,
+    render_mode_toggle,
+    render_appearance_toggle,
 )
 
 _normalizer = ClubNameNormalizer()
@@ -52,11 +58,12 @@ all_sessions = get_unique_sessions(read_mode=read_mode)
 all_clubs = df["club"].unique().tolist() if not df.empty and "club" in df.columns else []
 
 # ─── Tabs ──────────────────────────────────────────────────────
-tab_data, tab_maintenance, tab_tags, tab_automation = st.tabs([
+tab_data, tab_maintenance, tab_tags, tab_automation, tab_display = st.tabs([
     "Data",
     "Maintenance",
     "Tags",
     "Automation",
+    "Display",
 ])
 
 
@@ -762,3 +769,30 @@ with tab_automation:
             st.caption(f"{ts} | {evt_status} | {shots} shots")
     else:
         st.caption("No sync events logged yet.")
+
+
+# ================================================================
+# TAB 5: DISPLAY (relocated from sidebar)
+# ================================================================
+with tab_display:
+    st.header("Display & Data Source")
+    st.caption("Controls previously in the sidebar — now centralized here.")
+
+    st.subheader("Data Source")
+    render_data_source()
+
+    st.divider()
+
+    st.subheader("Sync Status")
+    render_sync_status()
+
+    st.divider()
+
+    st.subheader("Layout")
+    render_compact_toggle()
+    render_mode_toggle()
+
+    st.divider()
+
+    st.subheader("Appearance")
+    render_appearance_toggle()
