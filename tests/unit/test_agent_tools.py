@@ -24,20 +24,42 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 # ---------------------------------------------------------------------------
-# Pre-import mock: golf_db depends on supabase and dotenv which may not be
-# installed in the test environment.  We inject a mock into sys.modules so
-# that ``import golf_db`` inside agent/tools.py resolves without error.
-# The mock is replaced per-test to control return values.
+# Module-level mock setup/teardown — ensures sys.modules is restored after
+# this test file runs so other test files aren't affected.
 # ---------------------------------------------------------------------------
+_DEPS = ["golf_db", "dotenv", "supabase", "automation",
+         "automation.naming_conventions", "exceptions"]
+_ORIGINAL_MODULES = {}
 _golf_db_mock = MagicMock(name="golf_db")
-sys.modules.setdefault("golf_db", _golf_db_mock)
+tools_module = None  # Set by setUpModule
 
-# Also mock transitive deps that golf_db imports at module level
-for _dep in ("dotenv", "supabase", "automation", "automation.naming_conventions", "exceptions"):
-    sys.modules.setdefault(_dep, MagicMock(name=_dep))
 
-# Now we can safely import agent.tools (it will get our mocked golf_db)
-import agent.tools as tools_module  # noqa: E402
+def setUpModule():
+    global tools_module
+    for dep in _DEPS:
+        _ORIGINAL_MODULES[dep] = sys.modules.get(dep, None)
+    # Force-inject mocks (NOT setdefault — must override any real imports)
+    sys.modules["golf_db"] = _golf_db_mock
+    for dep in _DEPS[1:]:
+        sys.modules[dep] = MagicMock(name=dep)
+    # Evict any cached agent.* so agent.tools re-imports with our mocks
+    for key in list(sys.modules):
+        if key.startswith("agent."):
+            del sys.modules[key]
+    import agent.tools as _tools
+    globals()["tools_module"] = _tools
+
+
+def tearDownModule():
+    for dep, original in _ORIGINAL_MODULES.items():
+        if original is None:
+            sys.modules.pop(dep, None)
+        else:
+            sys.modules[dep] = original
+    # Clean up agent.* so subsequent tests get a fresh import
+    for key in list(sys.modules):
+        if key.startswith("agent."):
+            del sys.modules[key]
 
 
 def run_async(coro):
