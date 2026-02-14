@@ -437,7 +437,7 @@ class SessionNamer:
         Returns:
             Generated session name
         """
-        date_str = session_date.strftime(self.date_format)
+        date_str = session_date.strftime(self.date_format) if session_date else 'Unknown Date'
         type_name = self.SESSION_TYPES.get(session_type.lower(), session_type.capitalize())
 
         if session_type.lower() == 'round' and course_name:
