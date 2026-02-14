@@ -43,6 +43,8 @@ debug_page_source.html
 *.db-wal
 
 # Trained ML models (too large for git)
+/models/*.joblib
+/models/*.json
 /models/trained_*.pkl
 
 # Firebase debug
@@ -51,6 +53,22 @@ firebase-debug.log
 # MCP config and Playwright screenshots
 .mcp.json
 .playwright-mcp/
+
+# FUSE filesystem artifacts
+.fuse_hidden*
+
+# Generated reports / artifacts
+data_quality_report.csv
+data_quality_summary.json
+golf_dashboard.html
+golf_data_profile.pdf
+portal_exploration_notes.md
+
+# Screenshots (keep in docs/ if needed, not repo root)
+/screenshots/
+
+# GSD planning artifacts
+.planning/
 
 # Git worktrees
 .worktrees/
