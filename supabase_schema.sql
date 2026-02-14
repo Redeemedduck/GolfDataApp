@@ -6,7 +6,7 @@
 -- "Migration for existing deployments" section at the bottom.
 --
 -- Project: Uneekor (lhccrzxgnmynxmvoydkm)
--- Last synced: 2026-01-27
+-- Last synced: 2026-02-14
 -- =============================================================================
 -- Note: The sync_audit table exists only in local SQLite and is not part of
 -- this Supabase schema.
@@ -50,13 +50,19 @@ CREATE TABLE IF NOT EXISTS shots (
     club_lie REAL,
     lie_angle TEXT,
     shot_tag TEXT,
-    original_club_value TEXT
+    original_club_value TEXT,
+    sidebar_label TEXT,
+    uneekor_club_id INTEGER,
+    face_to_path DOUBLE PRECISION,
+    strike_distance DOUBLE PRECISION
 );
 
 CREATE INDEX IF NOT EXISTS idx_shots_session_id ON shots(session_id);
 CREATE INDEX IF NOT EXISTS idx_shots_session_date ON shots(session_date);
 CREATE INDEX IF NOT EXISTS idx_shots_date_added ON shots(date_added);
 CREATE INDEX IF NOT EXISTS idx_shots_club ON shots(club);
+CREATE INDEX IF NOT EXISTS idx_shots_session_club ON shots(session_id, club);
+CREATE INDEX IF NOT EXISTS idx_shots_date_club ON shots(session_date, club);
 
 ALTER TABLE shots ENABLE ROW LEVEL SECURITY;
 
@@ -261,3 +267,11 @@ ORDER BY session_start DESC;
 -- Step 4: Create change_log (run the CREATE TABLE from section 4)
 --
 -- Step 5: Update session_summary view (run the CREATE OR REPLACE VIEW from section 6)
+--
+-- Step 6: Add scraper fix columns (2026-02-14)
+--   ALTER TABLE shots ADD COLUMN IF NOT EXISTS sidebar_label TEXT;
+--   ALTER TABLE shots ADD COLUMN IF NOT EXISTS uneekor_club_id INTEGER;
+--   ALTER TABLE shots ADD COLUMN IF NOT EXISTS face_to_path DOUBLE PRECISION;
+--   ALTER TABLE shots ADD COLUMN IF NOT EXISTS strike_distance DOUBLE PRECISION;
+--   CREATE INDEX IF NOT EXISTS idx_shots_session_club ON shots(session_id, club);
+--   CREATE INDEX IF NOT EXISTS idx_shots_date_club ON shots(session_date, club);
