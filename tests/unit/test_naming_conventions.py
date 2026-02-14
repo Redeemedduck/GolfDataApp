@@ -10,6 +10,7 @@ from automation.naming_conventions import (
     normalize_club,
     normalize_clubs,
     parse_listing_date,
+    map_uneekor_club,
 )
 
 
@@ -564,6 +565,83 @@ class TestSessionContextParser(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.month, 3)
         self.assertEqual(result.day, 5)
+
+
+class TestMapUneekorClub(unittest.TestCase):
+    """Tests for map_uneekor_club() — Uneekor API club_name to canonical mapping."""
+
+    # --- All 20 defined mappings ---
+
+    def test_driver(self):
+        self.assertEqual(map_uneekor_club('DRIVER'), 'Driver')
+
+    def test_wood2(self):
+        self.assertEqual(map_uneekor_club('WOOD2'), '3 Wood (Cobra)')
+
+    def test_wood3(self):
+        self.assertEqual(map_uneekor_club('WOOD3'), '3 Wood (TM)')
+
+    def test_wood7(self):
+        self.assertEqual(map_uneekor_club('WOOD7'), '7 Wood')
+
+    def test_iron3(self):
+        self.assertEqual(map_uneekor_club('IRON3'), '3 Iron')
+
+    def test_iron4(self):
+        self.assertEqual(map_uneekor_club('IRON4'), '4 Iron')
+
+    def test_iron5(self):
+        self.assertEqual(map_uneekor_club('IRON5'), '5 Iron')
+
+    def test_iron6(self):
+        self.assertEqual(map_uneekor_club('IRON6'), '6 Iron')
+
+    def test_iron7(self):
+        self.assertEqual(map_uneekor_club('IRON7'), '7 Iron')
+
+    def test_iron8(self):
+        self.assertEqual(map_uneekor_club('IRON8'), '8 Iron')
+
+    def test_iron9(self):
+        self.assertEqual(map_uneekor_club('IRON9'), '9 Iron')
+
+    def test_wedge_pitching(self):
+        self.assertEqual(map_uneekor_club('WEDGE_PITCHING'), 'PW')
+
+    def test_wedge_50(self):
+        self.assertEqual(map_uneekor_club('WEDGE_50'), 'GW')
+
+    def test_wedge_56(self):
+        self.assertEqual(map_uneekor_club('WEDGE_56'), 'SW')
+
+    def test_wedge_60(self):
+        self.assertEqual(map_uneekor_club('WEDGE_60'), 'LW')
+
+    def test_putter(self):
+        self.assertEqual(map_uneekor_club('PUTTER'), 'Putter')
+
+    def test_iron1_sim_round(self):
+        self.assertEqual(map_uneekor_club('IRON1'), 'Sim Round')
+
+    def test_hybrid1_other(self):
+        self.assertEqual(map_uneekor_club('HYBRID1'), 'Other')
+
+    def test_hybrid3_other(self):
+        self.assertEqual(map_uneekor_club('HYBRID3'), 'Other')
+
+    def test_wedge_54_other(self):
+        self.assertEqual(map_uneekor_club('WEDGE_54'), 'Other')
+
+    # --- Edge cases ---
+
+    def test_unrecognized_returns_unknown(self):
+        self.assertEqual(map_uneekor_club('FOOBAR'), 'Unknown')
+
+    def test_none_returns_unknown(self):
+        self.assertEqual(map_uneekor_club(None), 'Unknown')
+
+    def test_empty_string_returns_unknown(self):
+        self.assertEqual(map_uneekor_club(''), 'Unknown')
 
 
 if __name__ == "__main__":

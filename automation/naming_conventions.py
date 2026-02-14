@@ -924,6 +924,55 @@ def get_auto_tagger() -> AutoTagger:
     return _auto_tagger
 
 
+# ---------------------------------------------------------------------------
+# Uneekor API club_name -> Canonical Club Mapping
+# ---------------------------------------------------------------------------
+# The Uneekor API returns a `club_name` field per shot (e.g., "IRON7",
+# "DRIVER", "WEDGE_PITCHING") that differs from the human-readable session
+# `name` shown in the sidebar.  This dict maps every known API value to the
+# canonical club names used throughout the app.
+# ---------------------------------------------------------------------------
+
+UNEEKOR_TO_CANONICAL = {
+    'DRIVER': 'Driver',
+    'WOOD2': '3 Wood (Cobra)',
+    'WOOD3': '3 Wood (TM)',
+    'WOOD7': '7 Wood',
+    'IRON3': '3 Iron',
+    'IRON4': '4 Iron',
+    'IRON5': '5 Iron',
+    'IRON6': '6 Iron',
+    'IRON7': '7 Iron',
+    'IRON8': '8 Iron',
+    'IRON9': '9 Iron',
+    'WEDGE_PITCHING': 'PW',
+    'WEDGE_50': 'GW',
+    'WEDGE_56': 'SW',
+    'WEDGE_60': 'LW',
+    'PUTTER': 'Putter',
+    'IRON1': 'Sim Round',
+    'HYBRID1': 'Other',
+    'HYBRID3': 'Other',
+    'WEDGE_54': 'Other',
+}
+
+
+def map_uneekor_club(uneekor_club_name: Optional[str]) -> str:
+    """Map a Uneekor API ``club_name`` value to the canonical app club name.
+
+    Args:
+        uneekor_club_name: Raw club identifier from the Uneekor API
+            (e.g. ``"IRON7"``, ``"DRIVER"``).  May be ``None``.
+
+    Returns:
+        The canonical club name, or ``'Unknown'`` if the value is ``None``,
+        empty, or not present in ``UNEEKOR_TO_CANONICAL``.
+    """
+    if not uneekor_club_name:
+        return 'Unknown'
+    return UNEEKOR_TO_CANONICAL.get(uneekor_club_name, 'Unknown')
+
+
 def normalize_club(club_name: str) -> str:
     """Convenience function to normalize a single club name."""
     return get_normalizer().normalize(club_name).normalized
