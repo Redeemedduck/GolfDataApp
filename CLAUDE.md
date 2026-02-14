@@ -127,7 +127,7 @@ ML dependencies are **lazy-loaded** via `__getattr__` in `ml/__init__.py`. Code 
 - `pages/1_📊_Dashboard.py` — Analytics (3 tabs: Overview, Big 3 Deep Dive, Shots)
 - `pages/2_🏌️_Club_Profiles.py` — Per-club deep dives (hero stats, trends, Big 3, session comparison, radar)
 - `pages/3_🤖_AI_Coach.py` — Chat interface with provider selection dropdown
-- `pages/4_⚙️_Settings.py` — Data Import + Database Manager (3 tabs: Data, Maintenance, Tags)
+- `pages/4_⚙️_Settings.py` — Data Import + Database Manager (5 tabs: Data, Maintenance, Tags, Automation, Display)
 
 Components in `components/` are stateless: `render_*(data: pd.DataFrame, **kwargs) -> None`.
 
@@ -143,7 +143,7 @@ Shared utilities:
 - `utils/date_helpers.py` — `parse_session_date()`, `format_session_date()` (used by 3 components)
 - `utils/big3_constants.py` — Big 3 thresholds, colors, `face_label()`/`path_label()`/`strike_label()` (used by 2 components)
 - `utils/responsive.py` — `is_compact_layout()`, `render_compact_toggle()`, `add_responsive_css()`
-- `utils/bag_config.py` — `get_bag_order()`, `get_club_sort_key()`, `is_in_bag()` (reads `my_bag.json`)
+- `utils/bag_config.py` — `get_bag_order()`, `get_club_sort_key()`, `is_in_bag()`, `get_smash_target()`, `get_all_smash_targets()` (reads `my_bag.json`)
 
 ### Automation Module
 
@@ -210,6 +210,8 @@ clubs = sorted(club_list, key=get_club_sort_key)  # Bag order: Driver first
 - Session display names are generated via `SessionNamer.generate_display_name()` — format: `"2026-01-25 Mixed Practice (47 shots)"`
 - Session types detected by club distribution (`SessionNamer.detect_session_type()`): Driver Focus, Iron Work, Short Game, Woods Focus, Mixed Practice, Warmup
 - `golf_db.batch_update_session_names()` retroactively renames all imported sessions
+- Per-club smash factor targets are defined in `my_bag.json` under `smash_targets` key and accessed via `utils/bag_config.py:get_smash_target()` / `get_all_smash_targets()`
+- Sidebar is navigation-only across all pages; technical controls (data source, sync status, layout, appearance) live in Settings > Display tab
 - **Backfill performance tip:** Disable Supabase during bulk import (`SUPABASE_URL=""`) then batch-sync after with `sync-database`. Per-shot upserts in `add_shot()` are slow for bulk operations.
 
 ### Coding Style

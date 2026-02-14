@@ -36,11 +36,7 @@ if all_shots.empty or 'club' not in all_shots.columns:
     st.stop()
 
 # Sidebar
-render_shared_sidebar(
-    show_navigation=True,
-    show_data_source=True,
-    current_page="club_profiles",
-)
+render_shared_sidebar(current_page="club_profiles")
 
 # Club selector in main area (ordered by bag config)
 clubs = sorted(all_shots['club'].dropna().unique().tolist(), key=get_club_sort_key)

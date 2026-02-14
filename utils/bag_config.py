@@ -48,6 +48,17 @@ def get_club_sort_key(club_name: str) -> int:
         return len(order)  # Unknown clubs sort to end
 
 
+def get_smash_target(club_name: str) -> Optional[float]:
+    """Return the target smash factor for a club, or None if not in bag."""
+    targets = _load().get('smash_targets', {})
+    return targets.get(club_name)
+
+
+def get_all_smash_targets() -> Dict[str, float]:
+    """Return all per-club smash factor targets."""
+    return dict(_load().get('smash_targets', {}))
+
+
 def reload():
     """Clear cache to force re-read on next access."""
     global _cache

@@ -48,12 +48,7 @@ golf_db.init_db()
 read_mode = get_read_mode()
 
 # Shared sidebar (data source only, navigation below)
-render_shared_sidebar(
-    show_navigation=True,
-    show_data_source=True,
-    show_sync_status=True,
-    current_page="ai_coach"
-)
+render_shared_sidebar(current_page="ai_coach")
 
 # Sidebar configuration
 with st.sidebar:

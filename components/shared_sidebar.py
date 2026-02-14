@@ -11,39 +11,21 @@ from utils.responsive import render_compact_toggle
 
 def render_shared_sidebar(
     show_navigation: bool = True,
-    show_data_source: bool = True,
-    show_sync_status: bool = True,
-    show_mode_toggle: bool = False,
     current_page: str = None
 ) -> None:
     """
-    Render the unified sidebar with all standard sections.
+    Render the unified sidebar — navigation only.
+
+    Technical controls (data source, sync status, layout, appearance)
+    are in Settings > Display tab.
 
     Args:
         show_navigation: Show navigation links
-        show_data_source: Show data source selector
-        show_sync_status: Show database sync status
-        show_mode_toggle: Show simple/advanced mode toggle
         current_page: Current page name for active state highlighting
     """
     with st.sidebar:
-        if show_mode_toggle:
-            render_mode_toggle()
-            st.divider()
-
         if show_navigation:
             render_navigation(current_page)
-            st.divider()
-
-        if show_data_source:
-            render_data_source()
-
-        if show_sync_status:
-            render_sync_status()
-
-        render_compact_toggle()
-
-        render_appearance_toggle()
 
 
 def render_navigation(current_page: str = None) -> None:

@@ -30,12 +30,7 @@ golf_db.init_db()
 read_mode = get_read_mode()
 
 # Shared sidebar
-render_shared_sidebar(
-    show_navigation=True,
-    show_data_source=True,
-    show_sync_status=True,
-    current_page="dashboard",
-)
+render_shared_sidebar(current_page="dashboard")
 
 # Session selector in sidebar
 with st.sidebar:
