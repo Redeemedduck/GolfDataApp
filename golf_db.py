@@ -158,6 +158,7 @@ def init_db():
         'club_lie': 'REAL',
         'lie_angle': 'TEXT',
         'shot_tag': 'TEXT',
+        'session_notes': 'TEXT',
         'session_type': 'TEXT',
         'session_date': 'TIMESTAMP',
         'face_to_path': 'REAL',
@@ -1070,6 +1071,7 @@ def update_session_type(session_id, session_type):
 # This prevents SQL injection by validating the field name
 ALLOWED_UPDATE_FIELDS = frozenset({
     'shot_tag',      # For tagging shots
+    'session_notes', # Session-level notes stored on shots
     'session_type',  # For categorizing sessions
     'club',          # For correcting club assignments
     'session_id',    # For moving shots between sessions

@@ -85,3 +85,7 @@ def render_journal_card(
             f"<span style='color:{strike_clr}'>Strike: {strike_lbl}</span>",
             unsafe_allow_html=True,
         )
+
+        notes = stats.get('session_notes')
+        if isinstance(notes, str) and notes.strip():
+            st.caption(f"📝 {notes[:80]}..." if len(notes) > 80 else notes)

@@ -181,6 +181,24 @@ with tab_shots:
                 f"{shot['attack_angle']:.1f}°" if pd.notna(shot.get("attack_angle")) else "N/A",
             )
 
+            shot_ids = df["shot_id"].dropna().astype(str).tolist() if "shot_id" in df.columns else []
+            current_note = shot.get("session_notes")
+            if pd.isna(current_note):
+                current_note = ""
+
+            new_note = st.text_area(
+                "Session Notes",
+                value=current_note,
+                height=100,
+                key=f"session_notes_{selected_session_id}",
+            )
+            if st.button("Save Note", key=f"save_session_note_{selected_session_id}"):
+                updated = golf_db.update_shot_metadata(shot_ids, "session_notes", new_note)
+                if updated:
+                    st.success(f"Saved note to {updated} shot{'s' if updated != 1 else ''}.")
+                else:
+                    st.warning("No shots were updated.")
+
             st.divider()
 
             if shot.get("impact_img") or shot.get("swing_img"):

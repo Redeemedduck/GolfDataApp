@@ -309,5 +309,32 @@ class TestNewSchemaColumns(unittest.TestCase):
         self.assertIn('original_club_value', ALLOWED_UPDATE_FIELDS)
 
 
+class TestSessionNotes(unittest.TestCase):
+    def setUp(self):
+        self.original_db_path = golf_db.SQLITE_DB_PATH
+        self.original_supabase = golf_db.supabase
+        self.db_path = tempfile.mktemp(suffix=".db")
+        golf_db.SQLITE_DB_PATH = self.db_path
+        golf_db.supabase = None
+        golf_db.init_db()
+
+    def tearDown(self):
+        golf_db.SQLITE_DB_PATH = self.original_db_path
+        golf_db.supabase = self.original_supabase
+        if os.path.exists(self.db_path):
+            os.unlink(self.db_path)
+
+    def test_session_notes_column_exists(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(shots)")
+        columns = [row[1] for row in cursor.fetchall()]
+        conn.close()
+        self.assertIn("session_notes", columns)
+
+    def test_session_notes_in_allowed_fields(self):
+        self.assertIn("session_notes", golf_db.ALLOWED_UPDATE_FIELDS)
+
+
 if __name__ == "__main__":
     unittest.main()
