@@ -163,6 +163,7 @@ def init_db():
         'face_to_path': 'REAL',
         'strike_distance': 'REAL',
         'original_club_value': 'TEXT',  # Raw club/session name from Uneekor
+        'notes': 'TEXT',  # Session notes (applied per-session to all shots)
     }
     
     for col, col_type in required_columns.items():
@@ -1071,6 +1072,7 @@ ALLOWED_UPDATE_FIELDS = frozenset({
     'session_id',    # For moving shots between sessions
     'shot_type',     # For shot classification
     'session_date',  # For correcting session dates
+    'notes',         # For session notes
 })
 
 

@@ -100,17 +100,25 @@ def render_face_path_diagram(
         hoverinfo='skip',
     ))
 
-    # Quadrant labels
+    # Quadrant labels — bold primary shape, subtle full description
     offset = axis_range * 0.75
     annotations = [
-        dict(x=offset, y=offset * 0.6, text="Push-Draw",
-             showarrow=False, font=dict(size=11, color='rgba(255,255,255,0.4)')),
-        dict(x=-offset, y=offset * 0.6, text="Pull-Fade",
-             showarrow=False, font=dict(size=11, color='rgba(255,255,255,0.4)')),
-        dict(x=offset, y=-offset * 0.6, text="Push-Fade",
-             showarrow=False, font=dict(size=11, color='rgba(255,255,255,0.4)')),
-        dict(x=-offset, y=-offset * 0.6, text="Pull-Draw",
-             showarrow=False, font=dict(size=11, color='rgba(255,255,255,0.4)')),
+        dict(x=offset, y=offset * 0.7, text="<b>Draw</b>",
+             showarrow=False, font=dict(size=13, color='rgba(255,255,255,0.7)')),
+        dict(x=offset, y=offset * 0.5, text="Push-Draw",
+             showarrow=False, font=dict(size=10, color='rgba(255,255,255,0.4)')),
+        dict(x=-offset, y=offset * 0.7, text="<b>Fade</b>",
+             showarrow=False, font=dict(size=13, color='rgba(255,255,255,0.7)')),
+        dict(x=-offset, y=offset * 0.5, text="Pull-Fade",
+             showarrow=False, font=dict(size=10, color='rgba(255,255,255,0.4)')),
+        dict(x=offset, y=-offset * 0.7, text="<b>Fade</b>",
+             showarrow=False, font=dict(size=13, color='rgba(255,255,255,0.7)')),
+        dict(x=offset, y=-offset * 0.5, text="Push-Fade",
+             showarrow=False, font=dict(size=10, color='rgba(255,255,255,0.4)')),
+        dict(x=-offset, y=-offset * 0.7, text="<b>Draw</b>",
+             showarrow=False, font=dict(size=13, color='rgba(255,255,255,0.7)')),
+        dict(x=-offset, y=-offset * 0.5, text="Pull-Draw",
+             showarrow=False, font=dict(size=10, color='rgba(255,255,255,0.4)')),
     ]
 
     # Average point

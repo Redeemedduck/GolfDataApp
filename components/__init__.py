@@ -76,6 +76,11 @@ from .journal_card import render_journal_card
 from .journal_view import render_journal_view
 from .calendar_strip import render_calendar_strip
 
+# Phase 4-7: New components
+from .shot_trends import render_shot_trends
+from .trajectory_view import render_trajectory_view
+from .shot_navigator import render_shot_navigator
+
 __all__ = [
     # Original components
     'render_session_selector',
@@ -133,4 +138,8 @@ __all__ = [
     'render_journal_card',
     'render_journal_view',
     'render_calendar_strip',
+    # Phase 4-7
+    'render_shot_trends',
+    'render_trajectory_view',
+    'render_shot_navigator',
 ]

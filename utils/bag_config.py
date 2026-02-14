@@ -48,6 +48,31 @@ def get_club_sort_key(club_name: str) -> int:
         return len(order)  # Unknown clubs sort to end
 
 
+def get_smash_target(club_name: str) -> Optional[List[float]]:
+    """Return [low, high] smash factor target for a club, or None if not configured."""
+    targets = _load().get('smash_targets', {})
+    return targets.get(club_name)
+
+
+def get_adjacent_clubs(club_name: str) -> List[str]:
+    """Return clubs adjacent in the bag (for smart comparison suggestions).
+
+    E.g., for '7 Iron' returns ['6 Iron', '8 Iron'].
+    For 'Driver' returns ['3 Wood'].
+    """
+    order = get_bag_order()
+    try:
+        idx = order.index(club_name)
+    except ValueError:
+        return []
+    adjacent = []
+    if idx > 0:
+        adjacent.append(order[idx - 1])
+    if idx < len(order) - 1:
+        adjacent.append(order[idx + 1])
+    return adjacent
+
+
 def reload():
     """Clear cache to force re-read on next access."""
     global _cache
