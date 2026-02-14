@@ -4,6 +4,33 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-14: Scraper Fix + Clean Re-import
+
+### Fixed
+- **`golf_scraper.py`**: Used `session.get('club_name')` (Uneekor internal name like `WEDGE_PITCHING`) instead of `session.get('name')` (sidebar label like `warmup`) — this was the root cause of 55% NULL clubs
+- **`golf_scraper.py`**: Used `client_created_date` from API as authoritative session date instead of listing page dates
+- **Reimport result:** 126 sessions, 5,578 shots, **0 NULL clubs** (was 1,182/2,159 = 55% NULL)
+
+### Added
+- **`automation/naming_conventions.py`**: `UNEEKOR_TO_CANONICAL` dict (20 mappings) + `map_uneekor_club()` for Uneekor API → canonical club name translation
+- **`my_bag.json`**: Expanded from 11 clubs to 16 clubs + 2 special categories (Sim Round, Other). Each club now has `uneekor` field for API mapping
+- **`utils/bag_config.py`**: `get_uneekor_mapping()` and `get_special_categories()` functions
+- **`golf_db.py`**: `sidebar_label TEXT` and `uneekor_club_id INTEGER` columns on `shots` table (schema migration + `save_shot()` + `ALLOWED_UPDATE_FIELDS`)
+- **`automation_runner.py`**: `reimport-all` CLI command with `--dry-run` flag — backs up DB, clears shots/archive/stats/changelog, re-imports all sessions from API, 5% failure threshold
+- **`tests/integration/test_reimport.py`**: 2 integration tests for reimport-all
+
+### Special Club Mappings (User-confirmed)
+- IRON1 → "Sim Round" (mixed clubs during sim golf rounds)
+- IRON3 → "3 Iron" (driving iron, most-used club)
+- WOOD2 → "3 Wood (Cobra)", WOOD3 → "3 Wood (TM)" (two physical clubs)
+- HYBRID1, HYBRID3, WEDGE_54 → "Other" (testing/fitting, not in bag)
+
+### Stats
+- 6 commits, 8 files changed
+- 392 tests passing (was 360)
+
+---
+
 ## 2026-02-13: Phase 4 — Dashboard Rebuild & Sidebar Cleanup
 
 ### Smash Factor Targets

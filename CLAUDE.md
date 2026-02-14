@@ -26,6 +26,7 @@ python -m unittest tests.unit.test_rate_limiter_config
 python -m unittest tests.unit.test_data_foundation
 python -m unittest tests.integration.test_automation_flow
 python -m unittest tests.integration.test_date_reclassification
+python -m unittest tests.integration.test_reimport
 
 # Syntax check all Python files (this is what CI runs as "lint")
 python -m py_compile app.py golf_db.py local_coach.py exceptions.py
@@ -53,6 +54,10 @@ python automation_runner.py reclassify-dates --from-listing --auto-backfill  # E
 python automation_runner.py reclassify-dates --backfill
 python automation_runner.py reclassify-dates --scrape --max 10
 python automation_runner.py reclassify-dates --manual 43285 2026-01-15
+
+# Clean re-import (wipe all shots, re-fetch from Uneekor API)
+python automation_runner.py reimport-all --dry-run    # Preview only
+python automation_runner.py reimport-all              # Full reimport
 
 # Database sync (SQLite <-> Supabase)
 python automation_runner.py sync-database --dry-run
@@ -93,7 +98,7 @@ Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
 | `components/` | Reusable Streamlit UI components (all follow `render_*()` pattern) |
 | `exceptions.py` | Exception hierarchy: `GolfDataAppError` base with `DatabaseError`, `ValidationError`, `RateLimitError`, `AuthenticationError`, etc. — all carry context dicts |
 | `agent/` | Claude Agent SDK golf coach: CLI (`python3 -m agent`), Streamlit provider, 8 MCP tools wrapping `golf_db` |
-| `golf_scraper.py` | Legacy scraper (pre-Playwright, still functional) |
+| `golf_scraper.py` | API-based scraper: uses Uneekor API `club_name` + `client_created_date` fields, maps via `map_uneekor_club()` |
 
 ### Hybrid Database Pattern
 
@@ -143,7 +148,7 @@ Shared utilities:
 - `utils/date_helpers.py` — `parse_session_date()`, `format_session_date()` (used by 3 components)
 - `utils/big3_constants.py` — Big 3 thresholds, colors, `face_label()`/`path_label()`/`strike_label()` (used by 2 components)
 - `utils/responsive.py` — `is_compact_layout()`, `render_compact_toggle()`, `add_responsive_css()`
-- `utils/bag_config.py` — `get_bag_order()`, `get_club_sort_key()`, `is_in_bag()`, `get_smash_target()`, `get_all_smash_targets()` (reads `my_bag.json`)
+- `utils/bag_config.py` — `get_bag_order()`, `get_club_sort_key()`, `is_in_bag()`, `get_smash_target()`, `get_all_smash_targets()`, `get_uneekor_mapping()`, `get_special_categories()` (reads `my_bag.json`)
 
 ### Automation Module
 
@@ -153,7 +158,7 @@ Key behaviors:
 - Token bucket rate limiting (6 req/hour default, configured via `max_sessions_per_hour`)
 - Encrypted cookie persistence (`credential_manager.py`)
 - Resumable backfill with `sessions_discovered` and `backfill_runs` tables
-- Club name normalization via `naming_conventions.py` (e.g., "7i" → "7 Iron")
+- Club name normalization via `naming_conventions.py` (e.g., "7i" → "7 Iron") + Uneekor API mapping via `map_uneekor_club()` (e.g., "WEDGE_PITCHING" → "PW")
 - Exponential backoff on retries (10s → 30s → 90s)
 
 ## Environment Variables
@@ -190,12 +195,13 @@ Key date distinction: `session_date` = when the practice occurred (always `YYYY-
 
 ### Bag Configuration
 
-`my_bag.json` in project root defines the user's clubs with canonical names, aliases, and display order. Used by Club Profiles for dropdown ordering and by future phases for filtering.
+`my_bag.json` in project root defines 16 clubs + 2 special categories (Sim Round, Other) with canonical names, Uneekor API mapping keys, aliases, and display order. Used by Club Profiles for dropdown ordering, scraper for club name translation, and future phases for filtering.
 
 Load via `utils/bag_config.py`:
 ```python
-from utils.bag_config import get_bag_order, get_club_sort_key, is_in_bag
+from utils.bag_config import get_bag_order, get_club_sort_key, is_in_bag, get_uneekor_mapping
 clubs = sorted(club_list, key=get_club_sort_key)  # Bag order: Driver first
+mapping = get_uneekor_mapping()                    # {'DRIVER': 'Driver', 'IRON7': '7 Iron', ...}
 ```
 
 ## Key Conventions
@@ -203,8 +209,8 @@ clubs = sorted(club_list, key=get_club_sort_key)  # Bag order: Driver first
 - All database operations use **parameterized SQL**; `update_shot_metadata()` enforces a field allowlist (`ALLOWED_UPDATE_FIELDS`)
 - Deletions are **soft deletes** — records go to `shots_archive` for recovery
 - The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py` (returns `None`, not `0.0`)
-- Club names are normalized at import time via `save_shot()` using the two-tier pipeline: `ClubNameNormalizer` (confidence >= 0.9) then `SessionContextParser` fallback. Original raw values preserved in `original_club_value` column
-- The `normalize_with_context()` function in `automation/naming_conventions.py` is the canonical entry point for club normalization
+- Club names are normalized at import time. For API imports (reimport-all, golf_scraper): `map_uneekor_club()` maps Uneekor `club_name` directly to canonical names. For Playwright imports: two-tier pipeline (`ClubNameNormalizer` → `SessionContextParser` fallback). Original raw values preserved in `original_club_value` column; `sidebar_label` and `uneekor_club_id` stored for traceability
+- The `normalize_with_context()` function in `automation/naming_conventions.py` is the canonical entry point for Playwright-based club normalization; `map_uneekor_club()` is the entry point for API-based normalization
 - `utils/migrate_club_data.py` — one-time migration script for existing data (`--dry-run`, `--report` modes)
 - Sessions are auto-tagged based on characteristics (`AutoTagger`: Driver Focus, Short Game, etc.)
 - Session display names are generated via `SessionNamer.generate_display_name()` — format: `"2026-01-25 Mixed Practice (47 shots)"`
