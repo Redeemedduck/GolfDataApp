@@ -75,6 +75,7 @@ from .big3_detail_view import render_big3_detail_view
 from .journal_card import render_journal_card
 from .journal_view import render_journal_view
 from .calendar_strip import render_calendar_strip
+from .date_range_filter import render_date_range_filter, filter_by_date_range
 
 __all__ = [
     # Original components
@@ -133,4 +134,6 @@ __all__ = [
     'render_journal_card',
     'render_journal_view',
     'render_calendar_strip',
+    'render_date_range_filter',
+    'filter_by_date_range',
 ]
