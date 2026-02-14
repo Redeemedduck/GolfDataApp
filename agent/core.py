@@ -14,7 +14,6 @@ from __future__ import annotations
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
-    ClaudeSDKClient,
     ResultMessage,
     TextBlock,
     create_sdk_mcp_server,
