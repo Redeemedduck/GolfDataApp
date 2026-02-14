@@ -12,19 +12,43 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
-# ── Load claude_provider.py without package chain ────────────────
-# Mock the registry decorator to just return the class unchanged
-_mock_registry = MagicMock()
-_mock_registry.register_provider = lambda cls: cls
-sys.modules["services"] = MagicMock()
-sys.modules["services.ai"] = MagicMock()
-sys.modules["services.ai.registry"] = _mock_registry
+# ---------------------------------------------------------------------------
+# Module-level mock setup/teardown — loads claude_provider.py by file path
+# to avoid the services.ai.providers package auto-import chain, while
+# ensuring sys.modules is restored after this file runs.
+# ---------------------------------------------------------------------------
+_ORIGINAL_MODULES = {}
+ClaudeProvider = None
 
-_provider_path = Path(__file__).resolve().parent.parent.parent / "services" / "ai" / "providers" / "claude_provider.py"
-_spec = importlib.util.spec_from_file_location("claude_provider", _provider_path)
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-ClaudeProvider = _mod.ClaudeProvider
+
+def setUpModule():
+    global ClaudeProvider
+    _deps = ["services", "services.ai", "services.ai.registry"]
+    for dep in _deps:
+        _ORIGINAL_MODULES[dep] = sys.modules.get(dep, None)
+
+    _mock_registry = MagicMock()
+    _mock_registry.register_provider = lambda cls: cls
+    sys.modules["services"] = MagicMock()
+    sys.modules["services.ai"] = MagicMock()
+    sys.modules["services.ai.registry"] = _mock_registry
+
+    _provider_path = (
+        Path(__file__).resolve().parent.parent.parent
+        / "services" / "ai" / "providers" / "claude_provider.py"
+    )
+    _spec = importlib.util.spec_from_file_location("claude_provider", _provider_path)
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    ClaudeProvider = _mod.ClaudeProvider
+
+
+def tearDownModule():
+    for dep, original in _ORIGINAL_MODULES.items():
+        if original is None:
+            sys.modules.pop(dep, None)
+        else:
+            sys.modules[dep] = original
 
 
 class TestClaudeProvider(unittest.TestCase):
