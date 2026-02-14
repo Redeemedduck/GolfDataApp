@@ -215,3 +215,9 @@ with tab_shots:
                 st.info("No images available for this shot.")
         else:
             st.info("Select a shot from the table to view details")
+
+    st.divider()
+    if len(event.selection.rows) > 0:
+        selected_shots = df.iloc[event.selection.rows]
+        from components.trajectory_view import render_trajectory_view
+        render_trajectory_view(selected_shots, max_shots=1, title="Shot Trajectory")
