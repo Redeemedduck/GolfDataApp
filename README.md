@@ -7,7 +7,7 @@ A local-first application for capturing, analyzing, and coaching golf performanc
 1. **Practice Journal**: Rolling 4-week view with session cards, inline Big 3 summary, and calendar strip.
 2. **Dashboard**: 3-tab analytics — Overview, Big 3 Deep Dive (D-plane scatter, tendencies), Shots.
 3. **Club Profiles**: Per-club deep dives with hero stats, distance trends, Big 3 tendencies, and session comparison.
-4. **AI Coach**: Conversational coaching with local ML models or Gemini.
+4. **AI Coach**: Conversational coaching with local ML models, Gemini, or Claude (Agent SDK).
 5. **Settings**: Data import, session management, maintenance tools, and tagging (3 tabs).
 6. **Automation**: Browser-based scraper with Playwright for hands-free data import and historical backfill.
 7. **Storage**: Local SQLite database with optional sync to Supabase (PostgreSQL).
@@ -56,8 +56,14 @@ python automation_runner.py sync-database
 Chat with the AI Coach for personalized insights:
 
 ```bash
+# In Streamlit (select Claude Golf Coach from provider dropdown)
 streamlit run app.py
-# Navigate to AI Coach page
+
+# Terminal CLI (requires ANTHROPIC_API_KEY)
+op run --env-file=.env.template -- python3 -m agent.cli
+
+# One-shot query
+op run --env-file=.env.template -- python3 -m agent.cli --single "How's my driver?"
 ```
 
 ### 4. Optional: Supabase Cloud Sync

@@ -4,6 +4,52 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-13: Claude Agent SDK Golf Coach
+
+### New Module: `agent/`
+
+Added a Claude Agent SDK-powered golf coaching agent with 8 MCP tools wrapping `golf_db` for data access. Three interfaces: terminal CLI, Claude Code `/golf` slash command, and Streamlit AI Coach provider.
+
+- **`agent/tools.py`**: 8 MCP tools — 5 read (`query_shots`, `get_session_list`, `get_session_summary`, `get_club_stats`, `get_trends`) + 3 write (`tag_session`, `update_session_type`, `batch_rename_sessions`). All tools use `read_mode="sqlite"` to avoid Supabase latency.
+- **`agent/core.py`**: System prompt (Big 3 coaching persona), `create_golf_mcp_server()`, `create_golf_agent_options()` (Sonnet 4.5, max 20 turns), `single_query()` async helper.
+- **`agent/cli.py`**: Interactive chat mode + `--single` one-shot query. Runnable as `python3 -m agent`.
+- **`services/ai/providers/claude_provider.py`**: Streamlit AI Coach provider using `ThreadPoolExecutor` to avoid `asyncio.run()` crash inside Streamlit's event loop.
+- **`.env.template`**: 1Password `op://` references for `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_KEY`.
+- **`~/.claude/skills/golf/SKILL.md`**: Claude Code `/golf` slash command.
+
+### Safety Boundaries
+
+Agent can only read data and perform safe writes (tag, set session type, batch rename). Cannot delete data, trigger automation, run raw SQL, or modify schema.
+
+### Tests
+
+- 70 new tests: 40 tools + 21 core + 9 provider
+- All use mock isolation to avoid heavy dependency imports (Streamlit, Supabase, etc.)
+- `test_claude_provider.py` uses `importlib.util.spec_from_file_location()` to bypass the provider package auto-import chain
+
+### CI
+
+- Added `agent/*.py` to `py_compile` lint step in `.github/workflows/ci.yml`
+
+### Usage
+
+```bash
+# Interactive chat
+op run --env-file=.env.template -- python3 -m agent.cli
+
+# One-shot query
+op run --env-file=.env.template -- python3 -m agent.cli --single "How's my driver?"
+
+# Claude Code slash command
+/golf How's my driver been this month?
+```
+
+### Stats
+- 13 files changed (+1,300 lines)
+- 311 tests total (70 new)
+
+---
+
 ## 2026-02-13: Data Model & UX Overhaul — Phases 1-3
 
 ### Phase 1: Club Name Normalization (PR #15)
