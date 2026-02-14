@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 from exceptions import ValidationError, DatabaseError
+from automation.naming_conventions import normalize_with_context
 
 load_dotenv()
 
@@ -161,6 +162,7 @@ def init_db():
         'session_date': 'TIMESTAMP',
         'face_to_path': 'REAL',
         'strike_distance': 'REAL',
+        'original_club_value': 'TEXT',  # Raw club/session name from Uneekor
     }
     
     for col, col_type in required_columns.items():
@@ -508,13 +510,23 @@ def save_shot(data):
             value=session_id
         )
 
+    # Normalize club name and preserve original
+    raw_club = data.get('club')
+    if raw_club and not data.get('original_club_value'):
+        context = normalize_with_context(raw_club)
+        normalized_club = context['club']
+        original_club = raw_club
+    else:
+        normalized_club = data.get('club')
+        original_club = data.get('original_club_value', data.get('club'))
+
     # Prepare unified payload
     payload = {
         'shot_id': shot_id,
         'session_id': session_id,
         'session_date': data.get('session_date'),
         'session_type': data.get('session_type'),
-        'club': data.get('club'),
+        'club': normalized_club,
         # Distance/speed metrics — 0 is invalid (NULL = no data captured)
         'carry': clean_value(data.get('carry', data.get('carry_distance'))),
         'total': clean_value(data.get('total', data.get('total_distance'))),
@@ -545,7 +557,8 @@ def save_shot(data):
         'optix_y': clean_value(data.get('optix_y'), 0.0),
         'club_lie': clean_value(data.get('club_lie')),
         'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None,
-        'shot_tag': data.get('shot_tag')
+        'shot_tag': data.get('shot_tag'),
+        'original_club_value': original_club,
     }
 
     # Compute derived columns

@@ -115,6 +115,35 @@ class ClubNameNormalizer:
 
         # Putter
         (r'^(putter|putt|putting)$', 'Putter'),
+
+        # Reversed forms: 'Wedge Pitching' -> PW, 'Wedge 50' -> GW
+        (r'^wedge\s*(pitching|p)$', 'PW'),
+        (r'^wedge\s*(gap|g)$', 'GW'),
+        (r'^wedge\s*(sand|s)$', 'SW'),
+        (r'^wedge\s*(lob|l)$', 'LW'),
+        (r'^wedge\s*(approach|a)$', 'AW'),
+        (r'^wedge\s*(\d{2})$', '_WEDGE_DEGREE_NUM'),
+
+        # No-space iron: 'Iron7' -> '7 Iron'
+        (r'^iron(\d)$', '_IRON_NOSPACE'),
+        (r'^wood\s*(\d)$', '_WOOD_NOSPACE'),
+        (r'^hybrid(\d)$', '_HYBRID_NOSPACE'),
+
+        # Standalone single digit: '9' -> '9 Iron' (common Uneekor shorthand)
+        (r'^([1-9])$', '_SINGLE_DIGIT_IRON'),
+
+        # Standalone bare degree: '56' -> SW, '50' -> GW
+        (r'^(\d{2})$', '_BARE_DEGREE'),
+
+        # "M" prefix shorthand: 'M 7' -> '7 Iron', 'M 56' -> SW
+        (r'^m\s+(\d{1,2})(?:\s+iron)?$', '_M_PREFIX'),
+
+        # Uneekor default format: 'IRON7 | MEDIUM', 'DRIVER | PREMIUM'
+        (r'^driver\s*\|.*$', 'Driver'),
+        (r'^iron(\d)\s*\|.*$', '_UNEEKOR_IRON'),
+        (r'^wood(\d)\s*\|.*$', '_UNEEKOR_WOOD'),
+        (r'^hybrid(\d)\s*\|.*$', '_UNEEKOR_HYBRID'),
+        (r'^wedge(\d{2})\s*\|.*$', '_UNEEKOR_WEDGE'),
     ]
 
     # Degree to wedge mapping for generic wedge detection
@@ -199,6 +228,88 @@ class ClubNameNormalizer:
                             normalized=normalized,
                             confidence=0.9,
                             matched_pattern='degree_wedge'
+                        )
+                    except (ValueError, IndexError):
+                        continue
+                elif name.startswith('_UNEEKOR_'):
+                    try:
+                        num = match.group(1)
+                        club_type = name.replace('_UNEEKOR_', '').capitalize()
+                        if club_type == 'Iron':
+                            normalized = f'{num} Iron'
+                        elif club_type == 'Wood':
+                            normalized = f'{num} Wood'
+                        elif club_type == 'Hybrid':
+                            normalized = f'{num} Hybrid'
+                        elif club_type == 'Wedge':
+                            degree = int(num)
+                            normalized = self.DEGREE_TO_WEDGE.get(degree, f'{num} Wedge')
+                        else:
+                            normalized = f'{num} {club_type}'
+                        return NormalizationResult(
+                            original=original,
+                            normalized=normalized,
+                            confidence=0.95,
+                            matched_pattern='uneekor_format'
+                        )
+                    except (ValueError, IndexError):
+                        continue
+                elif name == '_WEDGE_DEGREE_NUM':
+                    try:
+                        degree = int(match.group(1))
+                        normalized = self.DEGREE_TO_WEDGE.get(degree, f'{degree} Wedge')
+                        return NormalizationResult(
+                            original=original,
+                            normalized=normalized,
+                            confidence=0.9,
+                            matched_pattern='wedge_degree_num'
+                        )
+                    except (ValueError, IndexError):
+                        continue
+                elif name in ('_IRON_NOSPACE', '_WOOD_NOSPACE', '_HYBRID_NOSPACE'):
+                    num = match.group(1)
+                    club_type = name.replace('_', '').replace('NOSPACE', '').capitalize()
+                    return NormalizationResult(
+                        original=original,
+                        normalized=f'{num} {club_type}',
+                        confidence=0.95,
+                        matched_pattern='nospace_format'
+                    )
+                elif name == '_SINGLE_DIGIT_IRON':
+                    num = match.group(1)
+                    return NormalizationResult(
+                        original=original,
+                        normalized=f'{num} Iron',
+                        confidence=0.9,
+                        matched_pattern='single_digit_iron'
+                    )
+                elif name == '_BARE_DEGREE':
+                    try:
+                        degree = int(match.group(1))
+                        if degree in self.DEGREE_TO_WEDGE:
+                            return NormalizationResult(
+                                original=original,
+                                normalized=self.DEGREE_TO_WEDGE[degree],
+                                confidence=0.9,
+                                matched_pattern='bare_degree'
+                            )
+                    except (ValueError, IndexError):
+                        pass
+                    continue
+                elif name == '_M_PREFIX':
+                    try:
+                        num = int(match.group(1))
+                        if num <= 9:
+                            normalized = f'{num} Iron'
+                        elif num in self.DEGREE_TO_WEDGE:
+                            normalized = self.DEGREE_TO_WEDGE[num]
+                        else:
+                            continue
+                        return NormalizationResult(
+                            original=original,
+                            normalized=normalized,
+                            confidence=0.9,
+                            matched_pattern='m_prefix'
                         )
                     except (ValueError, IndexError):
                         continue
@@ -620,6 +731,12 @@ class SessionContextParser:
         (r'\b(\d)\s*(?:Hybrid|H)\b', '{0} Hybrid'),  # "4 Hybrid", "4H"
         # "Dst Compressor 8" or "Compressor 8" -> 8 Iron
         (r'(?:Dst\s*)?Compressor\s*(\d)\b', '{0} Iron'),
+        # Bare wedge degree near warmup context: "Warmup 50", "50 Warmup"
+        (r'(?:warmup|wmup|warm)\s+(50|52|54|56|58|60)\b', 'degree'),
+        (r'\b(50|52|54|56|58|60)\s+(?:warmup|wmup|warm)', 'degree'),
+        # Bare iron digit near warmup/drill context: "warmup 8 dst", "8 Dst Warmup"
+        (r'(?:warmup|wmup|dst|trainer|drill)\s+([6-9])\b', '{0} Iron'),
+        (r'\b([6-9])\s+(?:dst|warmup|wmup|trainer|drill)', '{0} Iron'),
     ]
 
     # Wedge type to abbreviation
@@ -810,6 +927,52 @@ def get_auto_tagger() -> AutoTagger:
 def normalize_club(club_name: str) -> str:
     """Convenience function to normalize a single club name."""
     return get_normalizer().normalize(club_name).normalized
+
+
+def normalize_with_context(raw_value: str) -> Dict[str, Union[Optional[str], float]]:
+    """
+    Two-tier normalization: club normalizer first, session-context parser fallback.
+
+    Returns a consistent schema regardless of which tier handled the input:
+    {
+        'club': Optional[str],
+        'session_type': Optional[str],
+        'original': str,
+        'confidence': float,
+    }
+    """
+    if not raw_value:
+        return {
+            'club': None,
+            'session_type': None,
+            'original': raw_value,
+            'confidence': 0.0,
+        }
+
+    normalizer_result = get_normalizer().normalize(raw_value)
+
+    # High-confidence club names should pass through directly.
+    if normalizer_result.confidence >= 0.9:
+        return {
+            'club': normalizer_result.normalized,
+            'session_type': None,
+            'original': raw_value,
+            'confidence': normalizer_result.confidence,
+        }
+
+    context = get_context_parser().parse(raw_value)
+    extracted_club = context.get('club')
+    session_type = context.get('session_type')
+
+    # Context parse confidence is heuristic because parser output has no score.
+    confidence = 0.8 if extracted_club else (0.4 if session_type else 0.1)
+
+    return {
+        'club': extracted_club,
+        'session_type': session_type,
+        'original': raw_value,
+        'confidence': confidence,
+    }
 
 
 def normalize_clubs(club_names: List[str]) -> List[str]:

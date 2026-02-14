@@ -183,7 +183,9 @@ Key date distinction: `session_date` = when the practice occurred, `date_added` 
 - All database operations use **parameterized SQL**; `update_shot_metadata()` enforces a field allowlist (`ALLOWED_UPDATE_FIELDS`)
 - Deletions are **soft deletes** — records go to `shots_archive` for recovery
 - The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py` (returns `None`, not `0.0`)
-- Club names are normalized through `automation/naming_conventions.py` (`ClubNameNormalizer`)
+- Club names are normalized at import time via `save_shot()` using the two-tier pipeline: `ClubNameNormalizer` (confidence >= 0.9) then `SessionContextParser` fallback. Original raw values preserved in `original_club_value` column
+- The `normalize_with_context()` function in `automation/naming_conventions.py` is the canonical entry point for club normalization
+- `utils/migrate_club_data.py` — one-time migration script for existing data (`--dry-run`, `--report` modes)
 - Sessions are auto-tagged based on characteristics (`AutoTagger`: Driver Focus, Short Game, etc.)
 - Session display names are generated via `SessionNamer.generate_display_name()` — format: `"2026-01-25 Mixed Practice (47 shots)"`
 - Session types detected by club distribution (`SessionNamer.detect_session_type()`): Driver Focus, Iron Work, Short Game, Woods Focus, Mixed Practice, Warmup

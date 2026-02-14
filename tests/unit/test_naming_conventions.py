@@ -73,6 +73,134 @@ class TestClubNameNormalizer(unittest.TestCase):
         result = self.normalizer.normalize("putt")
         self.assertEqual(result.normalized, "Putter")
 
+    def test_uneekor_format_iron7_medium(self):
+        result = self.normalizer.normalize('Iron7 | Medium')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_iron6_medium(self):
+        result = self.normalizer.normalize('Iron6 | Medium')
+        self.assertEqual(result.normalized, '6 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_uppercase(self):
+        result = self.normalizer.normalize('IRON7 | MEDIUM')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_driver(self):
+        result = self.normalizer.normalize('DRIVER | MEDIUM')
+        self.assertEqual(result.normalized, 'Driver')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_wood3_premium(self):
+        result = self.normalizer.normalize('WOOD3 | PREMIUM')
+        self.assertEqual(result.normalized, '3 Wood')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_uneekor_format_hybrid4(self):
+        result = self.normalizer.normalize('HYBRID4 | MEDIUM')
+        self.assertEqual(result.normalized, '4 Hybrid')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_wedge_pitching_reversed(self):
+        result = self.normalizer.normalize('Wedge Pitching')
+        self.assertEqual(result.normalized, 'PW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_wedge_sand_reversed(self):
+        result = self.normalizer.normalize('Wedge Sand')
+        self.assertEqual(result.normalized, 'SW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_wedge_50_degree_number(self):
+        result = self.normalizer.normalize('Wedge 50')
+        self.assertEqual(result.normalized, 'GW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_wedge_56_degree_number(self):
+        result = self.normalizer.normalize('Wedge 56')
+        self.assertEqual(result.normalized, 'SW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_iron7_no_space(self):
+        result = self.normalizer.normalize('Iron7')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_iron6_no_space(self):
+        result = self.normalizer.normalize('Iron6')
+        self.assertEqual(result.normalized, '6 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_iron9_no_space(self):
+        result = self.normalizer.normalize('Iron9')
+        self.assertEqual(result.normalized, '9 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    # --- Single-digit iron numbers ---
+
+    def test_single_digit_9(self):
+        result = self.normalizer.normalize('9')
+        self.assertEqual(result.normalized, '9 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_single_digit_7(self):
+        result = self.normalizer.normalize('7')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_single_digit_8(self):
+        result = self.normalizer.normalize('8')
+        self.assertEqual(result.normalized, '8 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_single_digit_6(self):
+        result = self.normalizer.normalize('6')
+        self.assertEqual(result.normalized, '6 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    # --- Bare degree numbers ---
+
+    def test_bare_degree_56(self):
+        result = self.normalizer.normalize('56')
+        self.assertEqual(result.normalized, 'SW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_bare_degree_50(self):
+        result = self.normalizer.normalize('50')
+        self.assertEqual(result.normalized, 'GW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_bare_degree_60(self):
+        result = self.normalizer.normalize('60')
+        self.assertEqual(result.normalized, 'LW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    # --- "M" prefix shorthand ---
+
+    def test_m_prefix_7(self):
+        result = self.normalizer.normalize('M 7')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_m_prefix_56(self):
+        result = self.normalizer.normalize('M 56')
+        self.assertEqual(result.normalized, 'SW')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    def test_m_prefix_7_iron(self):
+        result = self.normalizer.normalize('M 7 Iron')
+        self.assertEqual(result.normalized, '7 Iron')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
+    # --- Reversed wood with space ---
+
+    def test_wood_3_with_space(self):
+        result = self.normalizer.normalize('Wood 3')
+        self.assertEqual(result.normalized, '3 Wood')
+        self.assertGreaterEqual(result.confidence, 0.9)
+
     # --- Degree-based wedges ---
 
     def test_degree_56_to_sw(self):
@@ -134,6 +262,71 @@ class TestConvenienceFunctions(unittest.TestCase):
 
     def test_normalize_clubs(self):
         self.assertEqual(normalize_clubs(["dr", "pw"]), ["Driver", "PW"])
+
+
+class TestNormalizationPipeline(unittest.TestCase):
+    """Tests for the two-tier normalization pipeline."""
+
+    def _normalize(self, raw_value):
+        from automation.naming_conventions import normalize_with_context
+        return normalize_with_context(raw_value)
+
+    # Standard clubs should pass through normalizer directly
+    def test_standard_club_7_iron(self):
+        result = self._normalize('7 Iron')
+        self.assertEqual(result['club'], '7 Iron')
+        self.assertIsNone(result['session_type'])
+
+    def test_standard_club_driver(self):
+        result = self._normalize('Driver')
+        self.assertEqual(result['club'], 'Driver')
+
+    # Session names with embedded clubs should use SessionContextParser
+    def test_warmup_pw_extracts_club(self):
+        result = self._normalize('Warmup Pw')
+        self.assertEqual(result['club'], 'PW')
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_dst_compressor_8_extracts_club(self):
+        result = self._normalize('Dst Compressor 8')
+        self.assertEqual(result['club'], '8 Iron')
+        self.assertEqual(result['session_type'], 'drill')
+
+    def test_warmup_50_extracts_gw(self):
+        result = self._normalize('Warmup 50')
+        self.assertEqual(result['club'], 'GW')
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_warmup_8_dst_extracts_iron(self):
+        result = self._normalize('warmup 8 dst')
+        self.assertEqual(result['club'], '8 Iron')
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_50_warmup_extracts_gw(self):
+        result = self._normalize('50 Warmup')
+        self.assertEqual(result['club'], 'GW')
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_8_dst_warmup_extracts_iron(self):
+        result = self._normalize('8 Dst Warmup')
+        self.assertEqual(result['club'], '8 Iron')
+        self.assertEqual(result['session_type'], 'warmup')
+
+    def test_8_iron_dst_trainer(self):
+        result = self._normalize('8 Iron Dst Trainer')
+        self.assertEqual(result['club'], '8 Iron')
+        self.assertEqual(result['session_type'], 'drill')
+
+    # Pure session names with no extractable club
+    def test_sgt_rd1_no_club(self):
+        result = self._normalize('Sgt Rd1')
+        self.assertIsNone(result['club'])
+        self.assertEqual(result['session_type'], 'sim_round')
+
+    def test_warmup_no_club(self):
+        result = self._normalize('Warmup')
+        self.assertIsNone(result['club'])
+        self.assertEqual(result['session_type'], 'warmup')
 
 
 class TestSessionNamer(unittest.TestCase):

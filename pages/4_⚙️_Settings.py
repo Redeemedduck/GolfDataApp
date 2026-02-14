@@ -8,6 +8,7 @@ import streamlit as st
 import pandas as pd
 import re
 
+from automation.naming_conventions import ClubNameNormalizer
 import golf_db
 import golf_scraper
 import observability
@@ -23,6 +24,8 @@ from components import (
     render_shared_sidebar,
     render_no_data_state,
 )
+
+_normalizer = ClubNameNormalizer()
 
 st.set_page_config(layout="wide", page_title="Settings - My Golf Lab", page_icon="⚙️")
 add_responsive_css()
@@ -384,11 +387,10 @@ with tab_maintenance:
         st.subheader("Club Naming Anomalies")
 
         def normalize_club_name(name):
-            base = (name or "").lower().strip()
-            base = re.sub(r"[_-]+", " ", base)
-            base = re.sub(r"\s+", " ", base)
-            base = base.replace("iron", "i")
-            return base
+            """Normalize club name for anomaly detection using canonical normalizer."""
+            if not name:
+                return ""
+            return _normalizer.normalize(name).normalized.lower()
 
         club_variants = {}
         for cn in all_clubs:

@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS shots (
     optix_y REAL,
     club_lie REAL,
     lie_angle TEXT,
-    shot_tag TEXT
+    shot_tag TEXT,
+    original_club_value TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_shots_session_id ON shots(session_id);
