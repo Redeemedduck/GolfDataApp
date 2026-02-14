@@ -238,6 +238,10 @@ Tests use `unittest` (and are also compatible with `pytest`). Shared fixtures in
 | `local_coach` | Stateless `LocalCoach` instance |
 | `discovery_db` | Initialized `SessionDiscovery` with temp DB |
 
+### Test Isolation
+
+Tests that mock `sys.modules` (e.g., `test_agent_tools.py`, `test_claude_provider.py`) use `setUpModule()`/`tearDownModule()` to save and restore entries. This prevents test-ordering conflicts when running the full suite. **Never use `sys.modules["foo"] = mock` at module level** — always wrap in setup/teardown.
+
 ## CI/CD
 
 GitHub Actions (`.github/workflows/ci.yml`):
