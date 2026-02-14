@@ -5,6 +5,7 @@ import time
 import golf_db
 import observability
 from dotenv import load_dotenv
+from automation.naming_conventions import map_uneekor_club
 from supabase import create_client, Client
 
 load_dotenv()
@@ -137,51 +138,57 @@ def run_scraper(url, progress_callback, session_date=None):
 
     total_shots_imported = 0
 
-    # 3. Process each session (club)
+    # 3. Process each session (club group)
     for session in sessions_data:
-        club_name = session.get('name', 'Unknown')
+        # Use club_name (internal Uneekor name) for accurate club identification
+        uneekor_club_name = session.get('club_name', '')
+        sidebar_label = session.get('name', 'Unknown')
+        canonical_club = map_uneekor_club(uneekor_club_name)
+        uneekor_club_id = session.get('club')
+
+        # Use client_created_date from API as the authoritative session date
+        api_date = session.get('client_created_date')
+        effective_date = api_date if api_date else (
+            session_date.strftime('%Y-%m-%d') if session_date else None
+        )
+
         session_id = session.get('id')
         shots = session.get('shots', [])
 
         if not shots:
-            progress_callback(f"Skipping {club_name} - no shots")
+            progress_callback(f'Skipping {sidebar_label} ({uneekor_club_name}) - no shots')
             continue
 
-        progress_callback(f"Processing {club_name} ({len(shots)} shots)...")
+        progress_callback(f'Processing {sidebar_label} -> {canonical_club} ({len(shots)} shots)...')
 
         # 4. Process each shot in the session
         for shot in shots:
             try:
-                # Unit Conversions
-                # API returns raw data in Metric (m/s for speed, likely Meters for distance)
-                # We need to convert to Imperial (mph, yards)
                 M_S_TO_MPH = 2.23694
                 M_TO_YARDS = 1.09361
 
                 ball_speed_ms = shot.get('ball_speed', 0)
                 club_speed_ms = shot.get('club_speed', 0)
-                
-                # Convert speeds to MPH
+
                 ball_speed = round(ball_speed_ms * M_S_TO_MPH, 1)
                 club_speed = round(club_speed_ms * M_S_TO_MPH, 1) if club_speed_ms else 0
 
-                # Convert distances to Yards
                 carry = shot.get('carry_distance', 0)
                 total = shot.get('total_distance', 0)
                 carry_yards = round(carry * M_TO_YARDS, 1) if carry else 0
                 total_yards = round(total * M_TO_YARDS, 1) if total else 0
 
                 smash = calculate_smash(ball_speed, club_speed)
-
-                # Download/Upload images and get URLs
                 images = upload_shot_images(report_id, key, session_id, shot.get('id'))
 
-                # Prepare shot data for database
                 shot_data = {
                     'id': f"{report_id}_{session_id}_{shot.get('id')}",
                     'session': report_id,
-                    'session_date': session_date.strftime('%Y-%m-%d') if session_date else None,
-                    'club': club_name,
+                    'session_date': effective_date,
+                    'club': canonical_club,
+                    'original_club_value': uneekor_club_name,
+                    'sidebar_label': sidebar_label,
+                    'uneekor_club_id': uneekor_club_id,
                     'carry_distance': carry_yards,
                     'total_distance': total_yards,
                     'smash': smash,
@@ -204,20 +211,18 @@ def run_scraper(url, progress_callback, session_date=None):
                     'type': shot.get('type'),
                     'impact_img': images.get('impact_img'),
                     'swing_img': images.get('swing_img'),
-                    # Advanced Optix Metrics
                     'optix_x': shot.get('optix_x'),
                     'optix_y': shot.get('optix_y'),
                     'club_lie': shot.get('club_lie'),
                     'lie_angle': shot.get('lie_angle')
                 }
-                
-                # Save to database
+
                 golf_db.save_shot(shot_data)
                 total_shots_imported += 1
 
             except Exception as e:
                 error_count += 1
-                print(f"Error processing shot {shot.get('id')}: {e}")
+                print(f'Error processing shot {shot.get("id")}: {e}')
                 continue
 
     progress_callback(f"Import complete!")
