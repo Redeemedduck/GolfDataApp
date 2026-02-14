@@ -34,12 +34,7 @@ golf_db.init_db()
 read_mode = get_read_mode()
 
 # Sidebar
-render_shared_sidebar(
-    show_navigation=True,
-    show_data_source=True,
-    show_sync_status=True,
-    current_page="settings",
-)
+render_shared_sidebar(current_page="settings")
 
 with st.sidebar:
     st.divider()

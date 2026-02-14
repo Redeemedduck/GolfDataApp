@@ -8,7 +8,6 @@ import streamlit as st
 from datetime import datetime
 
 import golf_db
-import observability
 from services.data_access import (
     get_unique_sessions,
     get_session_data,
@@ -19,7 +18,6 @@ from services.data_access import (
 from utils.session_state import get_read_mode
 from components import (
     render_shared_sidebar,
-    render_documentation_links,
     render_no_data_state,
 )
 from components.journal_view import render_journal_view
@@ -170,34 +168,10 @@ else:
 # ─── Sidebar ──────────────────────────────────────────────────
 render_shared_sidebar(
     show_navigation=False,
-    show_data_source=True,
-    show_sync_status=True,
     current_page="home"
 )
 
 with st.sidebar:
-    st.divider()
-    render_documentation_links()
-
-    st.divider()
-
-    st.header("Health")
-    latest_import = observability.read_latest_event("import_runs.jsonl")
-    if latest_import:
-        st.caption(f"Last Import: {latest_import.get('status', 'unknown')}")
-        st.caption(f"Shots: {latest_import.get('shots_imported', 0)}")
-        st.caption(f"Duration: {latest_import.get('duration_sec', 0)}s")
-    else:
-        st.caption("Last Import: none")
-
-    latest_sync = observability.read_latest_event("sync_runs.jsonl")
-    if latest_sync:
-        st.caption(f"Last Sync: {latest_sync.get('status', 'unknown')} ({latest_sync.get('mode', 'n/a')})")
-        st.caption(f"Shots: {latest_sync.get('shots', 0)}")
-        st.caption(f"Duration: {latest_sync.get('duration_sec', 0)}s")
-    else:
-        st.caption("Last Sync: none")
-
     st.divider()
     st.caption("Golf Data Lab v3.0 - Practice Journal")
     st.caption("Built around the Big 3 Impact Laws")
