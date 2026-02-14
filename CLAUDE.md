@@ -135,6 +135,7 @@ Shared utilities:
 - `utils/date_helpers.py` — `parse_session_date()`, `format_session_date()` (used by 3 components)
 - `utils/big3_constants.py` — Big 3 thresholds, colors, `face_label()`/`path_label()`/`strike_label()` (used by 2 components)
 - `utils/responsive.py` — `is_compact_layout()`, `render_compact_toggle()`, `add_responsive_css()`
+- `utils/bag_config.py` — `get_bag_order()`, `get_club_sort_key()`, `is_in_bag()` (reads `my_bag.json`)
 
 ### Automation Module
 
@@ -176,7 +177,17 @@ Canonical Supabase schema: `supabase_schema.sql` (all tables, indexes, RLS polic
 
 Derived columns on `shots` table: `face_to_path` (= face_angle - club_path), `strike_distance` (= sqrt(impact_x^2 + impact_y^2)). Computed on ingest in `save_shot()`, backfilled via `backfill_derived_columns()`.
 
-Key date distinction: `session_date` = when the practice occurred, `date_added` = when data was imported.
+Key date distinction: `session_date` = when the practice occurred (always `YYYY-MM-DD` date-only format), `date_added` = when data was imported.
+
+### Bag Configuration
+
+`my_bag.json` in project root defines the user's clubs with canonical names, aliases, and display order. Used by Club Profiles for dropdown ordering and by future phases for filtering.
+
+Load via `utils/bag_config.py`:
+```python
+from utils.bag_config import get_bag_order, get_club_sort_key, is_in_bag
+clubs = sorted(club_list, key=get_club_sort_key)  # Bag order: Driver first
+```
 
 ## Key Conventions
 

@@ -4,6 +4,43 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-13: Data Model & UX Overhaul — Phases 1-3
+
+### Phase 1: Club Name Normalization (PR #15)
+
+82% of `club` column values were session names (courses, drills, warmups) instead of actual club names. Built a two-tier normalization pipeline that reduced 73 distinct values to 10 clean clubs.
+
+- **`automation/naming_conventions.py`**: Added 15+ regex patterns to `ClubNameNormalizer` (Uneekor formats, reversed wedges, no-space irons, single-digit, bare degrees, M-prefix)
+- **`golf_db.py`**: Auto-normalize in `save_shot()`, new `original_club_value` column preserving raw values
+- **`supabase_schema.sql`**: Added `original_club_value` column
+- **`pages/4_Settings.py`**: Consolidated inline normalizer to use `ClubNameNormalizer`
+- **`utils/migrate_club_data.py`**: One-time migration script (`--dry-run`, `--report` modes)
+- 94 naming convention tests + 3 golf_db normalization tests
+
+**Migration results**: 1,795 shots updated, 977 with known clubs, 1,182 correctly NULL (sim rounds/drills)
+
+### Phase 2: Date Cleanup (PR #16)
+
+- Standardized all `session_date` to `YYYY-MM-DD` (stripped `T00:00:00` from 39 shots, 117 sessions_discovered rows)
+- Fixed 3 misclassified shots (2026-01-28 -> 2026-01-26)
+- Marked 2 unreliable `report_page` sessions as `unverified`
+- Removed misleading `datetime.utcnow()` fallback in `backfill_runner.py`
+- `SessionNamer.generate_name()` handles None dates with "Unknown Date" placeholder
+
+### Phase 3: Session Type System & Bag Config (PR #17)
+
+- **`my_bag.json`**: User-editable bag config (canonical names, aliases, display order)
+- **`utils/bag_config.py`**: Loader with caching, sort keys, alias lookup
+- Club Profiles dropdown now ordered by bag config (Driver first) instead of alphabetical
+- Session type system (`detect_session_type`, `generate_display_name`) already built in Phase 1
+
+### Stats
+- 24 files changed (+3,270 lines)
+- 281 tests passing
+- Supabase synced (2,159 shots, 4 new columns added to remote schema)
+
+---
+
 ## 2026-02-06: UI Simplification & Mobile Optimization
 
 ### Dashboard: 5 Tabs to 3
