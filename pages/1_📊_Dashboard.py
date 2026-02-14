@@ -23,6 +23,7 @@ from components import (
 )
 from components.big3_detail_view import render_big3_detail_view
 from components.date_range_filter import render_date_range_filter, filter_by_date_range
+from components.shot_navigator import render_shot_navigator
 
 st.set_page_config(layout="wide", page_title="Dashboard - My Golf Lab", page_icon="📊")
 add_responsive_css()
@@ -157,8 +158,19 @@ with tab_shots:
         )
 
     with col_media:
+        # Shot navigator for prev/next browsing
+        nav_idx = render_shot_navigator(df, key_prefix="dash_shot_nav")
+
+        # Table click overrides navigator; navigator provides fallback
         if len(event.selection.rows) > 0:
-            shot = df.iloc[event.selection.rows[0]]
+            selected_idx = event.selection.rows[0]
+        elif nav_idx is not None:
+            selected_idx = nav_idx
+        else:
+            selected_idx = None
+
+        if selected_idx is not None:
+            shot = df.iloc[selected_idx]
 
             st.subheader(f"{shot['club']} — {shot['carry']:.1f} yds")
 
@@ -214,10 +226,10 @@ with tab_shots:
             else:
                 st.info("No images available for this shot.")
         else:
-            st.info("Select a shot from the table to view details")
+            st.info("Select a shot from the table or use the navigator")
 
     st.divider()
-    if len(event.selection.rows) > 0:
-        selected_shots = df.iloc[event.selection.rows]
+    if selected_idx is not None:
+        selected_shots = df.iloc[[selected_idx]]
         from components.trajectory_view import render_trajectory_view
         render_trajectory_view(selected_shots, max_shots=1, title="Shot Trajectory")

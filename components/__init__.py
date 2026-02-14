@@ -77,6 +77,7 @@ from .journal_view import render_journal_view
 from .calendar_strip import render_calendar_strip
 from .date_range_filter import render_date_range_filter, filter_by_date_range
 from .trajectory_view import render_trajectory_view
+from .shot_navigator import render_shot_navigator
 
 __all__ = [
     # Original components
@@ -138,4 +139,5 @@ __all__ = [
     'render_date_range_filter',
     'filter_by_date_range',
     'render_trajectory_view',
+    'render_shot_navigator',
 ]
