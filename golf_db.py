@@ -665,8 +665,9 @@ def get_unique_sessions(read_mode=None):
         if os.path.exists(SQLITE_DB_PATH):
             conn = sqlite3.connect(SQLITE_DB_PATH)
             query = (
-                "SELECT session_id, MAX(date_added) as date_added, MAX(session_type) as session_type "
-                "FROM shots GROUP BY session_id ORDER BY date_added DESC"
+                "SELECT session_id, MAX(session_date) as session_date, "
+                "MAX(date_added) as date_added, MAX(session_type) as session_type "
+                "FROM shots GROUP BY session_id ORDER BY session_date DESC, date_added DESC"
             )
             local_df = pd.read_sql_query(query, conn)
             conn.close()

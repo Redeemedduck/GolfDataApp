@@ -28,7 +28,11 @@ def render_session_selector(
     })
 
     def _format_session_label(session):
-        label = f"{session['session_id']} ({session.get('date_added', 'Unknown')})"
+        date = session.get('session_date') or session.get('date_added', 'Unknown')
+        # Show just the date portion if it's a datetime string
+        if isinstance(date, str) and len(date) > 10:
+            date = date[:10]
+        label = f"{session['session_id']} ({date})"
         if session.get('session_type'):
             label = f"{label} [{session['session_type']}]"
         return label
