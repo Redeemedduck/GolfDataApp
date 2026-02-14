@@ -4,6 +4,38 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-13: Phase 4 — Dashboard Rebuild & Sidebar Cleanup
+
+### Smash Factor Targets
+- **`my_bag.json`**: Added per-club `smash_target` values based on tour averages (Driver 1.50, irons 1.38, wedges 1.25, etc.)
+- **`utils/bag_config.py`**: Added `get_smash_target(club)` loader
+- 62 new tests for bag config
+
+### Sidebar Stripped to Navigation Only
+- Removed data source selector, sync status, compact toggle, appearance toggle, and health metrics from sidebar
+- All pages now get a clean nav-only sidebar via `shared_sidebar.py`
+
+### New Display Tab in Settings
+- Settings page goes from 3 tabs to 4 (Data, Maintenance, Tags, Display)
+- Display tab houses relocated controls: data source, sync status, layout toggles, appearance settings
+
+### Stats
+- 11 files changed (+225 / -76 lines)
+
+---
+
+## 2026-02-13: Test Isolation Fix
+
+### Fixed
+- **`test_agent_tools.py`**: Replaced `sys.modules.setdefault()` with `setUpModule()`/`tearDownModule()` — mocks now properly save/restore
+- **`test_claude_provider.py`**: Same fix — no longer clobbers `services` package in `sys.modules`
+- Full suite: **360 tests, 0 failures, 0 errors** (was 35 failures + 18 errors)
+
+### Changed
+- Rebuilt venv on **Python 3.12** (was 3.9) — supports Agent SDK and all deps
+
+---
+
 ## 2026-02-13: Claude Agent SDK Golf Coach
 
 ### New Module: `agent/`
