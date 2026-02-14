@@ -233,7 +233,7 @@ class TestSessionDateInSaveShot(unittest.TestCase):
         conn.close()
 
         self.assertIsNotNone(result)
-        self.assertEqual(result[0], '2026-01-15T10:30:00')
+        self.assertEqual(result[0], '2026-01-15')  # Time component stripped to date-only
 
     def test_save_shot_without_session_date(self):
         """Test saving a shot without session_date (backwards compatibility)."""

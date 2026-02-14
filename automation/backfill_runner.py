@@ -609,7 +609,7 @@ class BackfillRunner:
                         )
                         session_name = self.session_namer.generate_name(
                             session_type=session_type,
-                            session_date=item.session_date or datetime.utcnow(),
+                            session_date=item.session_date,
                             clubs_used=normalized_clubs,
                         )
 

@@ -524,7 +524,7 @@ def save_shot(data):
     payload = {
         'shot_id': shot_id,
         'session_id': session_id,
-        'session_date': data.get('session_date'),
+        'session_date': str(data.get('session_date'))[:10] if data.get('session_date') else None,
         'session_type': data.get('session_type'),
         'club': normalized_club,
         # Distance/speed metrics — 0 is invalid (NULL = no data captured)
@@ -1604,12 +1604,14 @@ def backfill_session_dates():
         for report_id, session_date in sessions_with_dates:
             try:
                 # Update all shots for this session
+                # Strip time component to ensure YYYY-MM-DD format
+                date_only = str(session_date)[:10] if session_date else None
                 cursor.execute('''
                     UPDATE shots
                     SET session_date = ?
                     WHERE session_id = ?
                     AND (session_date IS NULL OR session_date = '')
-                ''', (session_date, report_id))
+                ''', (date_only, report_id))
 
                 if cursor.rowcount > 0:
                     result['updated'] += cursor.rowcount

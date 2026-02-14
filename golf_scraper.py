@@ -180,7 +180,7 @@ def run_scraper(url, progress_callback, session_date=None):
                 shot_data = {
                     'id': f"{report_id}_{session_id}_{shot.get('id')}",
                     'session': report_id,
-                    'session_date': session_date.isoformat() if session_date else None,
+                    'session_date': session_date.strftime('%Y-%m-%d') if session_date else None,
                     'club': club_name,
                     'carry_distance': carry_yards,
                     'total_distance': total_yards,
@@ -227,7 +227,7 @@ def run_scraper(url, progress_callback, session_date=None):
         'message': f"Imported {total_shots_imported} shots (with images) from {len(sessions_data)} club sessions.",
         'total_shots_imported': total_shots_imported,
         'club_sessions': len(sessions_data),
-        'session_date': session_date.isoformat() if session_date else None,
+        'session_date': session_date.strftime('%Y-%m-%d') if session_date else None,
         'report_id': report_id
     }
 
