@@ -4,6 +4,31 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-14: Phases 5-7 — Advanced Features & UX Polish
+
+### Added
+- **`components/date_range_filter.py`**: Date range filter with preset buttons (7d, 30d, 90d, All) and custom date pickers. Wired into Dashboard and Club Profiles
+- **`components/shot_navigator.py`**: Shot-by-shot navigator with prev/next buttons and `clamp_index()` helper. Wired into Dashboard Shots tab
+- **`components/trajectory_view.py`**: 2D side-view trajectory arc using piecewise quadratic curves from carry, apex, launch_angle. Wired into Dashboard Shots tab
+- **`components/goal_tracker.py`**: Smash factor goal progress bar showing % toward per-club targets from `my_bag.json`. Wired into Club Profiles below hero card
+- **`utils/bag_config.py`**: `get_adjacent_clubs()` — returns prev/next clubs in bag order for smart radar chart defaults
+
+### Changed
+- **`pages/1_📊_Dashboard.py`**: Added date range filter, session notes editor, shot navigator, and trajectory view to Shots tab
+- **`pages/2_🏌️_Club_Profiles.py`**: Added date range filter, smash factor goal tracker, and smart radar comparison defaults (adjacent clubs pre-selected)
+- **`golf_db.py`**: Added `session_notes TEXT` column to schema migration + `ALLOWED_UPDATE_FIELDS`
+- **`components/journal_card.py`**: Shows truncated session notes in journal entries
+
+### Tests
+- 21 new tests: bag_config (4), date_range_filter (4), shot_navigator (4), trajectory_view (2), session_notes (2), goal_tracker (5)
+- **413 tests passing** (was 392)
+
+### Stats
+- 7 commits, 14 files changed
+- 4 new components, 1 new utility function
+
+---
+
 ## 2026-02-14: Scraper Fix + Clean Re-import
 
 ### Fixed

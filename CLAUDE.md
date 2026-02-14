@@ -27,6 +27,11 @@ python -m unittest tests.unit.test_data_foundation
 python -m unittest tests.integration.test_automation_flow
 python -m unittest tests.integration.test_date_reclassification
 python -m unittest tests.integration.test_reimport
+python -m unittest tests.unit.test_bag_config
+python -m unittest tests.unit.test_date_range_filter
+python -m unittest tests.unit.test_shot_navigator
+python -m unittest tests.unit.test_trajectory_view
+python -m unittest tests.unit.test_goal_tracker
 
 # Syntax check all Python files (this is what CI runs as "lint")
 python -m py_compile app.py golf_db.py local_coach.py exceptions.py
@@ -129,8 +134,8 @@ ML dependencies are **lazy-loaded** via `__getattr__` in `ml/__init__.py`. Code 
 ### Streamlit Pages
 
 - `app.py` — Practice Journal home (2x2 hero stats, calendar strip, session cards grouped by week)
-- `pages/1_📊_Dashboard.py` — Analytics (3 tabs: Overview, Big 3 Deep Dive, Shots)
-- `pages/2_🏌️_Club_Profiles.py` — Per-club deep dives (hero stats, trends, Big 3, session comparison, radar)
+- `pages/1_📊_Dashboard.py` — Analytics (3 tabs: Overview, Big 3 Deep Dive, Shots) + date filter, shot navigator, trajectory view, session notes
+- `pages/2_🏌️_Club_Profiles.py` — Per-club deep dives (hero stats, smash goal tracker, trends, Big 3, session comparison, smart radar defaults)
 - `pages/3_🤖_AI_Coach.py` — Chat interface with provider selection dropdown
 - `pages/4_⚙️_Settings.py` — Data Import + Database Manager (5 tabs: Data, Maintenance, Tags, Automation, Display)
 
@@ -143,12 +148,16 @@ Key UI components:
 - `face_path_diagram.py` — D-plane scatter (Face Angle vs Club Path)
 - `direction_tendency.py` — Face/path histograms + shot shape distribution
 - `club_hero.py` / `club_trends.py` — Club profile hero card + trend charts
+- `date_range_filter.py` — Preset buttons (7d/30d/90d/All) + custom date range picker
+- `shot_navigator.py` — Prev/next shot controls with `clamp_index()` helper
+- `trajectory_view.py` — 2D side-view ball flight arc (piecewise quadratic)
+- `goal_tracker.py` — Smash factor progress bar toward per-club targets
 
 Shared utilities:
 - `utils/date_helpers.py` — `parse_session_date()`, `format_session_date()` (used by 3 components)
 - `utils/big3_constants.py` — Big 3 thresholds, colors, `face_label()`/`path_label()`/`strike_label()` (used by 2 components)
 - `utils/responsive.py` — `is_compact_layout()`, `render_compact_toggle()`, `add_responsive_css()`
-- `utils/bag_config.py` — `get_bag_order()`, `get_club_sort_key()`, `is_in_bag()`, `get_smash_target()`, `get_all_smash_targets()`, `get_uneekor_mapping()`, `get_special_categories()` (reads `my_bag.json`)
+- `utils/bag_config.py` — `get_bag_order()`, `get_club_sort_key()`, `is_in_bag()`, `get_smash_target()`, `get_all_smash_targets()`, `get_adjacent_clubs()`, `get_uneekor_mapping()`, `get_special_categories()` (reads `my_bag.json`)
 
 ### Automation Module
 
