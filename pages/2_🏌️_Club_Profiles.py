@@ -20,6 +20,7 @@ from components.club_trends import render_club_trends
 from components.big3_summary import render_big3_summary
 from utils.responsive import add_responsive_css
 from utils.bag_config import get_club_sort_key, get_adjacent_clubs
+from components.date_range_filter import render_date_range_filter, filter_by_date_range
 
 st.set_page_config(layout="wide", page_title="Club Profiles", page_icon="🏌️")
 add_responsive_css()
@@ -30,6 +31,11 @@ all_shots = get_session_data(read_mode=read_mode)
 
 st.title("Club Profiles")
 st.caption("Deep dive into each club's performance story")
+
+# Date range filter
+start_date, end_date = render_date_range_filter(key_prefix="club_date")
+if start_date or end_date:
+    all_shots = filter_by_date_range(all_shots, start_date, end_date)
 
 if all_shots.empty or 'club' not in all_shots.columns:
     st.info("No shot data available. Import some data first!")

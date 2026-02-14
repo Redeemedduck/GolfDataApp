@@ -22,6 +22,7 @@ from components import (
     render_no_data_state,
 )
 from components.big3_detail_view import render_big3_detail_view
+from components.date_range_filter import render_date_range_filter, filter_by_date_range
 
 st.set_page_config(layout="wide", page_title="Dashboard - My Golf Lab", page_icon="📊")
 add_responsive_css()
@@ -47,6 +48,14 @@ if df.empty:
 # ─── Header ────────────────────────────────────────────────────
 st.title("Dashboard")
 st.caption(f"Session: {selected_session_id}")
+
+# Date range filter
+start_date, end_date = render_date_range_filter(key_prefix="dash_date")
+if start_date or end_date:
+    df = filter_by_date_range(df, start_date, end_date)
+    if df.empty:
+        st.info("No shots in selected date range.")
+        st.stop()
 
 st.divider()
 
