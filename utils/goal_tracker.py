@@ -18,8 +18,12 @@ def _load() -> Dict:
     global _cache
     if _cache is None:
         if os.path.exists(_GOALS_PATH):
-            with open(_GOALS_PATH, 'r') as f:
-                _cache = json.load(f)
+            try:
+                with open(_GOALS_PATH, 'r') as f:
+                    content = f.read().strip()
+                    _cache = json.loads(content) if content else {"goals": []}
+            except (json.JSONDecodeError, IOError):
+                _cache = {"goals": []}
         else:
             _cache = {"goals": []}
     return _cache
