@@ -34,6 +34,7 @@ jobs:
           # Syntax check all Python files
           python -m py_compile app.py golf_db.py local_coach.py exceptions.py
           python -m py_compile automation/*.py
+          python -m py_compile agent/*.py
           python -m py_compile ml/*.py
           python -m py_compile utils/*.py
           python -m py_compile services/ai/*.py services/ai/providers/*.py

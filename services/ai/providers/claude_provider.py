@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import asyncio
+import concurrent.futures
 from services.ai.registry import register_provider
 
 
@@ -38,7 +39,10 @@ class ClaudeProvider:
         from agent.core import single_query
 
         try:
-            response = asyncio.run(single_query(message))
+            # Run in a thread to avoid crashing inside Streamlit's event loop
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, single_query(message))
+                response = future.result(timeout=120)
         except Exception as e:
             response = f"Error communicating with Claude: {e}"
 
