@@ -63,3 +63,24 @@ def reload():
     """Clear cache to force re-read on next access."""
     global _cache
     _cache = None
+
+
+def get_uneekor_mapping() -> Dict[str, str]:
+    bag = _load()
+    mapping = {}
+    for club in bag.get('clubs', []):
+        uneekor = club.get('uneekor')
+        if uneekor:
+            mapping[uneekor] = club['canonical']
+    for cat in bag.get('special_categories', []):
+        uneekor = cat.get('uneekor')
+        if isinstance(uneekor, list):
+            for u in uneekor:
+                mapping[u] = cat['canonical']
+        elif uneekor:
+            mapping[uneekor] = cat['canonical']
+    return mapping
+
+
+def get_special_categories() -> list:
+    return _load().get('special_categories', [])

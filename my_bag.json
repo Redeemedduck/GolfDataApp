@@ -1,22 +1,39 @@
 {
   "clubs": [
-    {"canonical": "Driver", "aliases": ["DR", "1W"]},
-    {"canonical": "3 Wood", "aliases": ["3W"]},
-    {"canonical": "1 Iron", "aliases": ["1I"]},
-    {"canonical": "6 Iron", "aliases": ["6I"]},
-    {"canonical": "7 Iron", "aliases": ["7I"]},
-    {"canonical": "8 Iron", "aliases": ["8I"]},
-    {"canonical": "9 Iron", "aliases": ["9I"]},
-    {"canonical": "PW", "aliases": ["Pitching Wedge"]},
-    {"canonical": "GW", "aliases": ["50", "Gap Wedge", "50 Degree"]},
-    {"canonical": "SW", "aliases": ["56", "Sand Wedge"]},
-    {"canonical": "LW", "aliases": ["60", "Lob Wedge"]}
+    {"canonical": "Driver", "aliases": ["DR", "1W"], "uneekor": "DRIVER"},
+    {"canonical": "3 Wood (Cobra)", "aliases": ["3W Cobra"], "uneekor": "WOOD2"},
+    {"canonical": "3 Wood (TM)", "aliases": ["3W TM"], "uneekor": "WOOD3"},
+    {"canonical": "7 Wood", "aliases": ["7W"], "uneekor": "WOOD7"},
+    {"canonical": "3 Iron", "aliases": ["3I", "Driving Iron"], "uneekor": "IRON3"},
+    {"canonical": "4 Iron", "aliases": ["4I"], "uneekor": "IRON4"},
+    {"canonical": "5 Iron", "aliases": ["5I"], "uneekor": "IRON5"},
+    {"canonical": "6 Iron", "aliases": ["6I"], "uneekor": "IRON6"},
+    {"canonical": "7 Iron", "aliases": ["7I"], "uneekor": "IRON7"},
+    {"canonical": "8 Iron", "aliases": ["8I"], "uneekor": "IRON8"},
+    {"canonical": "9 Iron", "aliases": ["9I"], "uneekor": "IRON9"},
+    {"canonical": "PW", "aliases": ["Pitching Wedge"], "uneekor": "WEDGE_PITCHING"},
+    {"canonical": "GW", "aliases": ["50", "Gap Wedge", "50 Degree"], "uneekor": "WEDGE_50"},
+    {"canonical": "SW", "aliases": ["56", "Sand Wedge"], "uneekor": "WEDGE_56"},
+    {"canonical": "LW", "aliases": ["60", "Lob Wedge"], "uneekor": "WEDGE_60"},
+    {"canonical": "Putter", "aliases": ["PT"], "uneekor": "PUTTER"}
   ],
-  "bag_order": ["Driver", "3 Wood", "1 Iron", "6 Iron", "7 Iron", "8 Iron", "9 Iron", "PW", "GW", "SW", "LW"],
+  "special_categories": [
+    {"canonical": "Sim Round", "uneekor": "IRON1", "exclude_from_club_analytics": true},
+    {"canonical": "Other", "uneekor": ["HYBRID1", "HYBRID3", "WEDGE_54"], "exclude_from_club_analytics": true}
+  ],
+  "bag_order": [
+    "Driver", "3 Wood (Cobra)", "3 Wood (TM)", "7 Wood",
+    "3 Iron", "4 Iron", "5 Iron", "6 Iron", "7 Iron", "8 Iron", "9 Iron",
+    "PW", "GW", "SW", "LW", "Putter"
+  ],
   "smash_targets": {
     "Driver": 1.49,
-    "3 Wood": 1.45,
-    "1 Iron": 1.36,
+    "3 Wood (Cobra)": 1.45,
+    "3 Wood (TM)": 1.45,
+    "7 Wood": 1.42,
+    "3 Iron": 1.36,
+    "4 Iron": 1.35,
+    "5 Iron": 1.34,
     "6 Iron": 1.34,
     "7 Iron": 1.33,
     "8 Iron": 1.31,
