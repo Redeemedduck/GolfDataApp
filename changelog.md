@@ -6,6 +6,10 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ## 2026-02-14: Phases 5-7 — Advanced Features & UX Polish
 
+### Fixed
+- Deleted 41 macOS Finder duplicate files (`* 2.py`, `* 2.md`, `* 2.css`) that were causing Streamlit page crashes — old copies called `render_shared_sidebar()` with removed kwargs
+- Added `.gitignore` rules for `* 2.*` duplicates and `*.db.bak-*` backups
+
 ### Added
 - **`components/date_range_filter.py`**: Date range filter with preset buttons (7d, 30d, 90d, All) and custom date pickers. Wired into Dashboard and Club Profiles
 - **`components/shot_navigator.py`**: Shot-by-shot navigator with prev/next buttons and `clamp_index()` helper. Wired into Dashboard Shots tab

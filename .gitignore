@@ -24,6 +24,9 @@ debug_page_source.html
 
 # MacOS
 .DS_Store
+*\ 2.*
+*\ 2
+*.db.bak-*
 
 # Brain / Agent Artifacts
 .gemini/
