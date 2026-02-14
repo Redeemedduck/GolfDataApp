@@ -163,6 +163,8 @@ def init_db():
         'face_to_path': 'REAL',
         'strike_distance': 'REAL',
         'original_club_value': 'TEXT',  # Raw club/session name from Uneekor
+        'sidebar_label': 'TEXT',
+        'uneekor_club_id': 'INTEGER',
     }
     
     for col, col_type in required_columns.items():
@@ -559,6 +561,8 @@ def save_shot(data):
         'lie_angle': data.get('lie_angle') if data.get('lie_angle') else None,
         'shot_tag': data.get('shot_tag'),
         'original_club_value': original_club,
+        'sidebar_label': data.get('sidebar_label'),
+        'uneekor_club_id': data.get('uneekor_club_id'),
     }
 
     # Compute derived columns
@@ -1071,6 +1075,9 @@ ALLOWED_UPDATE_FIELDS = frozenset({
     'session_id',    # For moving shots between sessions
     'shot_type',     # For shot classification
     'session_date',  # For correcting session dates
+    'sidebar_label',
+    'uneekor_club_id',
+    'original_club_value',
 })
 
 

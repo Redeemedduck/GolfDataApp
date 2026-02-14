@@ -261,5 +261,53 @@ class TestGolfDB(unittest.TestCase):
         self.assertGreaterEqual(count, 1)
 
 
+class TestNewSchemaColumns(unittest.TestCase):
+    def setUp(self):
+        self.db_path = tempfile.mktemp(suffix='.db')
+        golf_db.SQLITE_DB_PATH = self.db_path
+        os.environ.pop('SUPABASE_URL', None)
+        golf_db._supabase = None
+        golf_db.init_db()
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.unlink(self.db_path)
+
+    def test_sidebar_label_column_exists(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('PRAGMA table_info(shots)')
+        columns = [row[1] for row in cursor.fetchall()]
+        self.assertIn('sidebar_label', columns)
+        self.assertIn('uneekor_club_id', columns)
+        conn.close()
+
+    def test_save_shot_with_sidebar_label(self):
+        shot = {
+            'id': 'test_schema_1_1_1',
+            'session': 'test_schema_1',
+            'club': 'Driver',
+            'sidebar_label': 'driver practice',
+            'uneekor_club_id': 0,
+            'original_club_value': 'DRIVER',
+            'carry_distance': 250.0,
+            'ball_speed': 150.0,
+        }
+        golf_db.save_shot(shot)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT sidebar_label, uneekor_club_id FROM shots WHERE shot_id = 'test_schema_1_1_1'")
+        row = cursor.fetchone()
+        self.assertEqual(row[0], 'driver practice')
+        self.assertEqual(row[1], 0)
+        conn.close()
+
+    def test_allowed_update_fields_includes_new_columns(self):
+        from golf_db import ALLOWED_UPDATE_FIELDS
+        self.assertIn('sidebar_label', ALLOWED_UPDATE_FIELDS)
+        self.assertIn('uneekor_club_id', ALLOWED_UPDATE_FIELDS)
+        self.assertIn('original_club_value', ALLOWED_UPDATE_FIELDS)
+
+
 if __name__ == "__main__":
     unittest.main()
