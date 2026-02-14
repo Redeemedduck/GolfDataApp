@@ -19,6 +19,7 @@ from components.club_hero import render_club_hero
 from components.club_trends import render_club_trends
 from components.big3_summary import render_big3_summary
 from utils.responsive import add_responsive_css
+from utils.bag_config import get_club_sort_key
 
 st.set_page_config(layout="wide", page_title="Club Profiles", page_icon="🏌️")
 add_responsive_css()
@@ -41,8 +42,8 @@ render_shared_sidebar(
     current_page="club_profiles",
 )
 
-# Club selector in main area
-clubs = sorted(all_shots['club'].dropna().unique().tolist())
+# Club selector in main area (ordered by bag config)
+clubs = sorted(all_shots['club'].dropna().unique().tolist(), key=get_club_sort_key)
 selected_club = st.selectbox("Select Club", clubs, key="club_profile_selector")
 
 if not selected_club:

@@ -1,0 +1,16 @@
+{
+  "clubs": [
+    {"canonical": "Driver", "aliases": ["DR", "1W"]},
+    {"canonical": "3 Wood", "aliases": ["3W"]},
+    {"canonical": "1 Iron", "aliases": ["1I"]},
+    {"canonical": "6 Iron", "aliases": ["6I"]},
+    {"canonical": "7 Iron", "aliases": ["7I"]},
+    {"canonical": "8 Iron", "aliases": ["8I"]},
+    {"canonical": "9 Iron", "aliases": ["9I"]},
+    {"canonical": "PW", "aliases": ["Pitching Wedge"]},
+    {"canonical": "GW", "aliases": ["50", "Gap Wedge", "50 Degree"]},
+    {"canonical": "SW", "aliases": ["56", "Sand Wedge"]},
+    {"canonical": "LW", "aliases": ["60", "Lob Wedge"]}
+  ],
+  "bag_order": ["Driver", "3 Wood", "1 Iron", "6 Iron", "7 Iron", "8 Iron", "9 Iron", "PW", "GW", "SW", "LW"]
+}
