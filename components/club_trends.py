@@ -20,7 +20,7 @@ def render_club_trends(profile_df: pd.DataFrame, club_name: str) -> None:
 
     # Prepare x-axis (session dates or index)
     if 'session_date' in profile_df.columns and profile_df['session_date'].notna().any():
-        x = pd.to_datetime(profile_df['session_date'])
+        x = pd.to_datetime(profile_df['session_date'], errors='coerce')
         x_title = "Date"
     else:
         x = list(range(len(profile_df)))
@@ -47,8 +47,13 @@ def render_club_trends(profile_df: pd.DataFrame, club_name: str) -> None:
             line=dict(color='#2ca02c', width=1, dash='dot'),
         ))
 
+    x_layout = {}
+    if isinstance(x, pd.Series) and pd.api.types.is_datetime64_any_dtype(x):
+        x_layout = dict(tickformat='%b %d', dtick='D7')
+
     fig.update_layout(
         xaxis_title=x_title,
+        xaxis=x_layout,
         yaxis_title="Yards",
         height=350,
         template="plotly_dark",

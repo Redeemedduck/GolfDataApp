@@ -163,6 +163,7 @@ def init_db():
         'face_to_path': 'REAL',
         'strike_distance': 'REAL',
         'original_club_value': 'TEXT',  # Raw club/session name from Uneekor
+        'notes': 'TEXT',  # Session notes (applied per-session to all shots)
     }
     
     for col, col_type in required_columns.items():
@@ -465,7 +466,7 @@ def _fetch_supabase_sessions(page_size=1000):
     while True:
         query = (
             supabase.table('shots')
-            .select('session_id, date_added, session_type')
+            .select('session_id, date_added, session_type, session_date')
             .range(offset, offset + page_size - 1)
         )
         response = query.execute()
@@ -660,7 +661,10 @@ def get_unique_sessions(read_mode=None):
         if os.path.exists(SQLITE_DB_PATH):
             conn = sqlite3.connect(SQLITE_DB_PATH)
             query = (
-                "SELECT session_id, MAX(date_added) as date_added, MAX(session_type) as session_type "
+                "SELECT session_id, MAX(date_added) as date_added, "
+                "MAX(session_type) as session_type, "
+                "MAX(session_date) as session_date, "
+                "COUNT(*) as shot_count "
                 "FROM shots GROUP BY session_id ORDER BY date_added DESC"
             )
             local_df = pd.read_sql_query(query, conn)
@@ -679,12 +683,16 @@ def get_unique_sessions(read_mode=None):
                     return non_null.iloc[-1] if not non_null.empty else None
 
                 cloud_df = cloud_df.sort_values('date_added')
+                agg_dict = {
+                    'date_added': ('date_added', 'max'),
+                    'session_type': ('session_type', _last_non_null),
+                    'shot_count': ('session_id', 'count'),
+                }
+                if 'session_date' in cloud_df.columns:
+                    agg_dict['session_date'] = ('session_date', _last_non_null)
                 cloud_df = (
                     cloud_df.groupby('session_id')
-                    .agg(
-                        date_added=('date_added', 'max'),
-                        session_type=('session_type', _last_non_null)
-                    )
+                    .agg(**agg_dict)
                     .reset_index()
                 )
         except Exception as e:
@@ -705,12 +713,17 @@ def get_unique_sessions(read_mode=None):
     combined = pd.concat([local_df, cloud_df], ignore_index=True)
     combined['date_added'] = pd.to_datetime(combined['date_added'])
     combined = combined.sort_values('date_added')
+    _lnn = lambda x: x.dropna().iloc[-1] if not x.dropna().empty else None
+    combined_agg = {
+        'date_added': ('date_added', 'max'),
+        'session_type': ('session_type', _lnn),
+        'shot_count': ('session_id', 'count'),
+    }
+    if 'session_date' in combined.columns:
+        combined_agg['session_date'] = ('session_date', _lnn)
     combined = (
         combined.groupby('session_id')
-        .agg(
-            date_added=('date_added', 'max'),
-            session_type=('session_type', lambda x: x.dropna().iloc[-1] if not x.dropna().empty else None)
-        )
+        .agg(**combined_agg)
         .reset_index()
         .sort_values('date_added', ascending=False)
     )
@@ -1071,6 +1084,7 @@ ALLOWED_UPDATE_FIELDS = frozenset({
     'session_id',    # For moving shots between sessions
     'shot_type',     # For shot classification
     'session_date',  # For correcting session dates
+    'notes',         # For session notes
 })
 
 

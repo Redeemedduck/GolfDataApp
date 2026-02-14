@@ -61,6 +61,21 @@ st.title("Practice Journal")
 total_sessions = len(all_sessions) if all_sessions else 0
 total_shots = len(all_shots) if not all_shots.empty else 0
 
+# Compute avg carry and avg smash across all shots
+avg_carry = None
+avg_smash = None
+if not all_shots.empty:
+    if 'carry' in all_shots.columns:
+        valid_carry = all_shots['carry'].dropna()
+        valid_carry = valid_carry[valid_carry > 0]
+        if len(valid_carry) > 0:
+            avg_carry = valid_carry.mean()
+    if 'smash' in all_shots.columns:
+        valid_smash = all_shots['smash'].dropna()
+        valid_smash = valid_smash[(valid_smash > 0) & (valid_smash < 2)]
+        if len(valid_smash) > 0:
+            avg_smash = valid_smash.mean()
+
 # Calculate days since last practice and streak
 practice_dates = set()
 if recent_stats:
@@ -95,13 +110,15 @@ with r1c1:
 with r1c2:
     st.metric("Total Shots", total_shots)
 with r2c1:
-    if days_since is not None:
-        label = "Today!" if days_since == 0 else f"{days_since} day{'s' if days_since != 1 else ''} ago"
-        st.metric("Last Practice", label)
+    if avg_carry is not None:
+        st.metric("Avg Carry", f"{avg_carry:.1f} yds")
     else:
-        st.metric("Last Practice", "—")
+        st.metric("Avg Carry", "—")
 with r2c2:
-    st.metric("Streak", f"{streak} day{'s' if streak != 1 else ''}" if streak > 0 else "Start one!")
+    if avg_smash is not None:
+        st.metric("Avg Smash", f"{avg_smash:.2f}")
+    else:
+        st.metric("Avg Smash", "—")
 
 # ─── Sync Button ─────────────────────────────────────────────
 sync_col, _ = st.columns([1, 2])
@@ -170,34 +187,18 @@ else:
 # ─── Sidebar ──────────────────────────────────────────────────
 render_shared_sidebar(
     show_navigation=False,
-    show_data_source=True,
-    show_sync_status=True,
+    show_data_source=False,
+    show_sync_status=False,
     current_page="home"
 )
 
 with st.sidebar:
-    st.divider()
-    render_documentation_links()
+    # Streak / last practice context
+    if days_since is not None:
+        label = "Today!" if days_since == 0 else f"{days_since}d ago"
+        st.metric("Last Practice", label)
+    if streak > 0:
+        st.metric("Streak", f"{streak} day{'s' if streak != 1 else ''}")
 
     st.divider()
-
-    st.header("Health")
-    latest_import = observability.read_latest_event("import_runs.jsonl")
-    if latest_import:
-        st.caption(f"Last Import: {latest_import.get('status', 'unknown')}")
-        st.caption(f"Shots: {latest_import.get('shots_imported', 0)}")
-        st.caption(f"Duration: {latest_import.get('duration_sec', 0)}s")
-    else:
-        st.caption("Last Import: none")
-
-    latest_sync = observability.read_latest_event("sync_runs.jsonl")
-    if latest_sync:
-        st.caption(f"Last Sync: {latest_sync.get('status', 'unknown')} ({latest_sync.get('mode', 'n/a')})")
-        st.caption(f"Shots: {latest_sync.get('shots', 0)}")
-        st.caption(f"Duration: {latest_sync.get('duration_sec', 0)}s")
-    else:
-        st.caption("Last Sync: none")
-
-    st.divider()
-    st.caption("Golf Data Lab v3.0 - Practice Journal")
-    st.caption("Built around the Big 3 Impact Laws")
+    st.caption("Golf Data Lab v4.0 - Practice Journal")

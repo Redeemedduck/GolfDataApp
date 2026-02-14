@@ -85,13 +85,13 @@ def render_big3_summary(
         std_str = f"{face_std:.1f}" if face_std is not None else "—"
 
         st.markdown(
-            f"<div style='background:#1a1a2e;border-left:4px solid {color};"
+            f"<div style='background:#f0f2f6;border-left:4px solid {color};"
             f"padding:12px;border-radius:6px;margin-bottom:8px'>"
-            f"<div style='font-size:0.8em;color:#aaa;margin-bottom:4px'>"
+            f"<div style='font-size:0.8em;color:#555;margin-bottom:4px'>"
             f"Face Angle (75% of start direction)</div>"
-            f"<div style='font-size:1.6em;font-weight:bold'>{avg_str}&deg;</div>"
+            f"<div style='font-size:1.6em;font-weight:bold;color:#1a1a2e'>{avg_str}&deg;</div>"
             f"<div style='font-size:0.9em;color:{color}'>{tendency}</div>"
-            f"<div style='font-size:0.75em;color:#888;margin-top:4px'>"
+            f"<div style='font-size:0.75em;color:#666;margin-top:4px'>"
             f"Consistency: &pm;{std_str}&deg;</div>"
             f"</div>",
             unsafe_allow_html=True,
@@ -104,13 +104,13 @@ def render_big3_summary(
         std_str = f"{path_std:.1f}" if path_std is not None else "—"
 
         st.markdown(
-            f"<div style='background:#1a1a2e;border-left:4px solid {color};"
+            f"<div style='background:#f0f2f6;border-left:4px solid {color};"
             f"padding:12px;border-radius:6px;margin-bottom:8px'>"
-            f"<div style='font-size:0.8em;color:#aaa;margin-bottom:4px'>"
+            f"<div style='font-size:0.8em;color:#555;margin-bottom:4px'>"
             f"Club Path (25% of direction, determines curve)</div>"
-            f"<div style='font-size:1.6em;font-weight:bold'>{avg_str}&deg;</div>"
+            f"<div style='font-size:1.6em;font-weight:bold;color:#1a1a2e'>{avg_str}&deg;</div>"
             f"<div style='font-size:0.9em;color:{color}'>{tendency}</div>"
-            f"<div style='font-size:0.75em;color:#888;margin-top:4px'>"
+            f"<div style='font-size:0.75em;color:#666;margin-top:4px'>"
             f"Consistency: &pm;{std_str}&deg;</div>"
             f"</div>",
             unsafe_allow_html=True,
@@ -129,14 +129,14 @@ def render_big3_summary(
             pct_str = "—"
 
         st.markdown(
-            f"<div style='background:#1a1a2e;border-left:4px solid {color};"
+            f"<div style='background:#f0f2f6;border-left:4px solid {color};"
             f"padding:12px;border-radius:6px;margin-bottom:8px'>"
-            f"<div style='font-size:0.8em;color:#aaa;margin-bottom:4px'>"
+            f"<div style='font-size:0.8em;color:#555;margin-bottom:4px'>"
             f"Strike Location (biggest factor in distance)</div>"
-            f"<div style='font-size:1.6em;font-weight:bold'>{avg_str}</div>"
+            f"<div style='font-size:1.6em;font-weight:bold;color:#1a1a2e'>{avg_str}</div>"
             f"<div style='font-size:0.9em;color:{color}'>"
             f"{pct_str} centered</div>"
-            f"<div style='font-size:0.75em;color:#888;margin-top:4px'>"
+            f"<div style='font-size:0.75em;color:#666;margin-top:4px'>"
             f"Spread: &pm;{std_str}</div>"
             f"</div>",
             unsafe_allow_html=True,
