@@ -11,6 +11,7 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 from typing import Optional
+from utils.chart_theme import themed_figure, COLOR_NEUTRAL, COLOR_GOOD, COLOR_FAIR, COLOR_POOR, CATEGORICAL
 
 
 def render_face_tendency(df: pd.DataFrame) -> None:
@@ -23,11 +24,11 @@ def render_face_tendency(df: pd.DataFrame) -> None:
     if data.empty:
         return
 
-    fig = go.Figure()
+    fig = themed_figure()
     fig.add_trace(go.Histogram(
         x=data,
         nbinsx=30,
-        marker_color='#1f77b4',
+        marker_color=COLOR_NEUTRAL,
         opacity=0.8,
         name='Face Angle',
     ))
@@ -43,7 +44,6 @@ def render_face_tendency(df: pd.DataFrame) -> None:
         xaxis_title="Face Angle (degrees)",
         yaxis_title="Count",
         height=300,
-        template="plotly_dark",
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -58,17 +58,17 @@ def render_path_tendency(df: pd.DataFrame) -> None:
     if data.empty:
         return
 
-    fig = go.Figure()
+    fig = themed_figure()
     fig.add_trace(go.Histogram(
         x=data,
         nbinsx=30,
-        marker_color='#ff7f0e',
+        marker_color=COLOR_FAIR,
         opacity=0.8,
         name='Club Path',
     ))
 
     mean_val = data.mean()
-    fig.add_vline(x=mean_val, line_dash="dash", line_color="yellow",
+    fig.add_vline(x=mean_val, line_dash="dash", line_color=COLOR_FAIR,
                   annotation_text=f"Avg: {mean_val:+.1f}")
     fig.add_vline(x=0, line_dash="solid", line_color="rgba(255,255,255,0.3)")
 
@@ -77,7 +77,6 @@ def render_path_tendency(df: pd.DataFrame) -> None:
         xaxis_title="Club Path (degrees)",
         yaxis_title="Count",
         height=300,
-        template="plotly_dark",
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -137,7 +136,6 @@ def render_shot_shape_distribution(df: pd.DataFrame) -> None:
         title="Shot Shape Distribution",
         height=350,
         showlegend=True,
-        template="plotly_dark",
     )
 
     st.plotly_chart(fig, use_container_width=True)

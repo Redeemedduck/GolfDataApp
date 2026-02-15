@@ -8,6 +8,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from typing import List, Dict, Optional
+from utils.chart_theme import themed_figure, CATEGORICAL
 from services.data_access import get_session_summary, get_session_data
 
 
@@ -176,7 +177,7 @@ def _render_overlaid_chart(
     title: str
 ) -> None:
     """Render overlaid line chart comparing sessions."""
-    fig = go.Figure()
+    fig = themed_figure()
 
     colors = ['#2D7F3E', '#1976D2', '#F57C00']  # Green, Blue, Orange
 

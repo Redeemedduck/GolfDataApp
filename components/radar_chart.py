@@ -5,6 +5,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
+from utils.chart_theme import themed_figure, CATEGORICAL, BG_PRIMARY, TEXT_COLOR, GRID_COLOR, TEXT_MUTED
 
 
 def render_radar_chart(df: pd.DataFrame, clubs: list = None) -> None:
@@ -59,9 +60,9 @@ def render_radar_chart(df: pd.DataFrame, clubs: list = None) -> None:
         return
 
     # Calculate averages for each club
-    fig = go.Figure()
+    fig = themed_figure()
 
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+    colors = CATEGORICAL[:5]
 
     for idx, club in enumerate(selected_clubs):
         club_data = df[df['club'] == club]
@@ -103,13 +104,12 @@ def render_radar_chart(df: pd.DataFrame, clubs: list = None) -> None:
 
     fig.update_layout(
         polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100]
-            )
+            bgcolor=BG_PRIMARY,
+            radialaxis=dict(visible=True, range=[0, 100], gridcolor=GRID_COLOR, tickfont=dict(color=TEXT_MUTED)),
+            angularaxis=dict(gridcolor=GRID_COLOR, tickfont=dict(color=TEXT_COLOR)),
         ),
         showlegend=True,
-        height=500
+        height=500,
     )
 
     st.plotly_chart(fig, use_container_width=True)

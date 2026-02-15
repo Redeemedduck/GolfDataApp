@@ -5,6 +5,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 from typing import Optional
+from utils.chart_theme import themed_figure, COLOR_NEUTRAL, COLOR_GOOD, COLOR_FAIR, COLOR_POOR
 
 
 def render_club_trends(profile_df: pd.DataFrame, club_name: str) -> None:
@@ -29,7 +30,7 @@ def render_club_trends(profile_df: pd.DataFrame, club_name: str) -> None:
     # ─── Distance Trend ───
     st.markdown("#### Distance Over Time")
 
-    fig = go.Figure()
+    fig = themed_figure()
 
     if 'avg_carry' in profile_df.columns:
         fig.add_trace(go.Scatter(
@@ -51,7 +52,6 @@ def render_club_trends(profile_df: pd.DataFrame, club_name: str) -> None:
         xaxis_title=x_title,
         yaxis_title="Yards",
         height=350,
-        template="plotly_dark",
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
     st.plotly_chart(fig, use_container_width=True)
@@ -62,7 +62,7 @@ def render_club_trends(profile_df: pd.DataFrame, club_name: str) -> None:
     col1, col2 = st.columns(2)
 
     with col1:
-        fig_face = go.Figure()
+        fig_face = themed_figure()
         if 'avg_face_angle' in profile_df.columns:
             fig_face.add_trace(go.Scatter(
                 x=x, y=profile_df['avg_face_angle'],
@@ -75,12 +75,11 @@ def render_club_trends(profile_df: pd.DataFrame, club_name: str) -> None:
                 title="Face Angle",
                 yaxis_title="Degrees",
                 height=280,
-                template="plotly_dark",
-            )
+                    )
             st.plotly_chart(fig_face, use_container_width=True)
 
     with col2:
-        fig_path = go.Figure()
+        fig_path = themed_figure()
         if 'avg_club_path' in profile_df.columns:
             fig_path.add_trace(go.Scatter(
                 x=x, y=profile_df['avg_club_path'],
@@ -93,13 +92,12 @@ def render_club_trends(profile_df: pd.DataFrame, club_name: str) -> None:
                 title="Club Path",
                 yaxis_title="Degrees",
                 height=280,
-                template="plotly_dark",
-            )
+                    )
             st.plotly_chart(fig_path, use_container_width=True)
 
     # Strike distance trend
     if 'avg_strike_distance' in profile_df.columns and profile_df['avg_strike_distance'].notna().any():
-        fig_strike = go.Figure()
+        fig_strike = themed_figure()
         fig_strike.add_trace(go.Scatter(
             x=x, y=profile_df['avg_strike_distance'],
             mode='lines+markers',
@@ -112,6 +110,5 @@ def render_club_trends(profile_df: pd.DataFrame, club_name: str) -> None:
             title="Strike Quality (distance from center)",
             yaxis_title="Inches",
             height=280,
-            template="plotly_dark",
-        )
+            )
         st.plotly_chart(fig_strike, use_container_width=True)

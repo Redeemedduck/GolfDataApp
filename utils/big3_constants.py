@@ -3,7 +3,7 @@
 Thresholds based on Adam Young's teaching:
 - Face Angle std: <1.5 consistent, <3.0 moderate, >3.0 scattered
 - Club Path std: <2.0 consistent, <4.0 moderate, >4.0 scattered
-- Strike Distance: <0.25 center, <0.5 decent, >0.5 scattered
+- Strike Distance: <6mm center, <12mm decent, >12mm scattered
 """
 
 # Color constants
@@ -17,8 +17,8 @@ FACE_STD_GREEN = 1.5   # degrees
 FACE_STD_YELLOW = 3.0
 PATH_STD_GREEN = 2.0
 PATH_STD_YELLOW = 4.0
-STRIKE_DIST_GREEN = 0.25   # inches from center
-STRIKE_DIST_YELLOW = 0.5
+STRIKE_DIST_GREEN = 6.0    # mm from center (impact_x/y are in mm)
+STRIKE_DIST_YELLOW = 12.0
 
 
 def face_label(std):

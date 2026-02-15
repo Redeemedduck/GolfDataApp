@@ -5,6 +5,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
+from utils.chart_theme import themed_figure
 
 
 def render_impact_heatmap(df: pd.DataFrame, use_optix: bool = True) -> None:
@@ -41,7 +42,7 @@ def render_impact_heatmap(df: pd.DataFrame, use_optix: bool = True) -> None:
         return
 
     # Create heatmap using hexbin style
-    fig = go.Figure()
+    fig = themed_figure()
 
     # Add scatter points with color based on smash factor (if available)
     if 'smash' in df_filtered.columns:

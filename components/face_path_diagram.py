@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 from typing import Optional
+from utils.chart_theme import themed_figure, COLOR_NEUTRAL, GRID_COLOR, TEXT_MUTED
 
 
 def render_face_path_diagram(
@@ -42,7 +43,7 @@ def render_face_path_diagram(
         st.info("No valid face angle / club path data")
         return
 
-    fig = go.Figure()
+    fig = themed_figure()
 
     # Color mapping
     if color_by == "carry" and 'carry' in plot_df.columns:
@@ -54,7 +55,7 @@ def render_face_path_diagram(
         colorbar_title = "Face-to-Path"
         colorscale = 'RdBu_r'
     else:
-        color_data = '#1f77b4'
+        color_data = COLOR_NEUTRAL
         colorbar_title = None
         colorscale = None
 
@@ -142,7 +143,6 @@ def render_face_path_diagram(
         annotations=annotations,
         height=500,
         showlegend=True,
-        template="plotly_dark",
     )
 
     st.plotly_chart(fig, use_container_width=True)

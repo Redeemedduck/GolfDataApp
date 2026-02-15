@@ -3,10 +3,15 @@ Centralized data access layer with caching.
 
 This module provides cached access to golf data, enabling per-function
 cache invalidation and consistent data access across all pages.
+
+get_filtered_shots() is the main entry point for pages — it composes
+time window + outlier filtering on top of raw data.
 """
 import streamlit as st
 import pandas as pd
 import golf_db
+from services.time_window import filter_by_window, DEFAULT_WINDOW
+from services.data_quality import filter_outliers, get_outlier_summary
 
 
 @st.cache_data(show_spinner=False, ttl=60)
@@ -141,6 +146,81 @@ def get_rolling_averages(club: str = None, window: int = 5) -> dict:
 def get_session_aggregates(session_id: str) -> dict:
     """Get Big 3 + performance stats for a single session."""
     return golf_db.get_session_aggregates(session_id)
+
+
+def get_filtered_shots(
+    session_id: str = None,
+    read_mode: str = "auto",
+    time_window: str = None,
+    outlier_filter: bool = None,
+) -> pd.DataFrame:
+    """Get shot data with time window and outlier filtering applied.
+
+    Reads filter settings from st.session_state if not provided explicitly.
+    This is the primary data entry point for dashboard pages.
+
+    Args:
+        session_id: Specific session or None for all.
+        read_mode: Data source mode.
+        time_window: Time window key ('3mo', '6mo', '1yr', 'all').
+        outlier_filter: Whether to apply outlier filtering.
+
+    Returns:
+        Filtered DataFrame.
+    """
+    if time_window is None:
+        time_window = st.session_state.get("time_window", DEFAULT_WINDOW)
+    if outlier_filter is None:
+        outlier_filter = st.session_state.get("outlier_filter", True)
+
+    df = get_session_data(session_id=session_id, read_mode=read_mode)
+
+    if df.empty:
+        return df
+
+    # Apply time window (skip for single-session views)
+    if session_id is None:
+        df = filter_by_window(df, window=time_window)
+
+    # Apply outlier filtering
+    if outlier_filter:
+        summary = get_outlier_summary(df)
+        st.session_state["outlier_count"] = summary["total_removed"]
+        df = filter_outliers(df)
+    else:
+        st.session_state["outlier_count"] = 0
+
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def get_executive_summary(read_mode: str = "auto", time_window: str = DEFAULT_WINDOW) -> dict:
+    """Get executive summary analytics (cached)."""
+    from services.analytics.executive_summary import compute_executive_summary
+    df = get_session_data(read_mode=read_mode)
+    df = filter_by_window(df, window=time_window)
+    df = filter_outliers(df)
+    return compute_executive_summary(df)
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def get_session_grades(read_mode: str = "auto", time_window: str = DEFAULT_WINDOW) -> list:
+    """Get session quality grades (cached)."""
+    from services.analytics.session_grades import compute_session_grades
+    df = get_session_data(read_mode=read_mode)
+    df = filter_by_window(df, window=time_window)
+    df = filter_outliers(df)
+    return compute_session_grades(df)
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def get_progress_trends(read_mode: str = "auto", time_window: str = DEFAULT_WINDOW) -> dict:
+    """Get per-club progress trends (cached)."""
+    from services.analytics.progress_tracker import compute_progress_trends
+    df = get_session_data(read_mode=read_mode)
+    df = filter_by_window(df, window=time_window)
+    df = filter_outliers(df)
+    return compute_progress_trends(df)
 
 
 def clear_session_cache():

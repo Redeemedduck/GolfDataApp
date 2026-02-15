@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from utils.chart_theme import themed_figure, COLOR_NEUTRAL, COLOR_POOR, BG_CARD
 
 
 def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
@@ -40,7 +41,7 @@ def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
     df = df.sort_values('display_date')
 
     # Create figure
-    fig = go.Figure()
+    fig = themed_figure()
 
     # Add line chart
     fig.add_trace(go.Scatter(
@@ -48,8 +49,8 @@ def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
         y=df[metric],
         mode='lines+markers',
         name=metric.replace('_', ' ').title(),
-        line=dict(color='royalblue', width=3),
-        marker=dict(size=10, color='darkblue', line=dict(width=2, color='white')),
+        line=dict(color=COLOR_NEUTRAL, width=3),
+        marker=dict(size=10, color=COLOR_NEUTRAL, line=dict(width=2, color=BG_CARD)),
         hovertemplate=(
             "<b>Session: %{text}</b><br>" +
             "Date: %{x|%Y-%m-%d}<br>" +
@@ -69,7 +70,7 @@ def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
             y=trend_y,
             mode='lines',
             name='Trend',
-            line=dict(color='red', width=2, dash='dash'),
+            line=dict(color=COLOR_POOR, width=2, dash='dash'),
             hovertemplate="Trend Line<extra></extra>"
         ))
 
@@ -89,8 +90,8 @@ def render_trend_chart(all_sessions_data: list, metric: str = 'carry') -> None:
             arrowhead=2,
             ax=50,
             ay=-40,
-            bgcolor="rgba(255,255,255,0.8)",
-            bordercolor="black",
+            bgcolor=BG_CARD,
+            bordercolor=COLOR_NEUTRAL,
             borderwidth=1
         )
 

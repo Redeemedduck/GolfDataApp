@@ -42,5 +42,25 @@
     "GW": 1.22,
     "SW": 1.20,
     "LW": 1.18
+  },
+  "carry_caps": {
+    "Driver": 350,
+    "3 Wood (Cobra)": 320,
+    "3 Wood (TM)": 320,
+    "7 Wood": 280,
+    "3 Iron": 280,
+    "4 Iron": 280,
+    "5 Iron": 250,
+    "6 Iron": 235,
+    "7 Iron": 225,
+    "8 Iron": 210,
+    "9 Iron": 190,
+    "PW": 180,
+    "GW": 165,
+    "SW": 140,
+    "LW": 125,
+    "Putter": 50,
+    "Sim Round": 400,
+    "Other": 350
   }
 }

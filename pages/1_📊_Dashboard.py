@@ -1,19 +1,26 @@
 """
-Dashboard Page — Session analytics with Big 3 Impact Laws deep dive.
+Dashboard Page — State of your game, progress tracking, practice planning.
 
 Tabs:
-  1. Overview — KPIs, dispersion plot, radar chart, quick CSV export
-  2. Big 3 Deep Dive — D-plane, tendencies, enhanced heatmap
-  3. Shots — Interactive shot table with detail pane
+  1. State of Your Game — Executive summary + session grades
+  2. Progress & Trends — Per-club sparklines and trend direction
+  3. Practice Plan — Data-driven practice plan generation
+  4. Big 3 Deep Dive — D-plane, tendencies, enhanced heatmap
+  5. Shots — Interactive shot table with detail pane
 """
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
 import golf_db
-from services.data_access import get_unique_sessions, get_session_data
+from services.data_access import (
+    get_unique_sessions, get_session_data, get_filtered_shots,
+    get_executive_summary, get_session_grades, get_progress_trends,
+)
+from services.analytics.practice_planner import generate_practice_plan
 from utils.session_state import get_read_mode
 from utils.responsive import add_responsive_css
+from utils.chart_theme import themed_figure, COLOR_NEUTRAL, BG_CARD
 from components import (
     render_session_selector,
     render_metrics_row,
@@ -24,6 +31,10 @@ from components import (
 from components.big3_detail_view import render_big3_detail_view
 from components.date_range_filter import render_date_range_filter, filter_by_date_range
 from components.shot_navigator import render_shot_navigator
+from components.executive_summary import render_executive_summary
+from components.session_grades import render_session_grades
+from components.progress_dashboard import render_progress_dashboard
+from components.practice_plan import render_practice_plan
 
 st.set_page_config(layout="wide", page_title="Dashboard - My Golf Lab", page_icon="📊")
 add_responsive_css()
@@ -31,205 +42,210 @@ add_responsive_css()
 golf_db.init_db()
 read_mode = get_read_mode()
 
-# Shared sidebar
+# Shared sidebar (includes global filters: time window + outlier toggle)
 render_shared_sidebar(current_page="dashboard")
 
-# Session selector in sidebar
+# Session selector in sidebar (for session-specific tabs)
 with st.sidebar:
     st.divider()
-    selected_session_id, df, selected_clubs = render_session_selector(
+    selected_session_id, session_df, selected_clubs = render_session_selector(
         lambda: get_unique_sessions(read_mode=read_mode),
         lambda session_id: get_session_data(session_id, read_mode=read_mode),
     )
 
-if df.empty:
-    render_no_data_state()
-    st.stop()
+# Get filtered data for analytics tabs (respects time window + outlier filter)
+all_filtered = get_filtered_shots(read_mode=read_mode)
 
 # ─── Header ────────────────────────────────────────────────────
 st.title("Dashboard")
-st.caption(f"Session: {selected_session_id}")
-
-# Date range filter
-start_date, end_date = render_date_range_filter(key_prefix="dash_date")
-if start_date or end_date:
-    df = filter_by_date_range(df, start_date, end_date)
-    if df.empty:
-        st.info("No shots in selected date range.")
-        st.stop()
-
-st.divider()
 
 # ─── Tabs ──────────────────────────────────────────────────────
-tab_overview, tab_big3, tab_shots = st.tabs([
-    "Overview",
+tab_state, tab_progress, tab_plan, tab_big3, tab_shots = st.tabs([
+    "State of Your Game",
+    "Progress & Trends",
+    "Practice Plan",
     "Big 3 Deep Dive",
     "Shots",
 ])
 
 # ================================================================
-# TAB 1: OVERVIEW
+# TAB 1: STATE OF YOUR GAME
 # ================================================================
-with tab_overview:
-    st.header("Performance Metrics")
-    render_metrics_row(df)
+with tab_state:
+    if all_filtered.empty:
+        render_no_data_state()
+    else:
+        time_window = st.session_state.get("time_window", "6mo")
 
-    st.divider()
+        # Executive Summary
+        summary = get_executive_summary(read_mode=read_mode, time_window=time_window)
+        render_executive_summary(summary)
 
-    # Dispersion plot
-    st.subheader("Dispersion Plot")
-    fig_disp = go.Figure()
+        st.divider()
 
-    for dist in [50, 100, 150, 200, 250]:
-        fig_disp.add_shape(
-            type="circle",
-            xref="x", yref="y",
-            x0=-dist, y0=0, x1=dist, y1=dist * 2,
-            line_color="lightgray",
-            line_dash="dot",
-        )
-
-    fig_disp.add_trace(go.Scatter(
-        x=df["side_distance"],
-        y=df["carry"],
-        mode="markers",
-        marker=dict(
-            size=10,
-            color=df["smash"],
-            colorscale="Viridis",
-            showscale=True,
-            colorbar=dict(title="Smash"),
-        ),
-        text=df["club"],
-        hovertemplate="<b>%{text}</b><br>Carry: %{y:.1f} yds<br>Side: %{x:.1f} yds<extra></extra>",
-    ))
-
-    fig_disp.update_layout(
-        xaxis_title="Side Distance (yds)",
-        yaxis_title="Carry Distance (yds)",
-        xaxis=dict(range=[-50, 50], zeroline=True, zerolinewidth=2, zerolinecolor="green"),
-        yaxis=dict(range=[0, df["carry"].max() * 1.1 if len(df) > 0 else 250]),
-        height=500,
-    )
-    st.plotly_chart(fig_disp, use_container_width=True)
-
-    st.divider()
-
-    # Radar comparison
-    render_radar_chart(df)
-
-    st.divider()
-
-    # Quick export
-    if not df.empty:
-        csv = df.to_csv(index=False)
-        st.download_button("Export Session CSV", csv, f"session_{selected_session_id}.csv", "text/csv")
+        # Session Grades
+        st.subheader("Session Grades")
+        grades = get_session_grades(read_mode=read_mode, time_window=time_window)
+        render_session_grades(grades)
 
 
 # ================================================================
-# TAB 2: BIG 3 DEEP DIVE
+# TAB 2: PROGRESS & TRENDS
+# ================================================================
+with tab_progress:
+    if all_filtered.empty:
+        render_no_data_state()
+    else:
+        time_window = st.session_state.get("time_window", "6mo")
+        trends = get_progress_trends(read_mode=read_mode, time_window=time_window)
+        render_progress_dashboard(trends)
+
+
+# ================================================================
+# TAB 3: PRACTICE PLAN
+# ================================================================
+with tab_plan:
+    if all_filtered.empty:
+        render_no_data_state()
+    else:
+        st.subheader("Generate Practice Plan")
+        duration = st.slider("Session duration (minutes)", 20, 120, 60, 10, key="plan_duration")
+
+        if st.button("Generate Plan", type="primary", key="generate_plan_btn"):
+            plan = generate_practice_plan(all_filtered, duration_minutes=duration)
+            st.session_state["current_plan"] = plan
+
+        plan = st.session_state.get("current_plan")
+        if plan:
+            render_practice_plan(plan)
+        else:
+            st.info("Click 'Generate Plan' to create a data-driven practice plan based on your weaknesses")
+
+
+# ================================================================
+# TAB 4: BIG 3 DEEP DIVE
 # ================================================================
 with tab_big3:
-    render_big3_detail_view(df)
+    # Use session-specific data for Big 3
+    df = session_df
+    if df.empty:
+        render_no_data_state()
+    else:
+        st.caption(f"Session: {selected_session_id}")
+
+        # Date range filter
+        start_date, end_date = render_date_range_filter(key_prefix="dash_date")
+        if start_date or end_date:
+            df = filter_by_date_range(df, start_date, end_date)
+            if df.empty:
+                st.info("No shots in selected date range.")
+                st.stop()
+
+        render_big3_detail_view(df)
 
 
 # ================================================================
-# TAB 3: SHOTS
+# TAB 5: SHOTS
 # ================================================================
 with tab_shots:
-    st.header("Detailed Shot Analysis")
+    df = session_df
+    if df.empty:
+        render_no_data_state()
+    else:
+        st.caption(f"Session: {selected_session_id}")
+        st.header("Detailed Shot Analysis")
 
-    col_table, col_media = st.columns([1, 1])
+        col_table, col_media = st.columns([1, 1])
 
-    with col_table:
-        st.write("Click a row to view details")
-        display_cols = [
-            "club", "carry", "total", "ball_speed", "club_speed",
-            "smash", "back_spin", "side_spin", "face_angle", "attack_angle",
-        ]
-        valid_cols = [c for c in display_cols if c in df.columns]
+        with col_table:
+            st.write("Click a row to view details")
+            display_cols = [
+                "club", "carry", "total", "ball_speed", "club_speed",
+                "smash", "back_spin", "side_spin", "face_angle", "attack_angle",
+            ]
+            valid_cols = [c for c in display_cols if c in df.columns]
 
-        event = st.dataframe(
-            df[valid_cols].round(1),
-            use_container_width=True,
-            on_select="rerun",
-            selection_mode="single-row",
-            hide_index=True,
-        )
-
-    with col_media:
-        # Shot navigator for prev/next browsing
-        nav_idx = render_shot_navigator(df, key_prefix="dash_shot_nav")
-
-        # Table click overrides navigator; navigator provides fallback
-        if len(event.selection.rows) > 0:
-            selected_idx = event.selection.rows[0]
-        elif nav_idx is not None:
-            selected_idx = nav_idx
-        else:
-            selected_idx = None
-
-        if selected_idx is not None:
-            shot = df.iloc[selected_idx]
-
-            st.subheader(f"{shot['club']} — {shot['carry']:.1f} yds")
-
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Ball Speed", f"{shot['ball_speed']:.1f} mph")
-            m2.metric("Club Speed", f"{shot['club_speed']:.1f} mph")
-            m3.metric("Smash", f"{shot['smash']:.2f}")
-
-            m4, m5, m6 = st.columns(3)
-            m4.metric(
-                "Launch",
-                f"{shot['launch_angle']:.1f}°" if pd.notna(shot.get("launch_angle")) else "N/A",
-            )
-            m5.metric(
-                "Face Angle",
-                f"{shot['face_angle']:.1f}°" if pd.notna(shot.get("face_angle")) else "N/A",
-            )
-            m6.metric(
-                "Attack Angle",
-                f"{shot['attack_angle']:.1f}°" if pd.notna(shot.get("attack_angle")) else "N/A",
+            event = st.dataframe(
+                df[valid_cols].round(1),
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                hide_index=True,
             )
 
-            shot_ids = df["shot_id"].dropna().astype(str).tolist() if "shot_id" in df.columns else []
-            current_note = shot.get("session_notes")
-            if pd.isna(current_note):
-                current_note = ""
+        with col_media:
+            # Shot navigator for prev/next browsing
+            nav_idx = render_shot_navigator(df, key_prefix="dash_shot_nav")
 
-            new_note = st.text_area(
-                "Session Notes",
-                value=current_note,
-                height=100,
-                key=f"session_notes_{selected_session_id}",
-            )
-            if st.button("Save Note", key=f"save_session_note_{selected_session_id}"):
-                updated = golf_db.update_shot_metadata(shot_ids, "session_notes", new_note)
-                if updated:
-                    st.success(f"Saved note to {updated} shot{'s' if updated != 1 else ''}.")
-                else:
-                    st.warning("No shots were updated.")
-
-            st.divider()
-
-            if shot.get("impact_img") or shot.get("swing_img"):
-                img1, img2 = st.columns(2)
-                if shot.get("impact_img"):
-                    img1.image(shot["impact_img"], caption="Impact", use_container_width=True)
-                else:
-                    img1.info("No Impact Image")
-                if shot.get("swing_img"):
-                    img2.image(shot["swing_img"], caption="Swing View", use_container_width=True)
-                else:
-                    img2.info("No Swing Image")
+            # Table click overrides navigator; navigator provides fallback
+            if len(event.selection.rows) > 0:
+                selected_idx = event.selection.rows[0]
+            elif nav_idx is not None:
+                selected_idx = nav_idx
             else:
-                st.info("No images available for this shot.")
-        else:
-            st.info("Select a shot from the table or use the navigator")
+                selected_idx = None
 
-    st.divider()
-    if selected_idx is not None:
-        selected_shots = df.iloc[[selected_idx]]
-        from components.trajectory_view import render_trajectory_view
-        render_trajectory_view(selected_shots, max_shots=1, title="Shot Trajectory")
+            if selected_idx is not None:
+                shot = df.iloc[selected_idx]
+
+                st.subheader(f"{shot['club']} — {shot['carry']:.1f} yds")
+
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Ball Speed", f"{shot['ball_speed']:.1f} mph")
+                m2.metric("Club Speed", f"{shot['club_speed']:.1f} mph")
+                m3.metric("Smash", f"{shot['smash']:.2f}")
+
+                m4, m5, m6 = st.columns(3)
+                m4.metric(
+                    "Launch",
+                    f"{shot['launch_angle']:.1f}°" if pd.notna(shot.get("launch_angle")) else "N/A",
+                )
+                m5.metric(
+                    "Face Angle",
+                    f"{shot['face_angle']:.1f}°" if pd.notna(shot.get("face_angle")) else "N/A",
+                )
+                m6.metric(
+                    "Attack Angle",
+                    f"{shot['attack_angle']:.1f}°" if pd.notna(shot.get("attack_angle")) else "N/A",
+                )
+
+                shot_ids = df["shot_id"].dropna().astype(str).tolist() if "shot_id" in df.columns else []
+                current_note = shot.get("session_notes")
+                if pd.isna(current_note):
+                    current_note = ""
+
+                new_note = st.text_area(
+                    "Session Notes",
+                    value=current_note,
+                    height=100,
+                    key=f"session_notes_{selected_session_id}",
+                )
+                if st.button("Save Note", key=f"save_session_note_{selected_session_id}"):
+                    updated = golf_db.update_shot_metadata(shot_ids, "session_notes", new_note)
+                    if updated:
+                        st.success(f"Saved note to {updated} shot{'s' if updated != 1 else ''}.")
+                    else:
+                        st.warning("No shots were updated.")
+
+                st.divider()
+
+                if shot.get("impact_img") or shot.get("swing_img"):
+                    img1, img2 = st.columns(2)
+                    if shot.get("impact_img"):
+                        img1.image(shot["impact_img"], caption="Impact", use_container_width=True)
+                    else:
+                        img1.info("No Impact Image")
+                    if shot.get("swing_img"):
+                        img2.image(shot["swing_img"], caption="Swing View", use_container_width=True)
+                    else:
+                        img2.info("No Swing Image")
+                else:
+                    st.info("No images available for this shot.")
+            else:
+                st.info("Select a shot from the table or use the navigator")
+
+        st.divider()
+        if selected_idx is not None:
+            selected_shots = df.iloc[[selected_idx]]
+            from components.trajectory_view import render_trajectory_view
+            render_trajectory_view(selected_shots, max_shots=1, title="Shot Trajectory")

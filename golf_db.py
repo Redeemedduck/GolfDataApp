@@ -30,13 +30,17 @@ else:
 
 # --- Helper Functions ---
 def clean_value(val, default=None):
-    """Handle sentinel values (99999) and None.
+    """Handle sentinel values (99999, Uneekor optix sentinels) and None.
 
     Returns default (None) for missing/sentinel data so SQL AVG()
     naturally ignores these rows instead of counting them as 0.
     """
     if val is None or val == 99999:
         return default
+    # Uneekor optix sentinels: -1666.64 / 1666.55
+    if isinstance(val, (int, float)) and abs(val) > 1600:
+        if abs(abs(val) - 1666.6) < 1.0:
+            return default
     return val
 
 
@@ -565,6 +569,12 @@ def save_shot(data):
         'sidebar_label': data.get('sidebar_label'),
         'uneekor_club_id': data.get('uneekor_club_id'),
     }
+
+    # Cap impossible values at ingest time
+    if payload['carry'] is not None and payload['carry'] >= 1000:
+        payload['carry'] = None
+    if payload['club_speed'] is not None and payload['club_speed'] >= 200:
+        payload['club_speed'] = None
 
     # Compute derived columns
     face = payload.get('face_angle')
@@ -1648,6 +1658,59 @@ def backfill_session_dates():
         result['errors'] += 1
 
     return result
+
+
+def backfill_clean_sentinels():
+    """Clean newly discovered sentinel values from existing rows.
+
+    Fixes:
+    - optix_x ≈ -1666.64 / optix_y ≈ 1666.55 → NULL (Uneekor "no data")
+    - carry >= 1000 → NULL (e.g., 109,359yd Sim Round shots)
+    - club_speed >= 200 → NULL (same corrupt shots)
+
+    Returns:
+        Dict with counts per fix applied.
+    """
+    results = {}
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+
+        # Optix sentinels
+        cursor.execute(
+            "UPDATE shots SET optix_x = NULL WHERE optix_x IS NOT NULL AND ABS(ABS(optix_x) - 1666.6) < 1.0"
+        )
+        results['optix_x'] = cursor.rowcount
+        cursor.execute(
+            "UPDATE shots SET optix_y = NULL WHERE optix_y IS NOT NULL AND ABS(ABS(optix_y) - 1666.6) < 1.0"
+        )
+        results['optix_y'] = cursor.rowcount
+
+        # Impossible carry distances
+        cursor.execute("UPDATE shots SET carry = NULL WHERE carry >= 1000")
+        results['carry_extreme'] = cursor.rowcount
+
+        # Impossible club speeds
+        cursor.execute("UPDATE shots SET club_speed = NULL WHERE club_speed >= 200")
+        results['club_speed_extreme'] = cursor.rowcount
+
+        conn.commit()
+
+        total = sum(results.values())
+        if total > 0:
+            cursor.execute(
+                "INSERT INTO change_log (operation, entity_type, entity_id, details) "
+                "VALUES (?, ?, ?, ?)",
+                ("CLEAN_SENTINELS", "shots", "all",
+                 f"Cleaned {total} sentinel values: {results}")
+            )
+            conn.commit()
+
+        conn.close()
+    except Exception as e:
+        print(f"Backfill Clean Sentinels Error: {e}")
+
+    return results
 
 
 def backfill_derived_columns():

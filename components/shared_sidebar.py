@@ -7,6 +7,8 @@ import streamlit as st
 import golf_db
 from utils.session_state import get_read_mode, set_read_mode, get_ui_mode, set_ui_mode
 from utils.responsive import render_compact_toggle
+from services.time_window import TIME_WINDOW_LABELS, DEFAULT_WINDOW
+from services.data_quality import get_outlier_summary
 
 
 def render_shared_sidebar(
@@ -14,7 +16,7 @@ def render_shared_sidebar(
     current_page: str = None
 ) -> None:
     """
-    Render the unified sidebar — navigation only.
+    Render the unified sidebar — navigation + global filters.
 
     Technical controls (data source, sync status, layout, appearance)
     are in Settings > Display tab.
@@ -26,6 +28,7 @@ def render_shared_sidebar(
     with st.sidebar:
         if show_navigation:
             render_navigation(current_page)
+        render_global_filters()
 
 
 def render_navigation(current_page: str = None) -> None:
@@ -52,6 +55,43 @@ def render_navigation(current_page: str = None) -> None:
             st.markdown(f"**{icon} {label}** ←")
         else:
             st.page_link(page_path, label=f"{icon} {label}")
+
+
+def render_global_filters() -> None:
+    """Render time window selector and outlier filter toggle."""
+    st.divider()
+    st.subheader("Filters")
+
+    # Time window
+    labels = list(TIME_WINDOW_LABELS.keys())
+    default_label = next(
+        (k for k, v in TIME_WINDOW_LABELS.items() if v == DEFAULT_WINDOW),
+        labels[1]
+    )
+    default_idx = labels.index(default_label) if default_label in labels else 1
+
+    selected_label = st.selectbox(
+        "Time Window",
+        labels,
+        index=default_idx,
+        key="sidebar_time_window_select",
+        help="Filter all pages to show only shots within this period",
+    )
+    st.session_state["time_window"] = TIME_WINDOW_LABELS[selected_label]
+
+    # Outlier filter
+    outlier_on = st.toggle(
+        "Filter outliers",
+        value=st.session_state.get("outlier_filter", True),
+        key="sidebar_outlier_toggle",
+        help="Remove impossible carry distances and statistical outliers",
+    )
+    st.session_state["outlier_filter"] = outlier_on
+
+    if outlier_on:
+        count = st.session_state.get("outlier_count", 0)
+        if count > 0:
+            st.caption(f"{count} shots excluded")
 
 
 def render_data_source() -> None:

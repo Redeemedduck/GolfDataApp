@@ -8,6 +8,7 @@ from typing import List, Tuple
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from utils.chart_theme import themed_figure, CATEGORICAL, COLOR_GOOD
 
 
 def compute_trajectory_points(
@@ -99,7 +100,7 @@ def render_trajectory_view(
         "#EF553B",
     ]
 
-    fig = go.Figure()
+    fig = themed_figure()
     plotted_count = 0
     max_carry = 0.0
     max_apex = 0.0
@@ -153,7 +154,6 @@ def render_trajectory_view(
 
     fig.update_layout(
         title=title,
-        template="plotly_dark",
         xaxis_title="Distance (yds)",
         yaxis_title="Height (yds)",
         xaxis=dict(range=[0, max_carry * 1.05]),
