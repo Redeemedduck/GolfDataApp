@@ -32,11 +32,13 @@ python -m unittest tests.unit.test_date_range_filter
 python -m unittest tests.unit.test_shot_navigator
 python -m unittest tests.unit.test_trajectory_view
 python -m unittest tests.unit.test_goal_tracker
+python -m unittest tests.unit.test_data_quality
+python -m unittest tests.unit.test_time_window
 
 # Syntax check all Python files (this is what CI runs as "lint")
 python -m py_compile app.py golf_db.py local_coach.py exceptions.py
 python -m py_compile automation/*.py ml/*.py utils/*.py agent/*.py
-python -m py_compile services/ai/*.py services/ai/providers/*.py
+python -m py_compile services/ai/*.py services/ai/providers/*.py services/analytics/*.py services/data_quality.py services/time_window.py
 python -m py_compile components/*.py
 for f in pages/*.py; do python -m py_compile "$f"; done
 
@@ -100,6 +102,9 @@ Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
 | `automation/` | Playwright-based scraper: rate limiting, checkpointing, cookie persistence |
 | `ml/` | ML models: XGBoost distance prediction, shot shape classification, anomaly detection |
 | `services/ai/` | AI provider registry (decorator pattern for pluggable backends) |
+| `services/analytics/` | Pure computation analytics: executive_summary, session_grades, progress_tracker, practice_planner (DataFrame in, dict out) |
+| `services/data_quality.py` | Two-layer outlier filtering: hard caps per club (from `my_bag.json`) + per-club z-score > 3 |
+| `services/time_window.py` | Time window filtering (3mo/6mo/1yr/all), default 6 months |
 | `components/` | Reusable Streamlit UI components (all follow `render_*()` pattern) |
 | `exceptions.py` | Exception hierarchy: `GolfDataAppError` base with `DatabaseError`, `ValidationError`, `RateLimitError`, `AuthenticationError`, etc. — all carry context dicts |
 | `agent/` | Claude Agent SDK golf coach: CLI (`python3 -m agent`), Streamlit provider, 8 MCP tools wrapping `golf_db` |
@@ -134,7 +139,7 @@ ML dependencies are **lazy-loaded** via `__getattr__` in `ml/__init__.py`. Code 
 ### Streamlit Pages
 
 - `app.py` — Practice Journal home (2x2 hero stats, calendar strip, session cards grouped by week)
-- `pages/1_📊_Dashboard.py` — Analytics (3 tabs: Overview, Big 3 Deep Dive, Shots) + date filter, shot navigator, trajectory view, session notes
+- `pages/1_📊_Dashboard.py` — Analytics (5 tabs: State of Your Game, Progress & Trends, Practice Plan, Big 3 Deep Dive, Shots) + global time window/outlier filters
 - `pages/2_🏌️_Club_Profiles.py` — Per-club deep dives (hero stats, smash goal tracker, trends, Big 3, session comparison, smart radar defaults)
 - `pages/3_🤖_AI_Coach.py` — Chat interface with provider selection dropdown
 - `pages/4_⚙️_Settings.py` — Data Import + Database Manager (5 tabs: Data, Maintenance, Tags, Automation, Display)
@@ -152,12 +157,17 @@ Key UI components:
 - `shot_navigator.py` — Prev/next shot controls with `clamp_index()` helper
 - `trajectory_view.py` — 2D side-view ball flight arc (piecewise quadratic)
 - `goal_tracker.py` — Smash factor progress bar toward per-club targets
+- `executive_summary.py` — Quality score gauge, Big 3 status cards, top/bottom clubs, action items
+- `session_grades.py` — Session cards with A-F letter grades, trajectory indicator
+- `progress_dashboard.py` — Per-club sparklines, Most Improved / Needs Attention highlights
+- `practice_plan.py` — Weakness badges, drill blocks with severity colors, time budget
 
 Shared utilities:
 - `utils/date_helpers.py` — `parse_session_date()`, `format_session_date()` (used by 3 components)
 - `utils/big3_constants.py` — Big 3 thresholds, colors, `face_label()`/`path_label()`/`strike_label()` (used by 2 components)
 - `utils/responsive.py` — `is_compact_layout()`, `render_compact_toggle()`, `add_responsive_css()`
 - `utils/bag_config.py` — `get_bag_order()`, `get_club_sort_key()`, `is_in_bag()`, `get_smash_target()`, `get_all_smash_targets()`, `get_adjacent_clubs()`, `get_uneekor_mapping()`, `get_special_categories()` (reads `my_bag.json`)
+- `utils/chart_theme.py` — Unified dark Plotly theme: `themed_figure()`, `apply_theme()`, `context_color()`. Colors: `COLOR_GOOD` (green), `COLOR_FAIR` (amber), `COLOR_POOR` (red), `COLOR_NEUTRAL` (blue)
 
 ### Automation Module
 
@@ -217,7 +227,7 @@ mapping = get_uneekor_mapping()                    # {'DRIVER': 'Driver', 'IRON7
 
 - All database operations use **parameterized SQL**; `update_shot_metadata()` enforces a field allowlist (`ALLOWED_UPDATE_FIELDS`)
 - Deletions are **soft deletes** — records go to `shots_archive` for recovery
-- The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py` (returns `None`, not `0.0`)
+- The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py` (returns `None`, not `0.0`). Also catches optix sentinels (`-1666.64`/`1666.55`) and extreme values (`carry >= 1000`, `club_speed >= 200`)
 - Club names are normalized at import time. For API imports (reimport-all, golf_scraper): `map_uneekor_club()` maps Uneekor `club_name` directly to canonical names. For Playwright imports: two-tier pipeline (`ClubNameNormalizer` → `SessionContextParser` fallback). Original raw values preserved in `original_club_value` column; `sidebar_label` and `uneekor_club_id` stored for traceability
 - The `normalize_with_context()` function in `automation/naming_conventions.py` is the canonical entry point for Playwright-based club normalization; `map_uneekor_club()` is the entry point for API-based normalization
 - `utils/migrate_club_data.py` — one-time migration script for existing data (`--dry-run`, `--report` modes)
@@ -226,7 +236,8 @@ mapping = get_uneekor_mapping()                    # {'DRIVER': 'Driver', 'IRON7
 - Session types detected by club distribution (`SessionNamer.detect_session_type()`): Driver Focus, Iron Work, Short Game, Woods Focus, Mixed Practice, Warmup
 - `golf_db.batch_update_session_names()` retroactively renames all imported sessions
 - Per-club smash factor targets are defined in `my_bag.json` under `smash_targets` key and accessed via `utils/bag_config.py:get_smash_target()` / `get_all_smash_targets()`
-- Sidebar is navigation-only across all pages; technical controls (data source, sync status, layout, appearance) live in Settings > Display tab
+- Sidebar has navigation + global filters (time window, outlier toggle); technical controls (data source, sync status, layout, appearance) live in Settings > Display tab
+- Global filters stored in `st.session_state["time_window"]` and `st.session_state["outlier_filter"]`, applied via `get_filtered_shots()` in `services/data_access.py`
 - **Backfill performance tip:** Disable Supabase during bulk import (`SUPABASE_URL=""`) then batch-sync after with `sync-database`. Per-shot upserts in `add_shot()` are slow for bulk operations.
 
 ### Coding Style
