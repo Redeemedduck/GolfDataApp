@@ -14,6 +14,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+
+# Allow running inside Claude Code by clearing env vars that
+# interfere with the Agent SDK subprocess transport.
+for _key in ("CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"):
+    os.environ.pop(_key, None)
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -63,10 +69,12 @@ async def interactive_chat() -> None:
 
             parts: list[str] = []
             async for message in client.receive_response():
-                if isinstance(message, (AssistantMessage, ResultMessage)):
+                if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
                             parts.append(block.text)
+                elif isinstance(message, ResultMessage) and message.result:
+                    parts.append(message.result)
 
             if parts:
                 print(f"\nCoach: {''.join(parts)}")
