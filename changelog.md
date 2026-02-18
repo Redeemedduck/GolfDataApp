@@ -4,6 +4,101 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-15: Extract Data Layer into `golf-data-core` Package
+
+### New Package: `golf-data-core` (`~/Documents/GitHub/golf-data-core/`)
+
+Extracted GolfDataApp's shared data layer into a standalone installable Python package. Both GolfDataApp and new apps can `pip install -e` the package and share the same database, analytics, and club normalization logic.
+
+**Added**
+- **`golf_data/db.py`** (2,470 lines): Migrated from `golf_db.py` with pluggable `configure()` function for database path, Supabase credentials, and normalization function
+- **`golf_data/clubs.py`** (~350 lines): Extracted from `automation/naming_conventions.py` — `ClubNameNormalizer`, `SessionNamer`, `map_uneekor_club()`, `NormalizationResult`, `UNEEKOR_TO_CANONICAL`
+- **`golf_data/config/__init__.py`**: `BagConfig` class with multi-path search (`$GOLF_BAG_CONFIG` → CWD → `~/.golf/` → package default)
+- **`golf_data/exceptions.py`**: Exception hierarchy (unchanged from GolfDataApp)
+- **`golf_data/filters/quality.py`**: Two-layer outlier filtering, now uses `BagConfig` instead of hardcoded paths
+- **`golf_data/filters/time_window.py`**: Time window filtering (unchanged)
+- **`golf_data/analytics/`**: executive_summary, session_grades, progress_tracker, practice_planner — all use `BagConfig` instead of hardcoded `my_bag.json` paths
+- **`golf_data/utils/`**: bag_config, big3_constants, date_helpers (thin wrappers or unchanged)
+- **37 package tests** covering clubs, db, quality, time_window
+
+**Changed (GolfDataApp shims)**
+- **`golf_db.py`**: Replaced 2,440-line implementation with module proxy (`_GolfDBProxy`) that delegates all attribute access to `golf_data.db`. Configures SQLite path and injects `normalize_with_context` via `configure()`
+- **`exceptions.py`**: 2-line shim re-exporting from `golf_data.exceptions`
+- **`services/data_quality.py`**: Shim re-exporting from `golf_data.filters.quality` (with explicit `_apply_hard_caps`, `_apply_zscore` imports)
+- **`services/time_window.py`**: Shim re-exporting from `golf_data.filters.time_window`
+- **`services/analytics/*.py`**: 4 shims (executive_summary, session_grades, progress_tracker, practice_planner)
+- **`utils/bag_config.py`**, **`utils/big3_constants.py`**, **`utils/date_helpers.py`**: Shims re-exporting from `golf_data.utils.*`
+
+**Fixed**
+- **`tests/unit/test_agent_core.py`**: Pre-loads `exceptions` module before mocking to prevent test-ordering pollution. Removed `exceptions` from mock list entirely.
+
+### Key Design Decisions
+- **Module proxy pattern** for `golf_db.py` shim: `types.ModuleType` subclass with `__getattr__`/`__setattr__` ensures `golf_db.SQLITE_DB_PATH = path` propagates to `golf_data.db`
+- **Pluggable normalization**: `db.configure(normalize_fn=...)` — GolfDataApp injects full two-tier `normalize_with_context` (ClubNameNormalizer + SessionContextParser); package default uses ClubNameNormalizer only
+- **Zero import changes**: All 36 files that `import golf_db` continue working unchanged
+
+### Verification
+- **465/465 GolfDataApp tests passing** (was 428 — added 37 package tests)
+- **37/37 golf-data-core package tests passing**
+- Second app can: `from golf_data import db; db.configure(...); db.init_db(); db.get_all_shots()`
+
+### Stats
+- 12 new files in golf-data-core, 12 modified files in GolfDataApp
+- Net code in GolfDataApp reduced by ~3,000 lines (moved to package)
+
+---
+
+## 2026-02-14: Dashboard Overhaul — Data Quality, Dark Theme, Analytics Integration
+
+### Phase 1: Data Foundation
+
+**Fixed**
+- **`golf_db.py`**: `clean_value()` now catches Uneekor optix sentinels (`-1666.64` / `1666.55`) affecting 1,408 shots
+- **`golf_db.py`**: `save_shot()` caps carry >= 1000 and club_speed >= 200 to None (2 Sim Round shots with 109,359yd carry)
+- **`utils/big3_constants.py`**: Strike distance thresholds corrected from inches to mm (`STRIKE_DIST_GREEN`: 0.25 → 6.0, `STRIKE_DIST_YELLOW`: 0.50 → 12.0)
+
+**Added**
+- **`services/data_quality.py`**: Two-layer outlier filtering — hard caps per club (from `my_bag.json`) + per-club z-score > 3. Universal guards: smash 0.3–2.0, carry >= 10
+- **`services/time_window.py`**: Time window filtering (3mo/6mo/1yr/all), default 6 months. Uses `session_date`, falls back to `date_added`
+- **`my_bag.json`**: Added `carry_caps` section with per-club maximum carry distances (Driver: 350, PW: 180, etc.)
+- **`golf_db.py`**: Added `backfill_clean_sentinels()` to fix existing rows with optix sentinels or extreme values
+- **`components/shared_sidebar.py`**: Global filter controls — time window selectbox + outlier toggle with count display
+- **`services/data_access.py`**: `get_filtered_shots()` composes time window + outlier filtering; cached analytics functions
+
+### Phase 2: Design System
+
+**Added**
+- **`utils/chart_theme.py`**: Unified dark theme — navy palette (`#1a1a2e`), context colors (green/amber/red), `themed_figure()`, `apply_theme()`, `context_color()`
+- **`.streamlit/config.toml`**: Dark mode theme section (primaryColor, backgroundColor, textColor)
+
+**Changed**
+- **8 chart components restyled**: `radar_chart`, `trend_chart`, `face_path_diagram`, `direction_tendency`, `club_trends`, `heatmap_chart`, `session_comparison`, `trajectory_view` — all use `themed_figure()`, removed per-component `template="plotly_dark"`
+
+### Phase 3: Analytics Integration
+
+**Added**
+- **`services/analytics/executive_summary.py`**: Composite club scoring (smash 40%, carry consistency 30%, face control 30%), Big 3 status, strengths/weaknesses, action items
+- **`services/analytics/session_grades.py`**: Session quality scoring (A–F grades), trajectory detection (IMPROVING/FLAT/DECLINING)
+- **`services/analytics/progress_tracker.py`**: Per-club sparkline data, most improved / needs attention highlights
+- **`services/analytics/practice_planner.py`**: Weakness detection → warmup / drill blocks / game simulation plan generation
+- **`components/executive_summary.py`**: Quality score gauge, Big 3 status cards, top/bottom clubs, action items
+- **`components/session_grades.py`**: Session cards with letter grades and trajectory indicators
+- **`components/progress_dashboard.py`**: Per-club sparklines, highlight cards
+- **`components/practice_plan.py`**: Weakness badges, drill blocks with severity colors, time budget
+
+**Changed**
+- **`pages/1_📊_Dashboard.py`**: Rebuilt with 5 tabs — State of Your Game, Progress & Trends, Practice Plan, Big 3 Deep Dive, Shots
+
+### Tests
+- 15 new tests: `test_data_quality.py` (9), `test_time_window.py` (6)
+- **428 tests passing** (was 413)
+
+### Stats
+- 29 files changed (+2,193 / -213 lines)
+- 14 new files, 8 restyled components, 4 analytics modules, 4 dashboard components
+
+---
+
 ## 2026-02-14: Phases 5-7 — Advanced Features & UX Polish
 
 ### Fixed

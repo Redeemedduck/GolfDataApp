@@ -92,27 +92,69 @@ Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
                      (Offline ML)        (Cloud AI)           (Agent SDK)
 ```
 
+### Shared Data Layer: `golf-data-core` Package
+
+The core data layer lives in a separate package at `~/Documents/GitHub/golf-data-core/` (`pip install -e`). GolfDataApp uses backward-compatible shims that re-export from the package — **all existing imports work unchanged**.
+
+| Package Module | Purpose |
+|----------------|---------|
+| `golf_data.db` | Database layer: SQLite + Supabase, `configure()` for path/credentials/normalization |
+| `golf_data.clubs` | Club normalization: `ClubNameNormalizer`, `SessionNamer`, `map_uneekor_club()` |
+| `golf_data.exceptions` | Exception hierarchy: `GolfDataAppError` base with context dicts |
+| `golf_data.filters.quality` | Two-layer outlier filtering: hard caps + z-score |
+| `golf_data.filters.time_window` | Time window filtering (3mo/6mo/1yr/all) |
+| `golf_data.analytics.*` | executive_summary, session_grades, progress_tracker, practice_planner |
+| `golf_data.config` | `BagConfig` class with multi-path `my_bag.json` discovery |
+| `golf_data.utils.*` | bag_config, big3_constants, date_helpers |
+
+**Shim pattern** — GolfDataApp modules delegate to the package:
+```python
+# golf_db.py — module proxy that forwards attribute access to golf_data.db
+import golf_data.db as _real_db
+from automation.naming_conventions import normalize_with_context
+_real_db.configure(sqlite_db_path=..., normalize_fn=normalize_with_context)
+
+# services/data_quality.py — star-import shim
+from golf_data.filters.quality import *
+```
+
+**Second app usage:**
+```python
+from golf_data import db
+db.configure(sqlite_db_path='/path/to/golf_stats.db')
+db.init_db()
+shots = db.get_all_shots()
+```
+
 ### Core Modules
 
 | Module | Purpose |
 |--------|---------|
-| `golf_db.py` | Database layer: SQLite local-first + optional Supabase cloud sync |
+| `golf_db.py` | **Shim** → delegates to `golf_data.db` (configures SQLite path + normalization) |
+| `exceptions.py` | **Shim** → re-exports from `golf_data.exceptions` |
 | `local_coach.py` | Local AI coach: intent detection, template responses, ML predictions |
 | `gemini_coach.py` | Gemini AI Coach with function calling |
 | `automation/` | Playwright-based scraper: rate limiting, checkpointing, cookie persistence |
 | `ml/` | ML models: XGBoost distance prediction, shot shape classification, anomaly detection |
 | `services/ai/` | AI provider registry (decorator pattern for pluggable backends) |
-| `services/analytics/` | Pure computation analytics: executive_summary, session_grades, progress_tracker, practice_planner (DataFrame in, dict out) |
-| `services/data_quality.py` | Two-layer outlier filtering: hard caps per club (from `my_bag.json`) + per-club z-score > 3 |
-| `services/time_window.py` | Time window filtering (3mo/6mo/1yr/all), default 6 months |
+| `services/analytics/` | **Shims** → re-export from `golf_data.analytics.*` |
+| `services/data_quality.py` | **Shim** → re-exports from `golf_data.filters.quality` |
+| `services/time_window.py` | **Shim** → re-exports from `golf_data.filters.time_window` |
 | `components/` | Reusable Streamlit UI components (all follow `render_*()` pattern) |
-| `exceptions.py` | Exception hierarchy: `GolfDataAppError` base with `DatabaseError`, `ValidationError`, `RateLimitError`, `AuthenticationError`, etc. — all carry context dicts |
 | `agent/` | Claude Agent SDK golf coach: CLI (`python3 -m agent`), Streamlit provider, 8 MCP tools wrapping `golf_db` |
 | `golf_scraper.py` | API-based scraper: uses Uneekor API `club_name` + `client_created_date` fields, maps via `map_uneekor_club()` |
 
 ### Hybrid Database Pattern
 
-All write operations in `golf_db.py` follow:
+The database layer lives in `golf_data.db` (from the `golf-data-core` package). GolfDataApp configures it at import time via `golf_db.py` shim:
+```python
+golf_data.db.configure(
+    sqlite_db_path='golf_stats.db',
+    normalize_fn=normalize_with_context,  # Two-tier: ClubNameNormalizer + SessionContextParser
+)
+```
+
+All write operations follow:
 1. Write to local SQLite (always)
 2. Sync to Supabase (if configured, soft dependency)
 3. For deletions: archive to `shots_archive` in both SQLite and Supabase before removing
@@ -214,9 +256,9 @@ Key date distinction: `session_date` = when the practice occurred (always `YYYY-
 
 ### Bag Configuration
 
-`my_bag.json` in project root defines 16 clubs + 2 special categories (Sim Round, Other) with canonical names, Uneekor API mapping keys, aliases, and display order. Used by Club Profiles for dropdown ordering, scraper for club name translation, and future phases for filtering.
+`my_bag.json` defines 16 clubs + 2 special categories (Sim Round, Other) with canonical names, Uneekor API mapping keys, aliases, and display order. The `BagConfig` class in `golf_data.config` searches multiple paths: `$GOLF_BAG_CONFIG` → CWD/`my_bag.json` → `~/.golf/my_bag.json` → package default.
 
-Load via `utils/bag_config.py`:
+Load via `utils/bag_config.py` (shim to `golf_data.utils.bag_config`):
 ```python
 from utils.bag_config import get_bag_order, get_club_sort_key, is_in_bag, get_uneekor_mapping
 clubs = sorted(club_list, key=get_club_sort_key)  # Bag order: Driver first
@@ -228,8 +270,8 @@ mapping = get_uneekor_mapping()                    # {'DRIVER': 'Driver', 'IRON7
 - All database operations use **parameterized SQL**; `update_shot_metadata()` enforces a field allowlist (`ALLOWED_UPDATE_FIELDS`)
 - Deletions are **soft deletes** — records go to `shots_archive` for recovery
 - The value `99999` is a Uneekor sentinel meaning "no data" — cleaned via `clean_value()` in `golf_db.py` (returns `None`, not `0.0`). Also catches optix sentinels (`-1666.64`/`1666.55`) and extreme values (`carry >= 1000`, `club_speed >= 200`)
-- Club names are normalized at import time. For API imports (reimport-all, golf_scraper): `map_uneekor_club()` maps Uneekor `club_name` directly to canonical names. For Playwright imports: two-tier pipeline (`ClubNameNormalizer` → `SessionContextParser` fallback). Original raw values preserved in `original_club_value` column; `sidebar_label` and `uneekor_club_id` stored for traceability
-- The `normalize_with_context()` function in `automation/naming_conventions.py` is the canonical entry point for Playwright-based club normalization; `map_uneekor_club()` is the entry point for API-based normalization
+- Club names are normalized at import time. For API imports (reimport-all, golf_scraper): `map_uneekor_club()` (from `golf_data.clubs`) maps Uneekor `club_name` directly to canonical names. For Playwright imports: two-tier pipeline (`ClubNameNormalizer` → `SessionContextParser` fallback). Original raw values preserved in `original_club_value` column; `sidebar_label` and `uneekor_club_id` stored for traceability
+- The `normalize_with_context()` function in `automation/naming_conventions.py` is the canonical entry point for Playwright-based club normalization (injected into `golf_data.db` via `configure(normalize_fn=...)`); `map_uneekor_club()` from `golf_data.clubs` is the entry point for API-based normalization
 - `utils/migrate_club_data.py` — one-time migration script for existing data (`--dry-run`, `--report` modes)
 - Sessions are auto-tagged based on characteristics (`AutoTagger`: Driver Focus, Short Game, etc.)
 - Session display names are generated via `SessionNamer.generate_display_name()` — format: `"2026-01-25 Mixed Practice (47 shots)"`
@@ -266,7 +308,7 @@ Tests use `unittest` (and are also compatible with `pytest`). Shared fixtures in
 
 ### Test Isolation
 
-Tests that mock `sys.modules` (e.g., `test_agent_tools.py`, `test_claude_provider.py`) use `setUpModule()`/`tearDownModule()` to save and restore entries. This prevents test-ordering conflicts when running the full suite. **Never use `sys.modules["foo"] = mock` at module level** — always wrap in setup/teardown.
+Tests that mock `sys.modules` (e.g., `test_agent_tools.py`, `test_claude_provider.py`, `test_agent_core.py`) use `setUpModule()`/`tearDownModule()` to save and restore entries. This prevents test-ordering conflicts when running the full suite. **Never use `sys.modules["foo"] = mock` at module level** — always wrap in setup/teardown. Pre-load real modules (e.g., `import exceptions`) before injecting mocks to avoid clobbering them.
 
 ## CI/CD
 
