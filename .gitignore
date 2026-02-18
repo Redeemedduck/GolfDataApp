@@ -75,3 +75,6 @@ portal_exploration_notes.md
 
 # Git worktrees
 .worktrees/
+
+# Local plugin config (per-developer)
+compound-engineering.local.md
