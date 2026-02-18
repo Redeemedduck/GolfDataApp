@@ -142,10 +142,19 @@ async def single_query(prompt: str, **option_overrides) -> str:
     options = create_golf_agent_options(**option_overrides)
     parts: list[str] = []
 
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, (AssistantMessage, ResultMessage)):
-            for block in message.content:
-                if isinstance(block, TextBlock):
-                    parts.append(block.text)
+    try:
+        async for message in query(prompt=prompt, options=options):
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        parts.append(block.text)
+            elif isinstance(message, ResultMessage) and message.result:
+                parts.append(message.result)
+    except Exception:
+        # The SDK subprocess transport may raise ExceptionGroup during
+        # cleanup after the response is fully collected.  Re-raise if
+        # no content was collected — that indicates a real failure.
+        if not parts:
+            raise
 
     return "\n".join(parts)
