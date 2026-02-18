@@ -22,11 +22,28 @@ _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-_golf_db_mock = MagicMock(name="golf_db")
-sys.modules.setdefault("golf_db", _golf_db_mock)
+# Pre-load modules that other test files also use, so setdefault won't mock them
+import exceptions as _real_exceptions  # noqa: E402,F401
 
-for _dep in ("dotenv", "supabase", "automation", "automation.naming_conventions", "exceptions"):
-    sys.modules.setdefault(_dep, MagicMock(name=_dep))
+_MOCK_DEPS = ("dotenv", "supabase", "automation", "automation.naming_conventions")
+_ALL_MOCKED = ("golf_db",) + _MOCK_DEPS
+_saved_modules: dict = {}
+
+# Save current state and inject mocks for module-level imports
+for _dep in _ALL_MOCKED:
+    if _dep in sys.modules:
+        _saved_modules[_dep] = sys.modules[_dep]
+    else:
+        sys.modules[_dep] = MagicMock(name=_dep)
+
+
+def tearDownModule():
+    """Restore original sys.modules entries after tests."""
+    for dep in _ALL_MOCKED:
+        if dep in _saved_modules:
+            sys.modules[dep] = _saved_modules[dep]
+        elif dep in sys.modules and isinstance(sys.modules[dep], MagicMock):
+            del sys.modules[dep]
 
 # Now safe to import agent code
 from agent.core import (  # noqa: E402
