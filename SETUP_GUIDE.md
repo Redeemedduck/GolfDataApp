@@ -64,6 +64,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+`requirements.txt` installs a pinned `golf-data-core` commit from GitHub for reproducible setup.
+If you are actively developing `golf-data-core`, run `pip install -e ~/Documents/GitHub/golf-data-core` after this step to override the pinned package.
+
 ### 1.4 Configure Environment Variables
 
 Create a `.env` file in the project root (use `.env.example` as a template):

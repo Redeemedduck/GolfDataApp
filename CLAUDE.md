@@ -94,7 +94,7 @@ Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
 
 ### Shared Data Layer: `golf-data-core` Package
 
-The core data layer lives in a separate package at `~/Documents/GitHub/golf-data-core/` (`pip install -e`). GolfDataApp uses backward-compatible shims that re-export from the package — **all existing imports work unchanged**.
+The core data layer lives in a separate package at `~/Documents/GitHub/golf-data-core/`. Default setup installs a pinned commit via `pip install -r requirements.txt`. For core package development, override with `pip install -e ~/Documents/GitHub/golf-data-core`. GolfDataApp uses backward-compatible shims that re-export from the package — **all existing imports work unchanged**.
 
 | Package Module | Purpose |
 |----------------|---------|
