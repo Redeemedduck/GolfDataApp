@@ -29,6 +29,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Preflight core imports
+        run: |
+          python -c "import golf_data; import golf_db; import exceptions; import services.data_quality; import services.time_window; import utils.bag_config; print('Core shim imports: OK')"
+
       - name: Lint with py_compile
         run: |
           # Syntax check all Python files
@@ -62,6 +66,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Preflight core imports
+        run: |
+          python -c "import golf_data; import golf_db; import exceptions; import services.data_quality; import services.time_window; import utils.bag_config; print('Core shim imports: OK')"
 
       - name: Validate ML modules load
         run: |
