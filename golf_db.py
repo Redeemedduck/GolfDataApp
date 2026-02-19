@@ -7,6 +7,10 @@ import os
 import sys
 import types
 
+from core_dependency import ensure_golf_data_core
+
+ensure_golf_data_core()
+
 import golf_data.db as _real_db
 from automation.naming_conventions import normalize_with_context
 
