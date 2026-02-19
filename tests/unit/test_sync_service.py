@@ -1,5 +1,6 @@
 """Tests for services.sync_service module."""
 
+import asyncio
 import json
 import os
 import shutil
@@ -18,6 +19,7 @@ from services.sync_service import (
     check_playwright_available,
     run_sync,
     SyncResult,
+    _run_async_pipeline_sync,
     _async_sync_pipeline,
     get_automation_status,
 )
@@ -218,33 +220,33 @@ class TestRunSyncEnvVarSafety(unittest.TestCase):
         self.assertNotIn('UNEEKOR_PASSWORD', os.environ)
 
     @patch('services.sync_service.check_playwright_available', return_value=(True, 'OK'))
-    @patch('services.sync_service.asyncio')
+    @patch('services.sync_service._run_async_pipeline_sync')
     @patch('services.sync_service.observability')
-    def test_env_vars_restored_after_sync(self, mock_obs, mock_asyncio, mock_pw):
+    def test_env_vars_restored_after_sync(self, mock_obs, mock_run_pipeline, mock_pw):
         """After sync completes, env vars should be cleaned up."""
-        mock_asyncio.run.return_value = SyncResult(success=True, status='completed')
+        mock_run_pipeline.return_value = SyncResult(success=True, status='completed')
         run_sync('user', 'pass')
         self.assertNotIn('UNEEKOR_USERNAME', os.environ)
         self.assertNotIn('UNEEKOR_PASSWORD', os.environ)
 
     @patch('services.sync_service.check_playwright_available', return_value=(True, 'OK'))
-    @patch('services.sync_service.asyncio')
+    @patch('services.sync_service._run_async_pipeline_sync')
     @patch('services.sync_service.observability')
-    def test_env_vars_restored_after_exception(self, mock_obs, mock_asyncio, mock_pw):
+    def test_env_vars_restored_after_exception(self, mock_obs, mock_run_pipeline, mock_pw):
         """Even if asyncio.run raises, env vars should be cleaned up."""
-        mock_asyncio.run.side_effect = RuntimeError('boom')
+        mock_run_pipeline.side_effect = RuntimeError('boom')
         run_sync('user', 'pass')
         self.assertNotIn('UNEEKOR_USERNAME', os.environ)
         self.assertNotIn('UNEEKOR_PASSWORD', os.environ)
 
     @patch('services.sync_service.check_playwright_available', return_value=(True, 'OK'))
-    @patch('services.sync_service.asyncio')
+    @patch('services.sync_service._run_async_pipeline_sync')
     @patch('services.sync_service.observability')
-    def test_preexisting_env_vars_preserved(self, mock_obs, mock_asyncio, mock_pw):
+    def test_preexisting_env_vars_preserved(self, mock_obs, mock_run_pipeline, mock_pw):
         """If env vars existed before sync, they should be restored to original values."""
         os.environ['UNEEKOR_USERNAME'] = 'original_user'
         os.environ['UNEEKOR_PASSWORD'] = 'original_pass'
-        mock_asyncio.run.return_value = SyncResult(success=True, status='completed')
+        mock_run_pipeline.return_value = SyncResult(success=True, status='completed')
         run_sync('sync_user', 'sync_pass')
         self.assertEqual(os.environ['UNEEKOR_USERNAME'], 'original_user')
         self.assertEqual(os.environ['UNEEKOR_PASSWORD'], 'original_pass')
@@ -261,54 +263,57 @@ class TestRunSyncResults(unittest.TestCase):
         self.assertIn('not installed', result.error_message)
 
     @patch('services.sync_service.check_playwright_available', return_value=(True, 'OK'))
-    @patch('services.sync_service.asyncio')
+    @patch('services.sync_service._run_async_pipeline_sync')
     @patch('services.sync_service.observability')
-    def test_returns_pipeline_result_on_success(self, mock_obs, mock_asyncio, mock_pw):
+    def test_returns_pipeline_result_on_success(self, mock_obs, mock_run_pipeline, mock_pw):
         pipeline_result = SyncResult(
             success=True, status='completed',
             sessions_imported=3, total_shots=45,
         )
-        mock_asyncio.run.return_value = pipeline_result
+        mock_run_pipeline.return_value = pipeline_result
         result = run_sync('user', 'pass')
         self.assertTrue(result.success)
         self.assertEqual(result.sessions_imported, 3)
         self.assertEqual(result.total_shots, 45)
 
     @patch('services.sync_service.check_playwright_available', return_value=(True, 'OK'))
-    @patch('services.sync_service.asyncio')
+    @patch('services.sync_service._run_async_pipeline_sync')
     @patch('services.sync_service.observability')
-    def test_returns_failure_on_exception(self, mock_obs, mock_asyncio, mock_pw):
-        mock_asyncio.run.side_effect = RuntimeError('connection lost')
+    def test_returns_failure_on_exception(self, mock_obs, mock_run_pipeline, mock_pw):
+        mock_run_pipeline.side_effect = RuntimeError('connection lost')
         result = run_sync('user', 'pass')
         self.assertFalse(result.success)
         self.assertEqual(result.status, 'failed')
         self.assertIn('connection lost', result.error_message)
 
     @patch('services.sync_service.check_playwright_available', return_value=(True, 'OK'))
-    @patch('services.sync_service.asyncio')
+    @patch('services.sync_service._run_async_pipeline_sync')
     @patch('services.sync_service.observability')
-    def test_duration_is_set(self, mock_obs, mock_asyncio, mock_pw):
-        mock_asyncio.run.return_value = SyncResult(success=True, status='completed')
+    def test_duration_is_set(self, mock_obs, mock_run_pipeline, mock_pw):
+        mock_run_pipeline.return_value = SyncResult(success=True, status='completed')
         result = run_sync('user', 'pass')
         self.assertGreaterEqual(result.duration_seconds, 0.0)
 
     @patch('services.sync_service.check_playwright_available', return_value=(True, 'OK'))
-    @patch('services.sync_service.asyncio')
+    @patch('services.sync_service._run_async_pipeline_sync')
     @patch('services.sync_service.observability')
-    def test_status_callback_invoked(self, mock_obs, mock_asyncio, mock_pw):
+    def test_status_callback_invoked(self, mock_obs, mock_run_pipeline, mock_pw):
         """The on_status callback should be passed through to the pipeline."""
         status_messages = []
-        mock_asyncio.run.return_value = SyncResult(success=True, status='completed')
-        # We can't easily test the callback reaches the pipeline when asyncio.run is mocked,
-        # but we can verify run_sync doesn't crash with a callback
+        def fake_run_pipeline(status, max_sessions):
+            status("in progress")
+            return SyncResult(success=True, status='completed')
+
+        mock_run_pipeline.side_effect = fake_run_pipeline
         result = run_sync('user', 'pass', on_status=status_messages.append)
         self.assertTrue(result.success)
+        self.assertIn("in progress", status_messages)
 
     @patch('services.sync_service.check_playwright_available', return_value=(True, 'OK'))
-    @patch('services.sync_service.asyncio')
+    @patch('services.sync_service._run_async_pipeline_sync')
     @patch('services.sync_service.observability')
-    def test_observability_event_logged(self, mock_obs, mock_asyncio, mock_pw):
-        mock_asyncio.run.return_value = SyncResult(
+    def test_observability_event_logged(self, mock_obs, mock_run_pipeline, mock_pw):
+        mock_run_pipeline.return_value = SyncResult(
             success=True, status='completed',
             sessions_imported=2, total_shots=30,
         )
@@ -320,6 +325,50 @@ class TestRunSyncResults(unittest.TestCase):
         self.assertEqual(payload['mode'], 'ui_sync')
         self.assertEqual(payload['sessions_imported'], 2)
         self.assertEqual(payload['shots'], 30)
+
+    @patch('services.sync_service.check_playwright_available', return_value=(True, 'OK'))
+    @patch('services.sync_service.observability')
+    def test_run_sync_works_inside_existing_event_loop(self, mock_obs, mock_pw):
+        async def fake_pipeline(status, max_sessions):
+            status("test status")
+            return SyncResult(success=True, status='completed', sessions_imported=1)
+
+        with patch('services.sync_service._async_sync_pipeline', fake_pipeline):
+            async def invoke():
+                return run_sync('user', 'pass')
+
+            result = asyncio.run(invoke())
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.status, 'completed')
+        self.assertEqual(result.sessions_imported, 1)
+
+
+class TestRunAsyncPipelineSync(unittest.TestCase):
+    """Tests for event-loop-safe async pipeline wrapper."""
+
+    def test_runs_directly_without_event_loop(self):
+        async def fake_pipeline(status, max_sessions):
+            status("ok")
+            return SyncResult(success=True, status='completed')
+
+        with patch('services.sync_service._async_sync_pipeline', fake_pipeline):
+            result = _run_async_pipeline_sync(lambda _: None, 1)
+
+        self.assertTrue(result.success)
+
+    def test_runs_in_thread_with_event_loop(self):
+        async def fake_pipeline(status, max_sessions):
+            status("ok")
+            return SyncResult(success=True, status='completed')
+
+        with patch('services.sync_service._async_sync_pipeline', fake_pipeline):
+            async def invoke():
+                return _run_async_pipeline_sync(lambda _: None, 1)
+
+            result = asyncio.run(invoke())
+
+        self.assertTrue(result.success)
 
 
 class TestAsyncPipelineLogic(unittest.TestCase):

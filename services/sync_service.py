@@ -8,6 +8,7 @@ a single function call.
 import os
 import json
 import asyncio
+import threading
 from pathlib import Path
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
@@ -120,7 +121,7 @@ def run_sync(
     os.environ['UNEEKOR_PASSWORD'] = password
 
     try:
-        result = asyncio.run(_async_sync_pipeline(status, max_sessions))
+        result = _run_async_pipeline_sync(status, max_sessions)
     except Exception as e:
         result = SyncResult(
             success=False, status='failed',
@@ -151,6 +152,39 @@ def run_sync(
     })
 
     return result
+
+
+def _run_async_pipeline_sync(
+    status: Callable[[str], None],
+    max_sessions: int,
+) -> SyncResult:
+    """Run async pipeline from sync code, even if a loop is already running."""
+    try:
+        asyncio.get_running_loop()
+        has_running_loop = True
+    except RuntimeError:
+        has_running_loop = False
+
+    if not has_running_loop:
+        return asyncio.run(_async_sync_pipeline(status, max_sessions))
+
+    result_box: Dict[str, SyncResult] = {}
+    error_box: Dict[str, Exception] = {}
+
+    def runner() -> None:
+        try:
+            result_box['result'] = asyncio.run(_async_sync_pipeline(status, max_sessions))
+        except Exception as exc:
+            error_box['error'] = exc
+
+    thread = threading.Thread(target=runner, name="sync-service-runner", daemon=True)
+    thread.start()
+    thread.join()
+
+    if 'error' in error_box:
+        raise error_box['error']
+
+    return result_box['result']
 
 
 async def _async_sync_pipeline(
