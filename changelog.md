@@ -4,6 +4,31 @@ This log summarizes all changes made to the `GolfDataApp` project.
 
 ---
 
+## 2026-02-19: Fix Module Proxy Thread-Safety in Streamlit Sync
+
+### Problem
+Clicking "Sync New Sessions" in the Streamlit UI failed instantly with `AttributeError: module 'golf_db' has no attribute 'SQLITE_DB_PATH'`. CLI and script usage worked fine. The `_GolfDBProxy` module-replacement pattern (`sys.modules[__name__] = proxy`) is fragile under Streamlit's hot-reloader + background thread combination — the proxy's `__getattr__` delegation breaks when Streamlit re-executes the module body while threads hold stale references.
+
+### Fixed
+- **`automation/session_discovery.py`**: Replaced `import golf_db` with `import golf_data.db as _golf_data_db` to bypass the proxy shim in thread context (`ebc15463b`)
+- **`automation/backfill_runner.py`**: Same fix — `golf_db.get_session_data()` and `golf_db.rename_club()` would have failed identically once discovery succeeded
+- **`services/sync_service.py`**: Same fix — `golf_db.backfill_session_dates()`, `compute_session_stats()`, `batch_update_session_names()` in Phases 3-4 of the sync pipeline
+
+### Added
+- **`tests/unit/test_shim_imports.py`**: 6 new regression tests in 4 test classes:
+  - `TestProxyThreadSafety` — proxy attribute access from threads, threads with event loops, concurrent access, proxy-vs-direct parity
+  - `TestThreadedShimModules` — all 10 shim modules importable from threads
+  - `TestAutomationBypassesProxy` — **AST-based static check** that thread-context files don't `import golf_db` (catches the bug at source level in CI)
+- **`docs/solutions/runtime-errors/module-proxy-thread-safety-streamlit-sync.md`**: Full problem documentation with root cause analysis and prevention strategies
+- **`CLAUDE.md`**: Added thread-safety rule for proxy imports
+
+### Verification
+- 442 tests passing (was 436)
+- Streamlit sync enters discovery phase successfully (previously failed instantly)
+- CLI usage unchanged
+
+---
+
 ## 2026-02-15: Extract Data Layer into `golf-data-core` Package
 
 ### New Package: `golf-data-core` (`~/Documents/GitHub/golf-data-core/`)

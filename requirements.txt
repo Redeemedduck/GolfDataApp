@@ -6,6 +6,7 @@ requests
 psycopg2-binary
 supabase
 python-dotenv
+golf-data-core @ git+https://github.com/Redeemedduck/golf-data-core.git@722d64167037469a9c7d28d6e90acd9875a0a3b3
 google-generativeai
 anthropic
 claude-agent-sdk>=0.1.35

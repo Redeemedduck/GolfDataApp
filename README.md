@@ -20,6 +20,7 @@ A local-first application for capturing, analyzing, and coaching golf performanc
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+# requirements.txt includes pinned golf-data-core from GitHub
 streamlit run app.py
 ```
 

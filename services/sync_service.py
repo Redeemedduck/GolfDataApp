@@ -8,6 +8,7 @@ a single function call.
 import os
 import json
 import asyncio
+import threading
 from pathlib import Path
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
@@ -16,6 +17,10 @@ from typing import Optional, Callable, List, Dict, Any
 import observability
 
 CREDENTIALS_FILE = Path(__file__).parent.parent / '.uneekor_credentials.json'
+
+SYNC_TIMEOUT_SECONDS = 300  # 5 minutes; generous for Playwright + network I/O
+
+_active_sync_thread: threading.Thread | None = None
 
 
 @dataclass
@@ -73,7 +78,7 @@ def has_credentials() -> bool:
 
 # ── Pre-flight checks ────────────────────────────────────────
 
-def check_playwright_available() -> tuple:
+def check_playwright_available() -> tuple[bool, str]:
     """Check if Playwright is importable.
     Returns (available: bool, message: str).
     """
@@ -120,14 +125,17 @@ def run_sync(
     os.environ['UNEEKOR_PASSWORD'] = password
 
     try:
-        result = asyncio.run(_async_sync_pipeline(status, max_sessions))
+        result = _run_async_pipeline_sync(status, max_sessions)
     except Exception as e:
+        msg = str(e).replace(password, '***') if password else str(e)
         result = SyncResult(
             success=False, status='failed',
-            error_message=str(e), errors=[str(e)],
+            error_message=msg, errors=[msg],
         )
     finally:
-        # Restore original env vars
+        # Restore original env vars.
+        # Safe even on pipeline timeout: credentials are read early in the
+        # pipeline (during CredentialManager init), well before any timeout.
         if old_user is not None:
             os.environ['UNEEKOR_USERNAME'] = old_user
         else:
@@ -153,6 +161,67 @@ def run_sync(
     return result
 
 
+def _run_async_pipeline_sync(
+    status: Callable[[str], None],
+    max_sessions: int,
+) -> SyncResult:
+    """Run the async pipeline from sync code, bridging any active event loop.
+
+    - No running loop: calls asyncio.run() directly.
+    - Running loop (Streamlit): delegates to a daemon thread with its own loop.
+
+    Returns a timeout SyncResult if the pipeline does not complete within
+    SYNC_TIMEOUT_SECONDS. Re-raises pipeline exceptions unchanged.
+    """
+    global _active_sync_thread
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_async_sync_pipeline(status, max_sessions))
+
+    # Guard against overlapping syncs (e.g. retry after timeout while
+    # previous thread still has an open Playwright browser).
+    if _active_sync_thread is not None and _active_sync_thread.is_alive():
+        return SyncResult(
+            success=False, status='failed',
+            error_message='A sync is already in progress',
+        )
+
+    # Wrap callback — Streamlit widget calls from background threads
+    # are not officially thread-safe.
+    def safe_status(msg: str) -> None:
+        try:
+            status(msg)
+        except Exception:
+            pass
+
+    results: list[SyncResult] = []
+    errors: list[Exception] = []
+
+    def runner() -> None:
+        try:
+            results.append(asyncio.run(_async_sync_pipeline(safe_status, max_sessions)))
+        except Exception as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=runner, name="sync-service-runner", daemon=True)
+    _active_sync_thread = thread
+    thread.start()
+    thread.join(timeout=SYNC_TIMEOUT_SECONDS)
+
+    if thread.is_alive():
+        msg = f'Sync timed out after {SYNC_TIMEOUT_SECONDS}s'
+        return SyncResult(success=False, status='failed', error_message=msg, errors=[msg])
+
+    _active_sync_thread = None
+
+    if errors:
+        raise errors[0]
+
+    return results[0]
+
+
 async def _async_sync_pipeline(
     status: Callable[[str], None],
     max_sessions: int,
@@ -160,7 +229,7 @@ async def _async_sync_pipeline(
     """Async implementation of the sync pipeline."""
     from automation.session_discovery import get_discovery
     from automation.backfill_runner import BackfillRunner, BackfillConfig
-    import golf_db
+    import golf_data.db as _golf_data_db
 
     errors = []
     result = SyncResult(success=True, status='completed')
@@ -233,7 +302,7 @@ async def _async_sync_pipeline(
     # ── Phase 3: Date reclassification ──
     status("Updating session dates...")
     try:
-        date_result = golf_db.backfill_session_dates()
+        date_result = _golf_data_db.backfill_session_dates()
         if isinstance(date_result, dict):
             result.dates_updated = date_result.get('updated', 0)
         else:
@@ -244,8 +313,8 @@ async def _async_sync_pipeline(
     # ── Phase 4: Recompute session stats ──
     status("Recomputing session statistics...")
     try:
-        golf_db.compute_session_stats()
-        golf_db.batch_update_session_names()
+        _golf_data_db.compute_session_stats()
+        _golf_data_db.batch_update_session_names()
     except Exception as e:
         errors.append(f"Stats recompute warning: {e}")
 

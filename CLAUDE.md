@@ -94,7 +94,7 @@ Uneekor Portal --> automation/ --> golf_db.py --> SQLite + Supabase
 
 ### Shared Data Layer: `golf-data-core` Package
 
-The core data layer lives in a separate package at `~/Documents/GitHub/golf-data-core/` (`pip install -e`). GolfDataApp uses backward-compatible shims that re-export from the package — **all existing imports work unchanged**.
+The core data layer lives in a separate package at `~/Documents/GitHub/golf-data-core/`. Default setup installs a pinned commit via `pip install -r requirements.txt`. For core package development, override with `pip install -e ~/Documents/GitHub/golf-data-core`. GolfDataApp uses backward-compatible shims that re-export from the package — **all existing imports work unchanged**.
 
 | Package Module | Purpose |
 |----------------|---------|
@@ -117,6 +117,8 @@ _real_db.configure(sqlite_db_path=..., normalize_fn=normalize_with_context)
 # services/data_quality.py — star-import shim
 from golf_data.filters.quality import *
 ```
+
+**Thread-safety rule:** Code running in Streamlit's background threads (sync pipeline, backfill, discovery) **must import `golf_data.db` directly**, not through the `golf_db` proxy shim. The proxy's `sys.modules` replacement breaks under Streamlit's hot-reloader + thread combination. See `docs/solutions/runtime-errors/module-proxy-thread-safety-streamlit-sync.md`. CI enforces this via `TestAutomationBypassesProxy` in `tests/unit/test_shim_imports.py`.
 
 **Second app usage:**
 ```python
