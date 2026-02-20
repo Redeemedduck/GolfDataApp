@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     import golf_scraper
-    import golf_db
+    import golf_data.db as _golf_data_db
     HAS_SCRAPER = True
 except ImportError:
     HAS_SCRAPER = False
@@ -592,7 +592,7 @@ class BackfillRunner:
 
                 if self.config.normalize_clubs and shots_imported > 0:
                     # Get the imported shots to normalize club names
-                    df = golf_db.get_session_data(item.report_id)
+                    df = _golf_data_db.get_session_data(item.report_id)
                     if df is not None and not df.empty:
                         clubs = df['club'].unique().tolist()
 
@@ -600,7 +600,7 @@ class BackfillRunner:
                         for old_name in clubs:
                             new_name = self.club_normalizer.normalize(old_name).normalized
                             if new_name != old_name:
-                                golf_db.rename_club(item.report_id, old_name, new_name)
+                                _golf_data_db.rename_club(item.report_id, old_name, new_name)
 
                         # Generate session name and type
                         normalized_clubs = self.club_normalizer.normalize_all(clubs)

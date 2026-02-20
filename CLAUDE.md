@@ -118,6 +118,8 @@ _real_db.configure(sqlite_db_path=..., normalize_fn=normalize_with_context)
 from golf_data.filters.quality import *
 ```
 
+**Thread-safety rule:** Code running in Streamlit's background threads (sync pipeline, backfill, discovery) **must import `golf_data.db` directly**, not through the `golf_db` proxy shim. The proxy's `sys.modules` replacement breaks under Streamlit's hot-reloader + thread combination. See `docs/solutions/runtime-errors/module-proxy-thread-safety-streamlit-sync.md`. CI enforces this via `TestAutomationBypassesProxy` in `tests/unit/test_shim_imports.py`.
+
 **Second app usage:**
 ```python
 from golf_data import db

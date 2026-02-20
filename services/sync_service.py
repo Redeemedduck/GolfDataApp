@@ -229,7 +229,7 @@ async def _async_sync_pipeline(
     """Async implementation of the sync pipeline."""
     from automation.session_discovery import get_discovery
     from automation.backfill_runner import BackfillRunner, BackfillConfig
-    import golf_db
+    import golf_data.db as _golf_data_db
 
     errors = []
     result = SyncResult(success=True, status='completed')
@@ -302,7 +302,7 @@ async def _async_sync_pipeline(
     # ── Phase 3: Date reclassification ──
     status("Updating session dates...")
     try:
-        date_result = golf_db.backfill_session_dates()
+        date_result = _golf_data_db.backfill_session_dates()
         if isinstance(date_result, dict):
             result.dates_updated = date_result.get('updated', 0)
         else:
@@ -313,8 +313,8 @@ async def _async_sync_pipeline(
     # ── Phase 4: Recompute session stats ──
     status("Recomputing session statistics...")
     try:
-        golf_db.compute_session_stats()
-        golf_db.batch_update_session_names()
+        _golf_data_db.compute_session_stats()
+        _golf_data_db.batch_update_session_names()
     except Exception as e:
         errors.append(f"Stats recompute warning: {e}")
 
