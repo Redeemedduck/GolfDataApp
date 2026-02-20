@@ -26,10 +26,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
-    import golf_db
-    HAS_GOLF_DB = True
+    import golf_data.db as _golf_data_db
+    HAS_GOLF_DATA = True
 except ImportError:
-    HAS_GOLF_DB = False
+    HAS_GOLF_DATA = False
 
 from .uneekor_portal import SessionInfo, UneekorPortalNavigator
 from .browser_client import PlaywrightClient, BrowserConfig
@@ -168,8 +168,8 @@ class SessionDiscovery:
         """
         if db_path:
             self.db_path = db_path
-        elif HAS_GOLF_DB:
-            self.db_path = golf_db.SQLITE_DB_PATH
+        elif HAS_GOLF_DATA:
+            self.db_path = _golf_data_db.SQLITE_DB_PATH
         else:
             self.db_path = Path(__file__).parent.parent / 'golf_stats.db'
 
