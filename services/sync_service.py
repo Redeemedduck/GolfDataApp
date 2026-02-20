@@ -18,6 +18,8 @@ import observability
 
 CREDENTIALS_FILE = Path(__file__).parent.parent / '.uneekor_credentials.json'
 
+SYNC_TIMEOUT_SECONDS = 300  # 5 minutes; generous for Playwright + network I/O
+
 
 @dataclass
 class SyncResult:
@@ -128,7 +130,9 @@ def run_sync(
             error_message=str(e), errors=[str(e)],
         )
     finally:
-        # Restore original env vars
+        # Restore original env vars.
+        # Safe even on pipeline timeout: credentials are read early in the
+        # pipeline (during CredentialManager init), well before any timeout.
         if old_user is not None:
             os.environ['UNEEKOR_USERNAME'] = old_user
         else:
@@ -179,7 +183,14 @@ def _run_async_pipeline_sync(
 
     thread = threading.Thread(target=runner, name="sync-service-runner", daemon=True)
     thread.start()
-    thread.join()
+    thread.join(timeout=SYNC_TIMEOUT_SECONDS)
+
+    if thread.is_alive():
+        return SyncResult(
+            success=False, status='failed',
+            error_message=f'Sync timed out after {SYNC_TIMEOUT_SECONDS}s',
+            errors=[f'Pipeline did not complete within {SYNC_TIMEOUT_SECONDS}s'],
+        )
 
     if 'error' in error_box:
         raise error_box['error']

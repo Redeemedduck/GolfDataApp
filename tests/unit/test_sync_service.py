@@ -19,6 +19,7 @@ from services.sync_service import (
     check_playwright_available,
     run_sync,
     SyncResult,
+    SYNC_TIMEOUT_SECONDS,
     _run_async_pipeline_sync,
     _async_sync_pipeline,
     get_automation_status,
@@ -370,6 +371,35 @@ class TestRunAsyncPipelineSync(unittest.TestCase):
 
         self.assertTrue(result.success)
 
+    def test_thread_exception_propagates(self):
+        """Exceptions from the async pipeline should propagate through the thread."""
+        async def exploding_pipeline(status, max_sessions):
+            raise ConnectionError("portal unreachable")
+
+        with patch('services.sync_service._async_sync_pipeline', exploding_pipeline):
+            async def invoke():
+                return _run_async_pipeline_sync(lambda _: None, 1)
+
+            with self.assertRaises(ConnectionError):
+                asyncio.run(invoke())
+
+    def test_timeout_returns_failure(self):
+        """If the pipeline takes too long, should return a timeout failure."""
+        async def slow_pipeline(status, max_sessions):
+            await asyncio.sleep(999)
+            return SyncResult(success=True, status='completed')
+
+        with patch('services.sync_service._async_sync_pipeline', slow_pipeline), \
+             patch('services.sync_service.SYNC_TIMEOUT_SECONDS', 0.1):
+            async def invoke():
+                return _run_async_pipeline_sync(lambda _: None, 1)
+
+            result = asyncio.run(invoke())
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.status, 'failed')
+        self.assertIn('timed out', result.error_message)
+
 
 class TestAsyncPipelineLogic(unittest.TestCase):
     """Tests for _async_sync_pipeline phase logic using mocked automation modules."""
@@ -378,15 +408,6 @@ class TestAsyncPipelineLogic(unittest.TestCase):
         """Helper to run async test coroutines."""
         import asyncio
         return asyncio.run(coro)
-
-    @patch('services.sync_service.golf_db', create=True)
-    @patch('services.sync_service.BackfillRunner', create=True)
-    @patch('services.sync_service.BackfillConfig', create=True)
-    @patch('services.sync_service.get_discovery', create=True)
-    def test_no_new_sessions_returns_early(self, mock_get_disc, mock_config, mock_runner_cls, mock_golf_db):
-        """When discovery finds 0 new sessions, pipeline returns no_new_sessions."""
-        # Use a real import-based test with mocked internals
-        pass  # Covered by the integration-style tests below
 
     def test_sync_result_partial_when_mixed_results(self):
         """When some imports succeed and some fail, status should be 'partial'."""
