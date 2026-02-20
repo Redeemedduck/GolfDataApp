@@ -20,6 +20,8 @@ CREDENTIALS_FILE = Path(__file__).parent.parent / '.uneekor_credentials.json'
 
 SYNC_TIMEOUT_SECONDS = 300  # 5 minutes; generous for Playwright + network I/O
 
+_active_sync_thread: threading.Thread | None = None
+
 
 @dataclass
 class SyncResult:
@@ -76,7 +78,7 @@ def has_credentials() -> bool:
 
 # ── Pre-flight checks ────────────────────────────────────────
 
-def check_playwright_available() -> tuple:
+def check_playwright_available() -> tuple[bool, str]:
     """Check if Playwright is importable.
     Returns (available: bool, message: str).
     """
@@ -125,9 +127,10 @@ def run_sync(
     try:
         result = _run_async_pipeline_sync(status, max_sessions)
     except Exception as e:
+        msg = str(e).replace(password, '***') if password else str(e)
         result = SyncResult(
             success=False, status='failed',
-            error_message=str(e), errors=[str(e)],
+            error_message=msg, errors=[msg],
         )
     finally:
         # Restore original env vars.
@@ -162,40 +165,61 @@ def _run_async_pipeline_sync(
     status: Callable[[str], None],
     max_sessions: int,
 ) -> SyncResult:
-    """Run async pipeline from sync code, even if a loop is already running."""
+    """Run the async pipeline from sync code, bridging any active event loop.
+
+    - No running loop: calls asyncio.run() directly.
+    - Running loop (Streamlit): delegates to a daemon thread with its own loop.
+
+    Returns a timeout SyncResult if the pipeline does not complete within
+    SYNC_TIMEOUT_SECONDS. Re-raises pipeline exceptions unchanged.
+    """
+    global _active_sync_thread
+
     try:
         asyncio.get_running_loop()
-        has_running_loop = True
     except RuntimeError:
-        has_running_loop = False
-
-    if not has_running_loop:
         return asyncio.run(_async_sync_pipeline(status, max_sessions))
 
-    result_box: Dict[str, SyncResult] = {}
-    error_box: Dict[str, Exception] = {}
+    # Guard against overlapping syncs (e.g. retry after timeout while
+    # previous thread still has an open Playwright browser).
+    if _active_sync_thread is not None and _active_sync_thread.is_alive():
+        return SyncResult(
+            success=False, status='failed',
+            error_message='A sync is already in progress',
+        )
+
+    # Wrap callback — Streamlit widget calls from background threads
+    # are not officially thread-safe.
+    def safe_status(msg: str) -> None:
+        try:
+            status(msg)
+        except Exception:
+            pass
+
+    results: list[SyncResult] = []
+    errors: list[Exception] = []
 
     def runner() -> None:
         try:
-            result_box['result'] = asyncio.run(_async_sync_pipeline(status, max_sessions))
+            results.append(asyncio.run(_async_sync_pipeline(safe_status, max_sessions)))
         except Exception as exc:
-            error_box['error'] = exc
+            errors.append(exc)
 
     thread = threading.Thread(target=runner, name="sync-service-runner", daemon=True)
+    _active_sync_thread = thread
     thread.start()
     thread.join(timeout=SYNC_TIMEOUT_SECONDS)
 
     if thread.is_alive():
-        return SyncResult(
-            success=False, status='failed',
-            error_message=f'Sync timed out after {SYNC_TIMEOUT_SECONDS}s',
-            errors=[f'Pipeline did not complete within {SYNC_TIMEOUT_SECONDS}s'],
-        )
+        msg = f'Sync timed out after {SYNC_TIMEOUT_SECONDS}s'
+        return SyncResult(success=False, status='failed', error_message=msg, errors=[msg])
 
-    if 'error' in error_box:
-        raise error_box['error']
+    _active_sync_thread = None
 
-    return result_box['result']
+    if errors:
+        raise errors[0]
+
+    return results[0]
 
 
 async def _async_sync_pipeline(

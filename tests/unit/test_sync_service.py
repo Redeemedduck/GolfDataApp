@@ -348,6 +348,11 @@ class TestRunSyncResults(unittest.TestCase):
 class TestRunAsyncPipelineSync(unittest.TestCase):
     """Tests for event-loop-safe async pipeline wrapper."""
 
+    def tearDown(self):
+        # Reset module-level active thread guard between tests.
+        import services.sync_service
+        services.sync_service._active_sync_thread = None
+
     def test_runs_directly_without_event_loop(self):
         async def fake_pipeline(status, max_sessions):
             status("ok")
@@ -386,7 +391,7 @@ class TestRunAsyncPipelineSync(unittest.TestCase):
     def test_timeout_returns_failure(self):
         """If the pipeline takes too long, should return a timeout failure."""
         async def slow_pipeline(status, max_sessions):
-            await asyncio.sleep(999)
+            await asyncio.sleep(0.5)  # Longer than 0.1s timeout, short cleanup
             return SyncResult(success=True, status='completed')
 
         with patch('services.sync_service._async_sync_pipeline', slow_pipeline), \
@@ -399,6 +404,20 @@ class TestRunAsyncPipelineSync(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertEqual(result.status, 'failed')
         self.assertIn('timed out', result.error_message)
+
+    def test_double_start_returns_failure(self):
+        """If a sync is already in progress, should return failure."""
+        import services.sync_service as svc
+        mock_thread = MagicMock()
+        mock_thread.is_alive.return_value = True
+        svc._active_sync_thread = mock_thread
+
+        async def invoke():
+            return _run_async_pipeline_sync(lambda _: None, 1)
+
+        result = asyncio.run(invoke())
+        self.assertFalse(result.success)
+        self.assertIn('already in progress', result.error_message)
 
 
 class TestAsyncPipelineLogic(unittest.TestCase):
